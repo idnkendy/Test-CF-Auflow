@@ -88,8 +88,12 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
     const { prompt, startImage, isLoading, loadingMessage, error, generatedVideoUrl, mode } = state;
     
     const [renderSource, setRenderSource] = useState<'google' | 'veo3_external'>('veo3_external');
-    // Mặc định rỗng để dùng relative path của Vercel (/api/py/...)
     const [backendUrl, setBackendUrl] = useState<string>(''); 
+    
+    // Store media ID for upscaling
+    const [currentMediaId, setCurrentMediaId] = useState<string | null>(null);
+    const [isUpscaling, setIsUpscaling] = useState(false);
+    const [upscaledVideoUrl, setUpscaledVideoUrl] = useState<string | null>(null);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
@@ -137,6 +141,8 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
             generatedVideoUrl: null, 
             loadingMessage: "Đang khởi tạo tiến trình tạo video..."
         });
+        setCurrentMediaId(null);
+        setUpscaledVideoUrl(null);
 
         let jobId: string | null = null;
         let logId: string | null = null;
@@ -170,17 +176,21 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             let url = "";
+            let mediaId: string | undefined;
+
             if (renderSource === 'google') {
                 console.log("[Video UI] Gọi Gemini Service...");
                 url = await geminiService.generateVideo(prompt, startImage || undefined, jobId || undefined);
             } else {
                 console.log("[Video UI] Gọi External Service (Vercel)...");
-                // Gọi service mới hỗ trợ Polling (Vercel Serverless)
-                url = await externalVideoService.generateVideoExternal(prompt, backendUrl, startImage || undefined);
+                const result = await externalVideoService.generateVideoExternal(prompt, backendUrl, startImage || undefined);
+                url = result.videoUrl;
+                mediaId = result.mediaId;
             }
             
             console.log("[Video UI] Nhận được URL kết quả:", url);
             onStateChange({ generatedVideoUrl: url });
+            if (mediaId) setCurrentMediaId(mediaId);
 
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', url);
 
@@ -203,7 +213,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
 
-            // Refund logic: Only refund if logId exists (money was actually taken)
+            // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 console.log("[Video UI] Đang hoàn tiền do lỗi...");
@@ -215,11 +225,45 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
         }
     };
     
-    const handleDownload = () => {
-        if (!generatedVideoUrl) return;
+    const handleUpscale = async () => {
+        if (!currentMediaId) return;
+        
+        const upscaleCost = 5;
+        
+        if (onDeductCredits && userCredits < upscaleCost) {
+             onStateChange({ error: `Bạn không đủ credits để upscale. Cần ${upscaleCost} credits.` });
+             return;
+        }
+
+        setIsUpscaling(true);
+        onStateChange({ error: null });
+        
+        try {
+            if (onDeductCredits) {
+                await onDeductCredits(upscaleCost, `Upscale Video (1080p)`);
+            }
+
+            const upscaledUrl = await externalVideoService.upscaleVideoExternal(currentMediaId);
+            setUpscaledVideoUrl(upscaledUrl);
+            
+            await historyService.addToHistory({
+                tool: Tool.VideoGeneration,
+                prompt: prompt + " (Upscaled 1080p)",
+                sourceImageURL: startImage?.objectURL,
+                resultVideoURL: upscaledUrl,
+            });
+
+        } catch (err: any) {
+            onStateChange({ error: `Lỗi Upscale: ${err.message}` });
+        } finally {
+            setIsUpscaling(false);
+        }
+    };
+
+    const handleDownload = (url: string, filename: string) => {
         const link = document.createElement('a');
-        link.href = generatedVideoUrl;
-        link.download = "generated-video.mp4";
+        link.href = url;
+        link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -348,7 +392,9 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                                 </div>
                             )}
                             {!isLoading && generatedVideoUrl && (
-                                <video controls src={generatedVideoUrl} className="w-full h-full object-contain" />
+                                <div className="relative w-full h-full group">
+                                    <video controls src={generatedVideoUrl} className="w-full h-full object-contain" />
+                                </div>
                             )}
                             {!isLoading && !generatedVideoUrl && (
                                  <div className="text-center text-text-secondary dark:text-gray-400 p-4">
@@ -358,9 +404,36 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                             )}
                          </div>
                          {generatedVideoUrl && !isLoading && (
-                             <button onClick={handleDownload} className="w-full mt-4 bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors">
-                                Tải xuống Video
-                            </button>
+                             <div className="mt-4 flex flex-col gap-3">
+                                 <div className="flex gap-2">
+                                    <button onClick={() => handleDownload(generatedVideoUrl, "generated-video.mp4")} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors">
+                                        Tải xuống Video
+                                    </button>
+                                    
+                                    {/* Upscale Button */}
+                                    {currentMediaId && !upscaledVideoUrl && (
+                                        <button 
+                                            onClick={handleUpscale} 
+                                            disabled={isUpscaling}
+                                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                                        >
+                                            {isUpscaling ? <Spinner /> : <span className="material-symbols-outlined">hd</span>}
+                                            {isUpscaling ? 'Đang Upscale...' : 'Tăng độ phân giải (1080p)'}
+                                        </button>
+                                    )}
+                                 </div>
+
+                                 {/* Download Upscaled Video Button (Appears when ready) */}
+                                 {upscaledVideoUrl && (
+                                     <button 
+                                        onClick={() => handleDownload(upscaledVideoUrl, "upscaled-1080p-video.mp4")}
+                                        className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 animate-fade-in"
+                                     >
+                                         <span className="material-symbols-outlined">download</span>
+                                         Tải xuống Video 1080p
+                                     </button>
+                                 )}
+                             </div>
                          )}
                      </div>
                 </div>

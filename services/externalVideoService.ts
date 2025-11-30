@@ -116,7 +116,7 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     }
 };
 
-export const generateVideoExternal = async (prompt: string, backendUrl: string, startImage?: FileData): Promise<string> => {
+export const generateVideoExternal = async (prompt: string, backendUrl: string, startImage?: FileData): Promise<{ videoUrl: string, mediaId?: string }> => {
     console.log("==========================================================");
     console.log(`[Video Service] STARTING VIDEO GENERATION (Fast Mode)`);
     console.log("==========================================================");
@@ -136,12 +136,11 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
     }
 
     try {
-        // Step 1: Auth (SKIPPED if HARDCODED_TOKEN exists)
+        // Step 1: Auth
         let token = HARDCODED_TOKEN;
 
         if (!token) {
             console.log(`[Client] Step 1: Getting Auth Token from Backend...`);
-            // Cloudflare Worker handles routing via "action" inside body usually, or specific endpoints
             const authData = await fetchJson('/auth', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -198,7 +197,10 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
                 if (checkData.status === 'completed' && checkData.video_url) {
                     console.log("==========================================================");
                     console.log(`[Client] SUCCESS! Video URL: ${checkData.video_url}`);
-                    return checkData.video_url;
+                    return { 
+                        videoUrl: checkData.video_url,
+                        mediaId: checkData.mediaId // Optional ID for upscaling
+                    };
                 }
                 
                 if (checkData.status === 'failed') {
@@ -214,6 +216,64 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
 
     } catch (err: any) {
         console.error("[Video Service Error]", err);
+        throw err;
+    }
+};
+
+export const upscaleVideoExternal = async (mediaId: string): Promise<string> => {
+    console.log("==========================================================");
+    console.log(`[Video Service] STARTING VIDEO UPSCALE (1080p)`);
+    console.log("==========================================================");
+
+    try {
+        let token = HARDCODED_TOKEN;
+        if (!token) {
+             const authData = await fetchJson('/auth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'auth' })
+            });
+            token = authData.token;
+        }
+
+        // Trigger Upscale
+        const triggerData = await fetchJson('/upscale', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'upscale', token, mediaId })
+        });
+        const { task_id, scene_id } = triggerData;
+        console.log(`[Client] Upscale Task Created! Task ID: ${task_id}`);
+
+        // Poll for completion
+        const maxRetries = 120;
+        let attempts = 0;
+
+        while (attempts < maxRetries) {
+            attempts++;
+            await wait(5000);
+
+            const checkData = await fetchJson('/check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'check', task_id, scene_id, token })
+            });
+
+            console.log(`[Client] Upscale Poll #${attempts}: Status = ${checkData.status}`);
+
+            if (checkData.status === 'completed' && checkData.video_url) {
+                return checkData.video_url;
+            }
+
+            if (checkData.status === 'failed') {
+                throw new Error(checkData.message || "Upscale Failed");
+            }
+        }
+        
+        throw new Error("Timeout: Video upscale took too long.");
+
+    } catch (err: any) {
+        console.error("[Upscale Error]", err);
         throw err;
     }
 };

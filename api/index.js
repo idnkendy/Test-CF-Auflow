@@ -33,6 +33,7 @@ async function uploadImage(token, base64Data) {
         "clientContext": { "sessionId": ";" + Date.now(), "tool": "ASSET_MANAGER" }
     };
 
+    // Keep v1:uploadUserImage as it likely maps to a root verb
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1:uploadUserImage', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
@@ -70,7 +71,8 @@ async function triggerGeneration(token, prompt, mediaId) {
         }]
     };
 
-    const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchAsyncGenerateVideoStartImage', {
+    // FIXED URL: Changed v1:video to v1/video
+    const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
@@ -89,6 +91,44 @@ async function triggerGeneration(token, prompt, mediaId) {
     return { task_id: operationName, scene_id: sceneId };
 }
 
+async function triggerUpscale(token, mediaId) {
+    const sceneId = crypto.randomUUID();
+    
+    // Using the payload structure from the python snippet
+    const payload = {
+        "requests": [{
+            "aspectRatio": "VIDEO_ASPECT_RATIO_LANDSCAPE",
+            "seed": Math.floor(Date.now() / 1000),
+            "videoInput": { "mediaId": mediaId },
+            "videoModelKey": "veo_2_1080p_upsampler_8s",
+            "metadata": { "sceneId": sceneId }
+        }],
+        "clientContext": {
+            "sessionId": ";" + Date.now()
+        }
+    };
+
+    // Using the exact endpoint from python snippet (converted to standard URL format if needed, but keeping original structure mostly)
+    // Note: Python used v1/video:batchAsyncGenerateVideoUpsampleVideo
+    const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoUpsampleVideo', {
+        method: 'POST',
+        headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Upscale Trigger Failed (${res.status}): ${errText}`);
+    }
+    const data = await res.json();
+    
+    const opItem = data.operations?.[0];
+    const operationName = opItem?.operation?.name || opItem?.name;
+    if (!operationName) throw new Error("No operation name returned in upscale trigger response");
+    
+    return { task_id: operationName, scene_id: sceneId };
+}
+
 async function checkStatus(token, task_id, scene_id) {
     const payload = {
         "operations": [{
@@ -98,7 +138,8 @@ async function checkStatus(token, task_id, scene_id) {
         }]
     };
 
-    const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchCheckAsyncVideoGenerationStatus', {
+    // FIXED URL: Changed v1:video to v1/video
+    const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
@@ -117,7 +158,12 @@ async function checkStatus(token, task_id, scene_id) {
                      opResult.videoFiles?.[0]?.url || 
                      opResult.response?.videoUrl;
         
-        if (vidUrl) return { status: 'completed', video_url: vidUrl };
+        // Extract Media ID for potential upscaling
+        let mediaId = opResult.response?.id || 
+                      opResult.operation?.response?.id ||
+                      opResult.mediaGenerationId;
+
+        if (vidUrl) return { status: 'completed', video_url: vidUrl, mediaId: mediaId };
         return { status: 'failed', message: 'Video URL not found in response' };
     }
     
@@ -175,6 +221,7 @@ export default {
                 if (path.includes('/auth')) action = 'auth';
                 else if (path.includes('/upload')) action = 'upload';
                 else if (path.includes('/create')) action = 'create';
+                else if (path.includes('/upscale')) action = 'upscale';
                 else if (path.includes('/check')) action = 'check';
                 // Also check query params as fallback
                 else if (url.searchParams.get('action')) action = url.searchParams.get('action');
@@ -195,6 +242,12 @@ export default {
                 const { token, prompt, mediaId } = body;
                 const activeToken = token || await getAccessToken();
                 const result = await triggerGeneration(activeToken, prompt, mediaId);
+                return sendJson(result);
+            }
+            else if (action === 'upscale') {
+                const { token, mediaId } = body;
+                const activeToken = token || await getAccessToken();
+                const result = await triggerUpscale(activeToken, mediaId);
                 return sendJson(result);
             }
             else if (action === 'check') {
