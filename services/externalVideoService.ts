@@ -11,7 +11,9 @@ const HARDCODED_TOKEN = P1 + P2 + P3 + P4;
 
 // Change this if your Cloudflare Worker is hosted elsewhere
 // Leave empty if serving from same domain path /api
-const BACKEND_URL = ""; 
+// Get API URL from env var if available (Set VITE_API_URL in Cloudflare Pages Settings)
+// @ts-ignore
+const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || ""; 
 
 // Helper wait
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -60,8 +62,24 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
     
-    // Construct Full URL
-    const url = BACKEND_URL ? `${BACKEND_URL}${endpoint}` : `/api${endpoint}`; // Assumes Cloudflare Worker is mapped to /api if local
+    // Construct Full URL logic:
+    let url = endpoint;
+    
+    if (BACKEND_URL) {
+        // If BACKEND_URL is set (e.g. https://my-worker.workers.dev)
+        const baseUrl = BACKEND_URL.replace(/\/$/, ""); // Remove trailing slash
+        const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+        url = `${baseUrl}${path}`;
+    } else {
+        // Fallback to relative /api path if no env var is set
+        const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+        // If the endpoint already starts with /api, don't double it
+        if (path.startsWith('/api')) {
+            url = path;
+        } else {
+            url = `/api${path}`;
+        }
+    }
 
     try {
         const res = await fetch(url, {
@@ -75,11 +93,21 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
         try {
             data = JSON.parse(text);
         } catch (e) {
-            throw new Error(`Server Error (Not JSON): ${text.substring(0, 100)}...`);
+            // Improve error reporting for HTML responses (404/405/500 from Cloudflare usually returns HTML)
+            if (text.toLowerCase().includes("<!doctype html") || text.includes("<html")) {
+                 if (res.status === 404) {
+                     throw new Error(`Không tìm thấy API (404) tại ${url}. Hãy kiểm tra biến môi trường VITE_API_URL.`);
+                 }
+                 if (res.status === 405) {
+                     throw new Error(`Lỗi Method (405) tại ${url}. Bạn có thể đang gọi vào trang tĩnh thay vì Worker.`);
+                 }
+                 throw new Error(`Lỗi Server (${res.status}): Nhận về HTML thay vì JSON.`);
+            }
+            throw new Error(`Lỗi Server (Không phải JSON): ${text.substring(0, 100)}...`);
         }
         
         if (!res.ok) {
-            throw new Error(data.message || `Request failed (${res.status})`);
+            throw new Error(data.message || `Yêu cầu thất bại (${res.status})`);
         }
         return data;
     } catch (err: any) {

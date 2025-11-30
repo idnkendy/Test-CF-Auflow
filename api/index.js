@@ -169,12 +169,15 @@ export default {
             const path = url.pathname;
             let action = body.action || '';
 
-            // Map URL paths to actions if action not provided in body
+            // Map URL paths to actions if action not provided in body.
+            // This logic is lenient to work with both direct Worker URLs (/) and routed URLs (/api/...)
             if (!action) {
-                if (path.endsWith('/auth')) action = 'auth';
-                else if (path.endsWith('/upload')) action = 'upload';
-                else if (path.endsWith('/create')) action = 'create';
-                else if (path.endsWith('/check')) action = 'check';
+                if (path.includes('/auth')) action = 'auth';
+                else if (path.includes('/upload')) action = 'upload';
+                else if (path.includes('/create')) action = 'create';
+                else if (path.includes('/check')) action = 'check';
+                // Also check query params as fallback
+                else if (url.searchParams.get('action')) action = url.searchParams.get('action');
             }
 
             // --- ROUTER ---
@@ -201,10 +204,13 @@ export default {
                 return sendJson(result);
             }
             else {
+                // Return generic info for root to confirm worker is alive
                 return sendJson({ 
-                    error: `Action not found: ${action || path}`,
-                    info: "Cloudflare Worker is running. Use /auth, /upload, /create, /check endpoints."
-                }, 404);
+                    status: "ok", 
+                    message: "Cloudflare Worker is running", 
+                    request_path: path,
+                    detected_action: action || "none"
+                }, 200);
             }
 
         } catch (error) {
