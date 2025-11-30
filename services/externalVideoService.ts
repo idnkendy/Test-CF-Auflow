@@ -89,30 +89,42 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
         clearTimeout(timeoutId);
 
         const text = await res.text();
+        
+        // Handle HTML responses (Cloudflare/Vercel errors) gracefully
+        if (text.trim().startsWith("<") || text.includes("<!DOCTYPE") || text.includes("<html")) {
+             if (res.status === 404) {
+                 throw new Error(`Không tìm thấy dịch vụ API (404)`);
+             }
+             if (res.status === 405) {
+                 throw new Error(`Phương thức không hợp lệ (405)`);
+             }
+             if (res.status === 500) {
+                 throw new Error(`Lỗi máy chủ nội bộ (500)`);
+             }
+             throw new Error(`Lỗi kết nối máy chủ (${res.status})`);
+        }
+
         let data;
         try {
             data = JSON.parse(text);
         } catch (e) {
-            // Improve error reporting for HTML responses (404/405/500 from Cloudflare usually returns HTML)
-            if (text.toLowerCase().includes("<!doctype html") || text.includes("<html")) {
-                 if (res.status === 404) {
-                     throw new Error(`Không tìm thấy API (404) tại ${url}. Hãy kiểm tra biến môi trường VITE_API_URL.`);
-                 }
-                 if (res.status === 405) {
-                     throw new Error(`Lỗi Method (405) tại ${url}. Bạn có thể đang gọi vào trang tĩnh thay vì Worker.`);
-                 }
-                 throw new Error(`Lỗi Server (${res.status}): Nhận về HTML thay vì JSON.`);
-            }
-            throw new Error(`Lỗi Server (Không phải JSON): ${text.substring(0, 100)}...`);
+            throw new Error(`Phản hồi máy chủ không hợp lệ`);
         }
         
         if (!res.ok) {
-            throw new Error(data.message || `Yêu cầu thất bại (${res.status})`);
+            // Prefer short message
+            const msg = data.error?.message || data.message || `Lỗi (${res.status})`;
+            throw new Error(msg);
         }
         return data;
     } catch (err: any) {
         clearTimeout(timeoutId);
-        throw err;
+        // Normalize error message
+        let msg = err.message || "Lỗi kết nối";
+        if (msg.includes("aborted") || msg.includes("signal")) msg = "Hết thời gian chờ kết nối";
+        if (msg.includes("Failed to fetch")) msg = "Không thể kết nối tới máy chủ";
+        
+        throw new Error(msg);
     }
 };
 
@@ -147,7 +159,7 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
                 body: JSON.stringify({ action: 'auth' })
             });
             token = authData.token;
-            if (!token) throw new Error("Auth Failed: No token returned.");
+            if (!token) throw new Error("Không lấy được xác thực.");
             console.log(`[Client] Token Received from Backend.`);
         } else {
             console.log(`[Client] Step 1: Using Hardcoded Token (Instant).`);
@@ -204,15 +216,15 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
                 }
                 
                 if (checkData.status === 'failed') {
-                    throw new Error(checkData.message || "Generation Failed");
+                    throw new Error("Quá trình tạo video thất bại.");
                 }
             } catch (e: any) {
                 console.warn(`[Client] Poll Error (Will retry):`, e.message);
-                if (attempts > 5 && e.message.includes('Server Error')) throw e;
+                if (attempts > 10 && (e.message.includes('Server Error') || e.message.includes('500'))) throw new Error("Lỗi máy chủ khi kiểm tra trạng thái.");
             }
         }
 
-        throw new Error("Timeout: Video took too long to generate.");
+        throw new Error("Hết thời gian chờ tạo video.");
 
     } catch (err: any) {
         console.error("[Video Service Error]", err);
@@ -266,11 +278,11 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
             }
 
             if (checkData.status === 'failed') {
-                throw new Error(checkData.message || "Upscale Failed");
+                throw new Error("Quá trình nâng cấp video thất bại.");
             }
         }
         
-        throw new Error("Timeout: Video upscale took too long.");
+        throw new Error("Hết thời gian chờ nâng cấp video.");
 
     } catch (err: any) {
         console.error("[Upscale Error]", err);

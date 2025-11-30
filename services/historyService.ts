@@ -10,17 +10,23 @@ const uploadToStorage = async (userId: string, dataUrlOrBase64: string, folder: 
     try {
         if (!dataUrlOrBase64) return null;
 
-        // Check if it's a remote URL (e.g., from Video generation API)
-        if (dataUrlOrBase64.startsWith('http')) {
-            // Optimization: If we could fetch and upload to our own storage, that would be better for persistence.
-            // For now, we assume external URLs are valid.
-            return dataUrlOrBase64; 
-        }
-
         let blob: Blob;
 
+        // Check if it's a remote URL (e.g., from Video generation API or Google Image)
+        if (dataUrlOrBase64.startsWith('http')) {
+            // CRITICAL: We must fetch the file content because the generated URL is often temporary (expires).
+            // By fetching and uploading to our Supabase Storage, we persist it forever in history.
+            try {
+                const response = await fetch(dataUrlOrBase64);
+                if (!response.ok) throw new Error("Failed to fetch remote asset");
+                blob = await response.blob();
+            } catch (err) {
+                console.warn("Could not fetch remote URL for persistence, using original URL:", err);
+                return dataUrlOrBase64; // Fallback to original URL if fetch fails
+            }
+        } 
         // Handle Base64 Data URI
-        if (dataUrlOrBase64.startsWith('data:')) {
+        else if (dataUrlOrBase64.startsWith('data:')) {
             const arr = dataUrlOrBase64.split(',');
             const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
             const bstr = atob(arr[1]);
@@ -41,12 +47,15 @@ const uploadToStorage = async (userId: string, dataUrlOrBase64: string, folder: 
         }
 
         const fileExt = blob.type.split('/')[1] || 'png';
-        const fileName = `${userId}/${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        // Handle case where mime type is video/mp4 but split gives mp4
+        const extension = fileExt === 'quicktime' ? 'mov' : (fileExt === 'mpeg' ? 'mp3' : fileExt);
+        
+        const fileName = `${userId}/${folder}/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${extension}`;
 
         const { error: uploadError } = await supabase.storage
             .from(BUCKET_NAME)
             .upload(fileName, blob, {
-                cacheControl: '3600',
+                cacheControl: '31536000', // 1 year cache
                 upsert: false
             });
 
@@ -111,7 +120,7 @@ export const addToHistory = async (item: {
             return;
         }
 
-        // 1. Upload Result Media (if it's not already a permanent URL)
+        // 1. Upload Result Media (Performs deep copy to Supabase Storage)
         const persistentMediaUrl = await uploadToStorage(user.id, resultData, 'results');
         
         if (!persistentMediaUrl) {

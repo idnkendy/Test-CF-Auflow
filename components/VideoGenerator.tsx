@@ -94,6 +94,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
     const [currentMediaId, setCurrentMediaId] = useState<string | null>(null);
     const [isUpscaling, setIsUpscaling] = useState(false);
     const [upscaledVideoUrl, setUpscaledVideoUrl] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
@@ -170,7 +171,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
             // If no job was created (e.g., DB error after payment), we must refund immediately
             if (!jobId && logId) {
-                throw new Error("Không thể khởi tạo tác vụ (DB Error). Đang hoàn tiền...");
+                throw new Error("Không thể khởi tạo tác vụ (DB Error).");
             }
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
@@ -194,6 +195,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', url);
 
+            // Save original to history
             await historyService.addToHistory({
                 tool: Tool.VideoGeneration,
                 prompt,
@@ -203,21 +205,24 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
         } catch (err: any) {
             console.error("[Video UI] Lỗi tạo video:", err);
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
             
-            if (errorMessage.includes('Quá thời gian chờ') || errorMessage.includes('Timeout')) {
-                errorMessage = "Hệ thống đang bận hoặc quá thời gian chờ. Vui lòng thử lại.";
-            } 
+            // CLEAN ERROR MESSAGE DISPLAY
+            let safeErrorMsg = err.message || '';
+            // If the error message is too technical (contains JSON/HTML), simplify it
+            if (safeErrorMsg.includes('{') || safeErrorMsg.includes('<') || safeErrorMsg.length > 200) {
+                safeErrorMsg = "Đã xảy ra lỗi kỹ thuật khi xử lý video.";
+            }
             
-            onStateChange({ error: errorMessage });
+            const finalErrorMessage = `${safeErrorMsg} Xin vui lòng thử lại sau.`;
+            onStateChange({ error: finalErrorMessage });
 
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, finalErrorMessage);
 
             // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 console.log("[Video UI] Đang hoàn tiền do lỗi...");
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi khi tạo video (${errorMessage})`);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi khi tạo video (${safeErrorMsg})`);
             }
 
         } finally {
@@ -246,6 +251,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
             const upscaledUrl = await externalVideoService.upscaleVideoExternal(currentMediaId);
             setUpscaledVideoUrl(upscaledUrl);
             
+            // Save upscaled version to history
             await historyService.addToHistory({
                 tool: Tool.VideoGeneration,
                 prompt: prompt + " (Upscaled 1080p)",
@@ -254,19 +260,42 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
             });
 
         } catch (err: any) {
-            onStateChange({ error: `Lỗi Upscale: ${err.message}` });
+            let msg = err.message;
+            if (msg.includes('{') || msg.includes('<')) msg = "Lỗi kỹ thuật.";
+            onStateChange({ error: `Lỗi Upscale: ${msg} Xin vui lòng thử lại sau.` });
         } finally {
             setIsUpscaling(false);
         }
     };
 
-    const handleDownload = (url: string, filename: string) => {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    const handleDownload = async (url: string, filename: string) => {
+        setIsDownloading(true);
+        try {
+            // Fetch as blob to force download instead of opening in new tab
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Clean up
+            URL.revokeObjectURL(blobUrl);
+        } catch (e) {
+            console.error("Force download failed, falling back to URL open:", e);
+            // Fallback for cross-origin issues
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.target = "_blank";
+            link.click();
+        } finally {
+            setIsDownloading(false);
+        }
     };
 
     return (
@@ -406,7 +435,12 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                          {generatedVideoUrl && !isLoading && (
                              <div className="mt-4 flex flex-col gap-3">
                                  <div className="flex gap-2">
-                                    <button onClick={() => handleDownload(generatedVideoUrl, "generated-video.mp4")} className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors">
+                                    <button 
+                                        onClick={() => handleDownload(generatedVideoUrl, "generated-video.mp4")} 
+                                        disabled={isDownloading}
+                                        className="flex-1 bg-gray-600 hover:bg-gray-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2"
+                                    >
+                                        {isDownloading ? <Spinner /> : <span className="material-symbols-outlined">download</span>}
                                         Tải xuống Video
                                     </button>
                                     
@@ -427,9 +461,10 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                                  {upscaledVideoUrl && (
                                      <button 
                                         onClick={() => handleDownload(upscaledVideoUrl, "upscaled-1080p-video.mp4")}
+                                        disabled={isDownloading}
                                         className="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 animate-fade-in"
                                      >
-                                         <span className="material-symbols-outlined">download</span>
+                                         {isDownloading ? <Spinner /> : <span className="material-symbols-outlined">download</span>}
                                          Tải xuống Video 1080p
                                      </button>
                                  )}

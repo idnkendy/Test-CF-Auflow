@@ -46,6 +46,7 @@ const HistoryPanel: React.FC = () => {
     const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     useEffect(() => {
         const loadHistory = async () => {
@@ -115,21 +116,43 @@ const HistoryPanel: React.FC = () => {
     const renderModal = () => {
         if (!selectedItem) return null;
 
-        const handleDownload = () => {
+        const handleDownload = async () => {
             if (!selectedItem) return;
             const url = selectedItem.media_url || selectedItem.resultImageURL || selectedItem.resultVideoURL;
             if (!url) return;
             
             const isVideo = selectedItem.media_type === 'video' || !!selectedItem.resultVideoURL;
-
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = isVideo
+            const filename = isVideo
                 ? `ai-mastery-render-${selectedItem.id}.mp4`
                 : `ai-mastery-render-${selectedItem.id}.png`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+
+            setIsDownloading(true);
+            try {
+                // Fetch as blob to force download
+                const response = await fetch(url);
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                
+                // Cleanup
+                URL.revokeObjectURL(blobUrl);
+            } catch (e) {
+                console.error("Download failed, fallback to direct link", e);
+                // Fallback
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = filename;
+                link.target = "_blank";
+                link.click();
+            } finally {
+                setIsDownloading(false);
+            }
         };
         
         // Backwards compatibility for display
@@ -221,10 +244,11 @@ const HistoryPanel: React.FC = () => {
                             </button>
                             <button
                                 onClick={handleDownload}
+                                disabled={isDownloading}
                                 className="w-full sm:w-auto bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-2.5 px-5 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
                             >
-                                <DownloadIcon />
-                                <span>Tải xuống</span>
+                                {isDownloading ? <Spinner /> : <DownloadIcon />}
+                                <span>{isDownloading ? 'Đang tải...' : 'Tải xuống'}</span>
                             </button>
                         </div>
                     </div>
