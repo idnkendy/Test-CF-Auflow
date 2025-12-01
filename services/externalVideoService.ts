@@ -1,14 +1,6 @@
 
 import { FileData } from "../types";
 
-// [HARDCODE] Dán token mới nhất vào đây để bỏ qua bước lấy từ Backend (Step 1)
-// Token được chia nhỏ KỸ để tránh GitHub Secret Scanning chặn commit
-const P1 = "ya29.a0ATi6K2skDQEHlhWqykzF8xsy4zg9_-At9HnAux4GSTv69_7NidKIhqMXGn7FsTQvLtL5Cg_dr2fag4W-btZvcLl_IyY_jQj";
-const P2 = "LuC2eZ8BciFYD6OfyRBc1zeQEIzi0oKe8NneiilXuVWKEciBClIvg27ZrAg2A3a3LU6zOXm3VOtVRhsBOHo8PJ3TdQIyywVnBtt-";
-const P3 = "mLLge-txPMgczxHQPmDAx3qoS4r_vxoaniZYukJZfQKaAIcvtRuAgUxz0pxB2KKMeaso1ePdwuRkIxU-FJQdb3ppon9pcsKvwZfG";
-const P4 = "m1PWlZ_nGLVvWIuw0xo6xesGXSEnsy0P7DxBf42XgRKpTHaIsw4_BtP_AHl2n1wTHkx4aCgYKAccSARQSFQHGX2MiNqwPwi4lWBt9GARzx27g1Q0370";
-const HARDCODED_TOKEN = P1 + P2 + P3 + P4;
-
 // Change this if your Cloudflare Worker is hosted elsewhere
 // Leave empty if serving from same domain path /api
 // Get API URL from env var if available (Set VITE_API_URL in Cloudflare Pages Settings)
@@ -93,7 +85,7 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
         // Handle HTML responses (Cloudflare/Vercel errors) gracefully
         if (text.trim().startsWith("<") || text.includes("<!DOCTYPE") || text.includes("<html")) {
              if (res.status === 404) {
-                 throw new Error(`Không tìm thấy dịch vụ API (404)`);
+                 throw new Error(`Không tìm thấy dịch vụ API (404). Kiểm tra biến môi trường VITE_API_URL.`);
              }
              if (res.status === 405) {
                  throw new Error(`Phương thức không hợp lệ (405)`);
@@ -148,22 +140,16 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
     }
 
     try {
-        // Step 1: Auth
-        let token = HARDCODED_TOKEN;
-
-        if (!token) {
-            console.log(`[Client] Step 1: Getting Auth Token from Backend...`);
-            const authData = await fetchJson('/auth', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'auth' })
-            });
-            token = authData.token;
-            if (!token) throw new Error("Không lấy được xác thực.");
-            console.log(`[Client] Token Received from Backend.`);
-        } else {
-            console.log(`[Client] Step 1: Using Hardcoded Token (Instant).`);
-        }
+        // Step 1: Auth (Always fetch from backend now to get KV token)
+        console.log(`[Client] Step 1: Fetching Dynamic Token from Backend (KV)...`);
+        const authData = await fetchJson('/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'auth' })
+        });
+        const token = authData.token;
+        if (!token) throw new Error("Hệ thống chưa được cấu hình Token. Vui lòng liên hệ Admin.");
+        console.log(`[Client] Token Received.`);
 
         // Step 2: Upload (If needed)
         let mediaId = null;
@@ -238,15 +224,13 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
     console.log("==========================================================");
 
     try {
-        let token = HARDCODED_TOKEN;
-        if (!token) {
-             const authData = await fetchJson('/auth', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'auth' })
-            });
-            token = authData.token;
-        }
+        // Fetch token dynamically
+        const authData = await fetchJson('/auth', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'auth' })
+        });
+        const token = authData.token;
 
         // Trigger Upscale
         const triggerData = await fetchJson('/upscale', {

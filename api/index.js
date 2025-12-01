@@ -1,13 +1,10 @@
 
-// --- CẤU HÌNH (TOKEN MỚI NHẤT) ---
-const PROJECT_ID = "eb9c4bc9-54aa-4068-b146-c0a8076f7d7a";
+// --- CẤU HÌNH ---
+// Lấy các biến này từ Cloudflare Worker Settings (Environment Variables)
+// CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN
+// ADMIN_SECRET (Để bảo vệ endpoint update_token)
 
-// Token mới nhất
-const T1 = "ya29.a0ATi6K2skDQEHlhWqykzF8xsy4zg9_-At9HnAux4GSTv69_7NidKIhqMXGn7FsTQvLtL5Cg_dr2fag4W-btZvcLl_IyY_jQj";
-const T2 = "LuC2eZ8BciFYD6OfyRBc1zeQEIzi0oKe8NneiilXuVWKEciBClIvg27ZrAg2A3a3LU6zOXm3VOtVRhsBOHo8PJ3TdQIyywVnBtt-";
-const T3 = "mLLge-txPMgczxHQPmDAx3qoS4r_vxoaniZYukJZfQKaAIcvtRuAgUxz0pxB2KKMeaso1ePdwuRkIxU-FJQdb3ppon9pcsKvwZfG";
-const T4 = "m1PWlZ_nGLVvWIuw0xo6xesGXSEnsy0P7DxBf42XgRKpTHaIsw4_BtP_AHl2n1wTHkx4aCgYKAccSARQSFQHGX2MiNqwPwi4lWBt9GARzx27g1Q0370";
-const FALLBACK_TOKEN = T1 + T2 + T3 + T4;
+const PROJECT_ID = "eb9c4bc9-54aa-4068-b146-c0a8076f7d7a";
 
 const HEADERS = {
     'content-type': 'text/plain;charset=UTF-8',
@@ -16,8 +13,56 @@ const HEADERS = {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 };
 
-async function getAccessToken() {
-    return FALLBACK_TOKEN;
+// Hàm xin Token mới từ Google bằng Refresh Token (Cơ chế 1: Chính thống)
+async function refreshAccessToken(env) {
+    console.log("[Auth] Refreshing Access Token via OAuth...");
+    
+    if (!env.CLIENT_ID || !env.CLIENT_SECRET || !env.REFRESH_TOKEN) {
+        throw new Error("Missing OAuth Environment Variables");
+    }
+
+    const response = await fetch('https://oauth2.googleapis.com/token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+            client_id: env.CLIENT_ID,
+            client_secret: env.CLIENT_SECRET,
+            refresh_token: env.REFRESH_TOKEN,
+            grant_type: 'refresh_token'
+        })
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+        throw new Error(`Failed to refresh token: ${data.error_description || data.error}`);
+    }
+
+    const newAccessToken = data.access_token;
+    await env.VIDEO_KV.put('GOOGLE_TOKEN', newAccessToken, { expirationTtl: 3000 });
+    return newAccessToken;
+}
+
+// Hàm lấy Token: Ưu tiên Cache KV -> Refresh Token
+async function getAccessToken(env) {
+    try {
+        // 1. Thử lấy từ KV (Token này có thể do Python Script bơm vào hoặc do lần refresh trước)
+        const kvToken = await env.VIDEO_KV.get('GOOGLE_TOKEN');
+        if (kvToken) {
+            return kvToken;
+        }
+        
+        // 2. Nếu không có trong KV, thử dùng Refresh Token (nếu đã cấu hình)
+        if (env.REFRESH_TOKEN) {
+             return await refreshAccessToken(env);
+        }
+
+        throw new Error("No token available. Please run the Python Helper script or configure OAuth.");
+
+    } catch (e) {
+        console.error("Auth Error:", e);
+        throw e;
+    }
 }
 
 async function uploadImage(token, base64Data) {
@@ -33,8 +78,7 @@ async function uploadImage(token, base64Data) {
         "clientContext": { "sessionId": ";" + Date.now(), "tool": "ASSET_MANAGER" }
     };
 
-    // Keep v1:uploadUserImage as it likely maps to a root verb
-    const res = await fetch('https://aisandbox-pa.googleapis.com/v1:uploadUserImage', {
+    const res = await fetch('https://aisandbox-pa.googleapis.com/v1/uploadUserImage', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
@@ -46,7 +90,9 @@ async function uploadImage(token, base64Data) {
     }
     const data = await res.json();
     
+    // Handle various response formats from Google
     let mediaId = data.mediaGenerationId?.mediaGenerationId || data.mediaGenerationId || data.imageOutput?.image?.id;
+    
     if (!mediaId) throw new Error("No mediaId found in upload response");
     return mediaId;
 }
@@ -71,7 +117,6 @@ async function triggerGeneration(token, prompt, mediaId) {
         }]
     };
 
-    // FIXED URL: Changed v1:video to v1/video
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
@@ -94,7 +139,6 @@ async function triggerGeneration(token, prompt, mediaId) {
 async function triggerUpscale(token, mediaId) {
     const sceneId = crypto.randomUUID();
     
-    // Using the payload structure from the python snippet
     const payload = {
         "requests": [{
             "aspectRatio": "VIDEO_ASPECT_RATIO_LANDSCAPE",
@@ -108,8 +152,6 @@ async function triggerUpscale(token, mediaId) {
         }
     };
 
-    // Using the exact endpoint from python snippet (converted to standard URL format if needed, but keeping original structure mostly)
-    // Note: Python used v1/video:batchAsyncGenerateVideoUpsampleVideo
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoUpsampleVideo', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
@@ -138,7 +180,6 @@ async function checkStatus(token, task_id, scene_id) {
         }]
     };
 
-    // FIXED URL: Changed v1:video to v1/video
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
@@ -158,7 +199,6 @@ async function checkStatus(token, task_id, scene_id) {
                      opResult.videoFiles?.[0]?.url || 
                      opResult.response?.videoUrl;
         
-        // Extract Media ID for potential upscaling
         let mediaId = opResult.response?.id || 
                       opResult.operation?.response?.id ||
                       opResult.mediaGenerationId;
@@ -176,101 +216,98 @@ async function checkStatus(token, task_id, scene_id) {
 
 export default {
     async fetch(request, env, ctx) {
-        // --- CORS Headers ---
         const corsHeaders = {
             'Access-Control-Allow-Origin': '*',
             'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
         };
 
-        // Handle OPTIONS request
         if (request.method === 'OPTIONS') {
             return new Response(null, { headers: corsHeaders });
         }
 
-        // Helper to send JSON response
         const sendJson = (data, status = 200) => {
             return new Response(JSON.stringify(data), {
                 status: status,
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...corsHeaders
-                }
+                headers: { 'Content-Type': 'application/json', ...corsHeaders }
             });
         };
 
         try {
-            // --- Parse Body ---
             let body = {};
             try {
                 if (request.method !== 'GET' && request.method !== 'HEAD') {
                     body = await request.json();
                 }
-            } catch (e) {
-                // Ignore if body is empty or not JSON
-            }
+            } catch (e) {}
 
-            // --- Determine Action ---
             const url = new URL(request.url);
             const path = url.pathname;
             let action = body.action || '';
 
-            // Map URL paths to actions if action not provided in body.
-            // This logic is lenient to work with both direct Worker URLs (/) and routed URLs (/api/...)
+            // Routing
             if (!action) {
                 if (path.includes('/auth')) action = 'auth';
+                else if (path.includes('/update-token')) action = 'update_token'; // Endpoint for Python script
                 else if (path.includes('/upload')) action = 'upload';
                 else if (path.includes('/create')) action = 'create';
                 else if (path.includes('/upscale')) action = 'upscale';
                 else if (path.includes('/check')) action = 'check';
-                // Also check query params as fallback
-                else if (url.searchParams.get('action')) action = url.searchParams.get('action');
             }
 
-            // --- ROUTER ---
+            // --- API HANDLERS ---
+
             if (action === 'auth') {
-                const token = await getAccessToken();
+                const token = await getAccessToken(env);
                 return sendJson({ token });
-            } 
+            }
+            
+            // ACTION: UPDATE TOKEN (Called by Python Script)
+            else if (action === 'update_token') {
+                const { token, secret } = body;
+                // Bảo mật cơ bản: Kiểm tra secret key
+                const adminSecret = env.ADMIN_SECRET || "opzen_admin_secret_123";
+                
+                if (secret !== adminSecret) {
+                    return sendJson({ error: "Unauthorized: Sai Admin Secret" }, 401);
+                }
+                
+                if (!token) return sendJson({ error: "Token is empty" }, 400);
+
+                await env.VIDEO_KV.put('GOOGLE_TOKEN', token);
+                return sendJson({ success: true, message: "Token đã được cập nhật thành công từ Python Script" });
+            }
+
             else if (action === 'upload') {
-                const { token, image } = body;
-                const activeToken = token || await getAccessToken();
-                const mediaId = await uploadImage(activeToken, image);
+                const { image } = body;
+                const token = await getAccessToken(env);
+                const mediaId = await uploadImage(token, image);
                 return sendJson({ mediaId });
             }
             else if (action === 'create') {
-                const { token, prompt, mediaId } = body;
-                const activeToken = token || await getAccessToken();
-                const result = await triggerGeneration(activeToken, prompt, mediaId);
+                const { prompt, mediaId } = body;
+                const token = await getAccessToken(env);
+                const result = await triggerGeneration(token, prompt, mediaId);
                 return sendJson(result);
             }
             else if (action === 'upscale') {
-                const { token, mediaId } = body;
-                const activeToken = token || await getAccessToken();
-                const result = await triggerUpscale(activeToken, mediaId);
+                const { mediaId } = body;
+                const token = await getAccessToken(env);
+                const result = await triggerUpscale(token, mediaId);
                 return sendJson(result);
             }
             else if (action === 'check') {
-                const { task_id, scene_id, token } = body;
-                const activeToken = token || await getAccessToken();
-                const result = await checkStatus(activeToken, task_id, scene_id);
+                const { task_id, scene_id } = body;
+                const token = await getAccessToken(env);
+                const result = await checkStatus(token, task_id, scene_id);
                 return sendJson(result);
             }
             else {
-                // Return generic info for root to confirm worker is alive
-                return sendJson({ 
-                    status: "ok", 
-                    message: "Cloudflare Worker is running", 
-                    request_path: path,
-                    detected_action: action || "none"
-                }, 200);
+                return sendJson({ status: "ok", message: "Video API Worker Running" }, 200);
             }
 
         } catch (error) {
-            return sendJson({ 
-                error: true, 
-                message: error.message || String(error)
-            }, 500);
+            return sendJson({ error: true, message: error.message || String(error) }, 500);
         }
     }
 };

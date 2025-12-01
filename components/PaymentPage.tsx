@@ -63,15 +63,17 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
     const [isSimulating, setIsSimulating] = useState(false);
 
     const originalPrice = plan.price;
-    const finalPrice = originalPrice * (1 - appliedDiscount / 100);
+    // Fix: Round final price to avoid floating point issues in QR/DB (VND is integer)
+    const finalPrice = Math.round(originalPrice * (1 - appliedDiscount / 100));
 
     // 1. Khởi tạo giao dịch Pending
     useEffect(() => {
         const initTransaction = async () => {
             setIsCreatingTx(true);
-            setTransactionData(null); // Clear old data to show loading
+            setTransactionData(null); // Clear old data immediately to prevent showing wrong QR
             setInitError(null);
             try {
+                // Pass rounded finalPrice
                 const result = await paymentService.createPendingTransaction(user.id, plan, finalPrice);
                 setTransactionData({
                     id: result.transactionId,
@@ -86,8 +88,9 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
             }
         };
 
+        // Added finalPrice to dependencies to ensure re-run when price changes
         initTransaction();
-    }, [plan.id, appliedDiscount, user.id]);
+    }, [plan.id, finalPrice, user.id]);
 
     // 2. Lắng nghe Realtime
     useEffect(() => {
@@ -107,8 +110,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
         
         try {
             const percent = await paymentService.checkVoucher(code);
-            // Quan trọng: Clear data cũ để force tạo giao dịch mới
-            setTransactionData(null); 
+            setTransactionData(null); // Clear UI while recalculating
             setAppliedDiscount(percent);
         } catch (err: any) {
             setVoucherError(err.message || 'Mã giảm giá không hợp lệ.');
@@ -119,8 +121,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
     };
 
     const handleRemoveVoucher = () => {
-        // Quan trọng: Clear data cũ để force tạo giao dịch mới
-        setTransactionData(null);
+        setTransactionData(null); // Clear UI while recalculating
         setAppliedDiscount(0);
         setVoucherCode('');
     };
@@ -415,7 +416,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                             {appliedDiscount > 0 && (
                                 <div className="flex justify-between text-sm text-green-600 dark:text-green-400">
                                     <span>Giảm giá ({appliedDiscount}%)</span>
-                                    <span>- {new Intl.NumberFormat('vi-VN').format(originalPrice * appliedDiscount / 100)} ₫</span>
+                                    <span>- {new Intl.NumberFormat('vi-VN').format(Math.round(originalPrice * appliedDiscount / 100))} ₫</span>
                                 </div>
                             )}
                             <div className="border-t border-border-color dark:border-gray-700 my-4"></div>

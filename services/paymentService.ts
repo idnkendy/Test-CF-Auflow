@@ -126,6 +126,9 @@ export const redeemGiftCode = async (userId: string, code: string): Promise<numb
 };
 
 export const createPendingTransaction = async (userId: string, plan: PricingPlan, amount: number) => {
+    // Force integer comparison to avoid floating point mismatch
+    const intAmount = Math.round(amount);
+
     // 1. Tìm giao dịch đang pending cũ của User cho gói này
     const { data: existingTx } = await supabase
         .from('transactions')
@@ -140,9 +143,10 @@ export const createPendingTransaction = async (userId: string, plan: PricingPlan
     if (existingTx) {
         // Kiểm tra tiền tố để đảm bảo đồng bộ (OPZ)
         const isCorrectPrefix = existingTx.transaction_code.startsWith('OPZ');
+        const existingIntAmount = Math.round(existingTx.amount);
 
         // Nếu số tiền khớp hoàn toàn VÀ đúng tiền tố -> Tái sử dụng (Idempotency)
-        if (existingTx.amount === amount && isCorrectPrefix) {
+        if (existingIntAmount === intAmount && isCorrectPrefix) {
             console.log(`[Payment] Reusing existing pending transaction: ${existingTx.transaction_code}`);
             return {
                 transactionId: existingTx.id,
@@ -158,7 +162,7 @@ export const createPendingTransaction = async (userId: string, plan: PricingPlan
             .eq('id', existingTx.id);
     }
 
-    // 2. Dọn dẹp các giao dịch 'pending' khác
+    // 2. Dọn dẹp các giao dịch 'pending' khác (để tránh spam QR code rác)
     await supabase
         .from('transactions')
         .update({ status: 'cancelled' })
@@ -174,7 +178,7 @@ export const createPendingTransaction = async (userId: string, plan: PricingPlan
             user_id: userId,
             plan_id: plan.id,
             plan_name: plan.name,
-            amount: amount,
+            amount: intAmount, // Store integer
             currency: plan.currency,
             type: plan.type,
             credits_added: plan.credits || 0,
