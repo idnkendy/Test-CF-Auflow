@@ -60,7 +60,6 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
     // Transaction State
     const [transactionData, setTransactionData] = useState<{id: string, code: string, amount: number} | null>(null);
     const [isPaid, setIsPaid] = useState(false);
-    const [isSimulating, setIsSimulating] = useState(false);
 
     const originalPrice = plan.price;
     // Fix: Round final price to avoid floating point issues in QR/DB (VND is integer)
@@ -130,39 +129,6 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
         navigator.clipboard.writeText(text);
         setCopiedField(field);
         setTimeout(() => setCopiedField(null), 2000);
-    };
-
-    const handleSimulateSuccess = async () => {
-        if (!transactionData) return;
-        
-        if (transactionData.id.startsWith('mock-tx-')) {
-            setIsPaid(true);
-            return;
-        }
-
-        setIsSimulating(true);
-        try {
-            const success = await paymentService.simulateSePayWebhook(transactionData.id);
-            if (success) {
-                setIsPaid(true);
-            } else {
-                alert("Mô phỏng không thay đổi được trạng thái. Giao dịch có thể đã hoàn thành hoặc không tìm thấy.");
-            }
-        } catch (e: any) {
-            console.error(e);
-            if (e.message === "MISSING_RPC") {
-                const confirmed = window.confirm(
-                    "LỖI: Chưa cấu hình hàm Backend!\n\n" +
-                    "Bạn cần chạy đoạn SQL tạo hàm 'approve_transaction_test' trong Supabase SQL Editor để tính năng này hoạt động.\n\n" +
-                    "Bạn có muốn 'Giả lập thành công' trên giao diện ngay bây giờ để test UI không?"
-                );
-                if (confirmed) setIsPaid(true);
-            } else {
-                alert("Lỗi kết nối khi gọi giả lập: " + e.message);
-            }
-        } finally {
-            setIsSimulating(false);
-        }
     };
 
     const qrUrl = transactionData 
@@ -320,21 +286,6 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                                     <Spinner /> 
                                     <span>Đang chờ ngân hàng xác nhận... (Tự động làm mới)</span>
                                  </div>
-                                 
-                                 {/* DEV TOOL: Explicitly marked for testing backend */}
-                                 {transactionData && (
-                                    <div className="mt-4 p-2 border border-dashed border-gray-300 dark:border-gray-700 rounded-lg flex flex-col items-center opacity-70 hover:opacity-100 transition-opacity">
-                                        <p className="text-[10px] text-gray-400 uppercase tracking-wider font-bold mb-1">Dành cho Nhà phát triển (Dev Tools)</p>
-                                        <button
-                                            onClick={handleSimulateSuccess}
-                                            disabled={isSimulating}
-                                            className="text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300 px-3 py-1.5 rounded hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors flex items-center gap-2"
-                                        >
-                                            {isSimulating && <Spinner />}
-                                            [DEV] Mô phỏng Webhook từ Backend
-                                        </button>
-                                    </div>
-                                 )}
                             </div>
                         </div>
                     </div>

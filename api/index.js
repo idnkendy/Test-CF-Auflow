@@ -3,6 +3,7 @@
 // Lấy các biến này từ Cloudflare Worker Settings (Environment Variables)
 // CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN
 // ADMIN_SECRET (Để bảo vệ endpoint update_token)
+// SUPABASE_URL, SUPABASE_SERVICE_KEY (Để xử lý Webhook thanh toán)
 
 const PROJECT_ID = "eb9c4bc9-54aa-4068-b146-c0a8076f7d7a";
 
@@ -214,6 +215,61 @@ async function checkStatus(token, task_id, scene_id) {
     return { status: 'processing' };
 }
 
+// Hàm xử lý Webhook từ SePay (Không cần token, dùng Service Key của Supabase)
+async function handleSePayWebhook(request, env) {
+    try {
+        const body = await request.json();
+        console.log("[Webhook] Received SePay data:", JSON.stringify(body));
+
+        // SePay body example: { "gateway": "MBBank", "transactionDate": "...", "accountNumber": "...", "subAccount": null, "code": null, "content": "OPZ123456 chuyen tien", "transferType": "in", "description": "...", "transferAmount": 50000, "referenceCode": "..." }
+        // Cần lấy: 'content' (nội dung chuyển khoản chứa mã OPZ) và 'transferAmount' (số tiền)
+        
+        const content = body.content || body.description || "";
+        const amount = body.transferAmount || body.amount || 0;
+
+        // Trích xuất mã giao dịch (OPZxxxxxx) từ nội dung
+        const match = content.match(/OPZ\d+/i);
+        const transactionCode = match ? match[0].toUpperCase() : null;
+
+        if (!transactionCode) {
+            return new Response(JSON.stringify({ success: false, message: "No transaction code found" }), { status: 200 });
+        }
+
+        if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
+            throw new Error("Missing Supabase Config in Worker");
+        }
+
+        // Gọi RPC của Supabase để xử lý giao dịch an toàn (Sử dụng Service Key)
+        const rpcUrl = `${env.SUPABASE_URL}/rest/v1/rpc/webhook_approve_transaction`;
+        const response = await fetch(rpcUrl, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'apikey': env.SUPABASE_SERVICE_KEY,
+                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`
+            },
+            body: JSON.stringify({
+                p_transaction_code: transactionCode,
+                p_amount: amount
+            })
+        });
+
+        const result = await response.json();
+        
+        if (!response.ok) {
+            console.error("[Webhook] Supabase RPC Error:", result);
+            return new Response(JSON.stringify({ success: false, error: result }), { status: 500 });
+        }
+
+        console.log("[Webhook] Success:", result);
+        return new Response(JSON.stringify(result), { status: 200 });
+
+    } catch (e) {
+        console.error("[Webhook] Error:", e);
+        return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
+    }
+}
+
 export default {
     async fetch(request, env, ctx) {
         const corsHeaders = {
@@ -224,6 +280,14 @@ export default {
 
         if (request.method === 'OPTIONS') {
             return new Response(null, { headers: corsHeaders });
+        }
+
+        const url = new URL(request.url);
+        const path = url.pathname;
+
+        // --- PUBLIC WEBHOOK ROUTE (Bypass Auth Check) ---
+        if (path.includes('/sepay-webhook')) {
+            return handleSePayWebhook(request, env);
         }
 
         const sendJson = (data, status = 200) => {
@@ -241,14 +305,12 @@ export default {
                 }
             } catch (e) {}
 
-            const url = new URL(request.url);
-            const path = url.pathname;
             let action = body.action || '';
 
-            // Routing
+            // Routing for legacy paths
             if (!action) {
                 if (path.includes('/auth')) action = 'auth';
-                else if (path.includes('/update-token')) action = 'update_token'; // Endpoint for Python script
+                else if (path.includes('/update-token')) action = 'update_token';
                 else if (path.includes('/upload')) action = 'upload';
                 else if (path.includes('/create')) action = 'create';
                 else if (path.includes('/upscale')) action = 'upscale';
@@ -262,10 +324,8 @@ export default {
                 return sendJson({ token });
             }
             
-            // ACTION: UPDATE TOKEN (Called by Python Script)
             else if (action === 'update_token') {
                 const { token, secret } = body;
-                // Bảo mật cơ bản: Kiểm tra secret key
                 const adminSecret = env.ADMIN_SECRET || "opzen_admin_secret_123";
                 
                 if (secret !== adminSecret) {
