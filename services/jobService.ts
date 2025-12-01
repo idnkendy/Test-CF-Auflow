@@ -51,24 +51,11 @@ export const updateJobStatus = async (jobId: string, status: 'pending' | 'proces
     }
 };
 
+// Deprecated: Client no longer has access to API Keys. This function does nothing.
 export const updateJobApiKey = async (jobId: string, apiKey: string) => {
-    try {
-        // Only update if jobId is provided
-        if (!jobId) return;
-        
-        const { error } = await supabase
-            .from('generation_jobs')
-            .update({ api_key_used: apiKey })
-            .eq('id', jobId);
-            
-        if (error) {
-             // Sử dụng debug để tránh spam console nếu lỗi không quan trọng
-             console.debug("Error logging API key usage:", error.message);
-        }
-            
-    } catch (e) {
-        console.error("Error logging API key usage:", e);
-    }
+    // No-op to prevent client-side key leakage
+    // Key tracking should be moved to server-side if needed
+    return;
 };
 
 export const getQueuePosition = async (jobId: string): Promise<number> => {

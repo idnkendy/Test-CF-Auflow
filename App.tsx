@@ -58,7 +58,16 @@ const App: React.FC = () => {
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
-  const [activeTool, setActiveTool] = useState<Tool>(Tool.ArchitecturalRendering);
+  
+  // FIX: Initialize activeTool from localStorage to persist state on reload
+  const [activeTool, setActiveTool] = useState<Tool>(() => {
+      const savedTool = localStorage.getItem('activeTool');
+      // Validate if saved tool exists in enum to prevent errors
+      return (savedTool && Object.values(Tool).includes(savedTool as Tool)) 
+        ? (savedTool as Tool) 
+        : Tool.ArchitecturalRendering;
+  });
+
   const [toolStates, setToolStates] = useState<ToolStates>(initialToolStates);
   const [theme, setTheme] = useState<'light' | 'dark'>('dark'); 
   const [userStatus, setUserStatus] = useState<UserStatus | null>(null);
@@ -68,6 +77,11 @@ const App: React.FC = () => {
   const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null);
   // State to remember plan if user selects it while logged out
   const [pendingPlan, setPendingPlan] = useState<PricingPlan | null>(null);
+
+  // FIX: Persist activeTool whenever it changes
+  useEffect(() => {
+      localStorage.setItem('activeTool', activeTool);
+  }, [activeTool]);
 
   // Check for pending tab focus to auto-login after email verification
   useEffect(() => {
@@ -120,8 +134,15 @@ const App: React.FC = () => {
           } else if (path === '/') {
               // Allow homepage even if logged in
               setView('homepage');
-          } else if (path === '/feature' && session) {
-              setView('app');
+          } else if (path === '/feature') {
+              // FIX: Strict check for session on popstate to /feature
+              if (session) {
+                  setView('app');
+              } else {
+                  // If backing into feature without session, force home
+                  safeHistoryReplace('/');
+                  setView('homepage');
+              }
           }
       };
 
@@ -164,15 +185,24 @@ const App: React.FC = () => {
                 else if (window.location.pathname === '/pricing') {
                     setView('pricing');
                 }
-                // PRIORITY 4: Default App View on Initial Load if logged in and not on homepage/pricing
-                else if (window.location.pathname === '/' || window.location.pathname === '/feature') {
+                // PRIORITY 4: App View ONLY if specifically on /feature
+                else if (window.location.pathname === '/feature') {
                      setView('app');
+                }
+                // PRIORITY 5: If on root ('/'), stay on Homepage even if logged in (Standard SaaS behavior)
+                // This fixes the "URL mismatch" issue.
+                else {
+                    setView('homepage');
                 }
             }
         } else {
             // Not logged in
             if (window.location.pathname === '/pricing') {
                 setView('pricing');
+            } else if (window.location.pathname === '/feature') {
+                // FIX: If trying to access feature without auth on load, redirect to home
+                safeHistoryReplace('/');
+                setView('homepage');
             }
         }
         setLoadingSession(false);
@@ -183,7 +213,21 @@ const App: React.FC = () => {
 
   // 2. AUTH STATE LISTENER (Runs when auth state or view changes)
   useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      
+      // FIX: Handle SIGNED_OUT explicitly to clear state cleanly
+      if (event === 'SIGNED_OUT') {
+          setSession(null);
+          setUserStatus(null);
+          setSelectedPlan(null);
+          // Don't rely on 'view' state here to avoid race conditions, force homepage
+          if (window.location.pathname === '/feature' || window.location.pathname === '/payment') {
+              setView('homepage');
+              safeHistoryReplace('/');
+          }
+          return;
+      }
+
       setSession(session);
       
       if (session) {
@@ -208,6 +252,7 @@ const App: React.FC = () => {
           // Logged out
           if (view === 'app' || view === 'payment') {
               setView('homepage');
+              safeHistoryPush('/');
           }
       }
       setLoadingSession(false);
@@ -215,6 +260,14 @@ const App: React.FC = () => {
 
     return () => subscription.unsubscribe();
   }, [pendingPlan, view]);
+
+  // FIX: Safety Guard - Redirect if on feature page without session
+  useEffect(() => {
+      if (!loadingSession && !session && window.location.pathname === '/feature') {
+           setView('homepage');
+           safeHistoryReplace('/');
+      }
+  }, [loadingSession, session]);
 
   // Define fetchUserStatus using useCallback to be stable
   const fetchUserStatus = useCallback(async () => {
@@ -267,12 +320,25 @@ const App: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut();
-    setView('homepage');
-    setSession(null);
-    setSelectedPlan(null);
-    localStorage.removeItem('pendingPlanId');
-    safeHistoryPush('/');
+    try {
+        // FIX: Call Supabase signOut FIRST
+        await supabase.auth.signOut();
+    } catch (error) {
+        console.error("Sign out error:", error);
+    } finally {
+        // FIX: Explicitly clear persistent tool state on logout
+        localStorage.removeItem('activeTool');
+        localStorage.removeItem('pendingPlanId');
+        
+        // THEN clear local state
+        setSession(null);
+        setUserStatus(null);
+        setSelectedPlan(null);
+        setActiveTool(Tool.ArchitecturalRendering); // Reset tool for next user
+        
+        setView('homepage');
+        safeHistoryReplace('/'); 
+    }
   };
   
   const handleGoHome = () => {
@@ -410,7 +476,7 @@ const App: React.FC = () => {
       );
   }
 
-  // LOGGED IN APP VIEW
+  // LOGGED IN APP VIEW - STRICT CHECK
   if (session && view === 'app') {
       return (
           <div className="h-[100dvh] bg-main-bg dark:bg-[#121212] font-sans text-text-primary dark:text-[#EAEAEA] flex flex-col transition-colors duration-300 overflow-hidden">

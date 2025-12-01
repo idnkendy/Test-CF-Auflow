@@ -3,7 +3,8 @@
 // Lấy các biến này từ Cloudflare Worker Settings (Environment Variables)
 // CLIENT_ID, CLIENT_SECRET, REFRESH_TOKEN
 // ADMIN_SECRET (Để bảo vệ endpoint update_token)
-// SUPABASE_URL, SUPABASE_SERVICE_KEY (Để xử lý Webhook thanh toán)
+// SUPABASE_URL, SUPABASE_SERVICE_KEY (Để xử lý Webhook thanh toán & Lấy Key)
+// GEMINI_API_KEY (KEY DỰ PHÒNG)
 
 const PROJECT_ID = "eb9c4bc9-54aa-4068-b146-c0a8076f7d7a";
 
@@ -14,7 +15,7 @@ const HEADERS = {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 };
 
-// Hàm xin Token mới từ Google bằng Refresh Token (Cơ chế 1: Chính thống)
+// Hàm xin Token mới từ Google bằng Refresh Token (Cho Video Gen - Veo)
 async function refreshAccessToken(env) {
     console.log("[Auth] Refreshing Access Token via OAuth...");
     
@@ -40,74 +41,131 @@ async function refreshAccessToken(env) {
     }
 
     const newAccessToken = data.access_token;
-    await env.VIDEO_KV.put('GOOGLE_TOKEN', newAccessToken, { expirationTtl: 3000 });
+    if (env.VIDEO_KV) {
+        await env.VIDEO_KV.put('GOOGLE_TOKEN', newAccessToken, { expirationTtl: 3000 });
+    }
     return newAccessToken;
 }
 
-// Hàm lấy Token: Ưu tiên Cache KV -> Refresh Token
+// Hàm lấy Token Video Gen
 async function getAccessToken(env) {
     try {
-        // 1. Thử lấy từ KV (Token này có thể do Python Script bơm vào hoặc do lần refresh trước)
-        const kvToken = await env.VIDEO_KV.get('GOOGLE_TOKEN');
-        if (kvToken) {
-            return kvToken;
+        if (env.VIDEO_KV) {
+            const kvToken = await env.VIDEO_KV.get('GOOGLE_TOKEN');
+            if (kvToken) return kvToken;
         }
-        
-        // 2. Nếu không có trong KV, thử dùng Refresh Token (nếu đã cấu hình)
         if (env.REFRESH_TOKEN) {
              return await refreshAccessToken(env);
         }
-
-        throw new Error("No token available. Please run the Python Helper script or configure OAuth.");
-
+        throw new Error("No token available. Please configure OAuth variables.");
     } catch (e) {
         console.error("Auth Error:", e);
         throw e;
     }
 }
 
+// --- LOGIC LẤY KEY GEMINI TỪ SUPABASE (Server-Side) ---
+async function getGeminiKeySecurely(env) {
+    // 1. Nếu có biến môi trường GEMINI_API_KEY, dùng nó làm dự phòng hoặc ưu tiên tùy logic
+    // Nhưng theo yêu cầu, ta sẽ ưu tiên lấy từ Supabase để bạn dễ quản lý "usage"
+    
+    if (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY) {
+        // Kiểm tra cache trong KV trước để đỡ tốn request gọi DB (Cache ngắn hạn 60s)
+        if (env.VIDEO_KV) {
+            const cachedKey = await env.VIDEO_KV.get('GEMINI_ACTIVE_KEY');
+            if (cachedKey) return cachedKey;
+        }
+
+        console.log("[Proxy] Fetching API Key from Supabase...");
+        try {
+            // Lấy 1 key cụ thể (ví dụ: 'google_gemini_api_key')
+            // Bạn có thể đổi tên key này trong bảng app_config trên Supabase
+            const response = await fetch(`${env.SUPABASE_URL}/rest/v1/app_config?key_name=eq.google_gemini_api_key&select=value`, {
+                headers: {
+                    'apikey': env.SUPABASE_SERVICE_KEY,
+                    'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`
+                }
+            });
+            
+            if (!response.ok) throw new Error("Failed to connect to Supabase");
+            
+            const data = await response.json();
+            
+            if (data && data.length > 0 && data[0].value) {
+                const key = data[0].value;
+                
+                // Cache key này vào KV trong 5 phút để giảm tải cho Supabase
+                if (env.VIDEO_KV) {
+                    await env.VIDEO_KV.put('GEMINI_ACTIVE_KEY', key, { expirationTtl: 300 });
+                }
+                return key;
+            }
+        } catch (e) {
+            console.error("Failed to fetch key from Supabase:", e);
+        }
+    }
+
+    // Fallback: Dùng biến môi trường nếu không lấy được từ Supabase
+    if (env.GEMINI_API_KEY) return env.GEMINI_API_KEY;
+
+    throw new Error("GEMINI_API_KEY not configured on Server (Supabase/Env)");
+}
+
+// --- PROXY HANDLER (Image/Text Generation) ---
+async function handleGeminiProxy(body, env) {
+    const { model, payload, method = 'generateContent' } = body;
+    
+    // Lấy Key an toàn từ Supabase/Env
+    const apiKey = await getGeminiKeySecurely(env);
+    
+    const version = 'v1beta'; 
+    const url = `https://generativelanguage.googleapis.com/${version}/models/${model}:${method}?key=${apiKey}`;
+
+    console.log(`[Gemini Proxy] Calling Google: ${model}:${method}`);
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(payload)
+    });
+
+    const data = await response.json();
+    
+    if (!response.ok) {
+        console.error("[Gemini Proxy] Google Error:", data);
+        // Trả lỗi về client nhưng TUYỆT ĐỐI KHÔNG trả về API Key trong message lỗi
+        const errMessage = data.error?.message || "Error from Google API";
+        const safeMessage = errMessage.replace(apiKey, 'HIDDEN_KEY');
+        throw new Error(safeMessage);
+    }
+
+    return data;
+}
+
+// --- VIDEO GENERATION FUNCTIONS (Veo) ---
 async function uploadImage(token, base64Data) {
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-
     const payload = {
-        "imageInput": { 
-            "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE", 
-            "isUserUploaded": true, 
-            "mimeType": "image/jpeg", 
-            "rawImageBytes": cleanBase64 
-        },
+        "imageInput": { "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE", "isUserUploaded": true, "mimeType": "image/jpeg", "rawImageBytes": cleanBase64 },
         "clientContext": { "sessionId": ";" + Date.now(), "tool": "ASSET_MANAGER" }
     };
-
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/uploadUserImage', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
     });
-
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Upload Failed (${res.status}): ${errText}`);
-    }
     const data = await res.json();
-    
-    // Handle various response formats from Google
     let mediaId = data.mediaGenerationId?.mediaGenerationId || data.mediaGenerationId || data.imageOutput?.image?.id;
-    
     if (!mediaId) throw new Error("No mediaId found in upload response");
     return mediaId;
 }
 
 async function triggerGeneration(token, prompt, mediaId) {
     const sceneId = crypto.randomUUID();
-    
     const payload = {
-        "clientContext": {
-            "sessionId": ";" + Date.now(),
-            "projectId": PROJECT_ID,
-            "tool": "PINHOLE",
-            "userPaygateTier": "PAYGATE_TIER_TWO"
-        },
+        "clientContext": { "sessionId": ";" + Date.now(), "projectId": PROJECT_ID, "tool": "PINHOLE", "userPaygateTier": "PAYGATE_TIER_TWO" },
         "requests": [{
             "aspectRatio": "VIDEO_ASPECT_RATIO_LANDSCAPE",
             "seed": Math.floor(Date.now() / 1000), 
@@ -117,29 +175,20 @@ async function triggerGeneration(token, prompt, mediaId) {
             "metadata": { "sceneId": sceneId }
         }]
     };
-
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
     });
-
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Trigger Failed (${res.status}): ${errText}`);
-    }
     const data = await res.json();
-    
     const opItem = data.operations?.[0];
     const operationName = opItem?.operation?.name || opItem?.name;
-    if (!operationName) throw new Error("No operation name returned in trigger response");
-    
+    if (!operationName) throw new Error("No operation name returned");
     return { task_id: operationName, scene_id: sceneId };
 }
 
 async function triggerUpscale(token, mediaId) {
     const sceneId = crypto.randomUUID();
-    
     const payload = {
         "requests": [{
             "aspectRatio": "VIDEO_ASPECT_RATIO_LANDSCAPE",
@@ -148,124 +197,61 @@ async function triggerUpscale(token, mediaId) {
             "videoModelKey": "veo_2_1080p_upsampler_8s",
             "metadata": { "sceneId": sceneId }
         }],
-        "clientContext": {
-            "sessionId": ";" + Date.now()
-        }
+        "clientContext": { "sessionId": ";" + Date.now() }
     };
-
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoUpsampleVideo', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
     });
-
-    if (!res.ok) {
-        const errText = await res.text();
-        throw new Error(`Upscale Trigger Failed (${res.status}): ${errText}`);
-    }
     const data = await res.json();
-    
     const opItem = data.operations?.[0];
     const operationName = opItem?.operation?.name || opItem?.name;
-    if (!operationName) throw new Error("No operation name returned in upscale trigger response");
-    
+    if (!operationName) throw new Error("No operation name returned");
     return { task_id: operationName, scene_id: sceneId };
 }
 
 async function checkStatus(token, task_id, scene_id) {
     const payload = {
-        "operations": [{
-            "operation": { "name": task_id },
-            "sceneId": scene_id,
-            "status": "MEDIA_GENERATION_STATUS_ACTIVE"
-        }]
+        "operations": [{ "operation": { "name": task_id }, "sceneId": scene_id, "status": "MEDIA_GENERATION_STATUS_ACTIVE" }]
     };
-
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', {
         method: 'POST',
         headers: { ...HEADERS, 'authorization': `Bearer ${token}` },
         body: JSON.stringify(payload)
     });
-
-    if (!res.ok) throw new Error(`Check Status Failed (${res.status})`);
-    
     const data = await res.json();
     const opResult = data.operations?.[0];
     if (!opResult) return { status: 'processing' };
-
     const status = opResult.status;
-
     if (["MEDIA_GENERATION_STATUS_SUCCESSFUL", "MEDIA_GENERATION_STATUS_COMPLETED", "DONE"].includes(status)) {
-        let vidUrl = opResult.operation?.metadata?.video?.fifeUrl || 
-                     opResult.videoFiles?.[0]?.url || 
-                     opResult.response?.videoUrl;
-        
-        let mediaId = opResult.response?.id || 
-                      opResult.operation?.response?.id ||
-                      opResult.mediaGenerationId;
-
+        let vidUrl = opResult.operation?.metadata?.video?.fifeUrl || opResult.videoFiles?.[0]?.url || opResult.response?.videoUrl;
+        let mediaId = opResult.response?.id || opResult.operation?.response?.id || opResult.mediaGenerationId;
         if (vidUrl) return { status: 'completed', video_url: vidUrl, mediaId: mediaId };
-        return { status: 'failed', message: 'Video URL not found in response' };
+        return { status: 'failed', message: 'Video URL not found' };
     }
-    
-    if (status === "MEDIA_GENERATION_STATUS_FAILED") {
-        return { status: 'failed', message: JSON.stringify(opResult) };
-    }
-
+    if (status === "MEDIA_GENERATION_STATUS_FAILED") return { status: 'failed', message: JSON.stringify(opResult) };
     return { status: 'processing' };
 }
 
-// Hàm xử lý Webhook từ SePay (Không cần token, dùng Service Key của Supabase)
 async function handleSePayWebhook(request, env) {
     try {
         const body = await request.json();
-        console.log("[Webhook] Received SePay data:", JSON.stringify(body));
-
-        // SePay body example: { "gateway": "MBBank", "transactionDate": "...", "accountNumber": "...", "subAccount": null, "code": null, "content": "OPZ123456 chuyen tien", "transferType": "in", "description": "...", "transferAmount": 50000, "referenceCode": "..." }
-        // Cần lấy: 'content' (nội dung chuyển khoản chứa mã OPZ) và 'transferAmount' (số tiền)
-        
         const content = body.content || body.description || "";
         const amount = body.transferAmount || body.amount || 0;
-
-        // Trích xuất mã giao dịch (OPZxxxxxx) từ nội dung
         const match = content.match(/OPZ\d+/i);
         const transactionCode = match ? match[0].toUpperCase() : null;
 
-        if (!transactionCode) {
-            return new Response(JSON.stringify({ success: false, message: "No transaction code found" }), { status: 200 });
-        }
+        if (!transactionCode) return new Response(JSON.stringify({ success: false, message: "No transaction code" }), { status: 200 });
+        if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) throw new Error("Missing Supabase Config");
 
-        if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) {
-            throw new Error("Missing Supabase Config in Worker");
-        }
-
-        // Gọi RPC của Supabase để xử lý giao dịch an toàn (Sử dụng Service Key)
-        const rpcUrl = `${env.SUPABASE_URL}/rest/v1/rpc/webhook_approve_transaction`;
-        const response = await fetch(rpcUrl, {
+        const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/webhook_approve_transaction`, {
             method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'apikey': env.SUPABASE_SERVICE_KEY,
-                'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`
-            },
-            body: JSON.stringify({
-                p_transaction_code: transactionCode,
-                p_amount: amount
-            })
+            headers: { 'Content-Type': 'application/json', 'apikey': env.SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}` },
+            body: JSON.stringify({ p_transaction_code: transactionCode, p_amount: amount })
         });
-
-        const result = await response.json();
-        
-        if (!response.ok) {
-            console.error("[Webhook] Supabase RPC Error:", result);
-            return new Response(JSON.stringify({ success: false, error: result }), { status: 500 });
-        }
-
-        console.log("[Webhook] Success:", result);
-        return new Response(JSON.stringify(result), { status: 200 });
-
+        return new Response(JSON.stringify(await response.json()), { status: 200 });
     } catch (e) {
-        console.error("[Webhook] Error:", e);
         return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 });
     }
 }
@@ -278,96 +264,61 @@ export default {
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
         };
 
-        if (request.method === 'OPTIONS') {
-            return new Response(null, { headers: corsHeaders });
-        }
+        if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
 
         const url = new URL(request.url);
         const path = url.pathname;
 
-        // --- PUBLIC WEBHOOK ROUTE (Bypass Auth Check) ---
-        if (path.includes('/sepay-webhook')) {
-            return handleSePayWebhook(request, env);
-        }
+        if (path.includes('/sepay-webhook')) return handleSePayWebhook(request, env);
 
-        const sendJson = (data, status = 200) => {
-            return new Response(JSON.stringify(data), {
-                status: status,
-                headers: { 'Content-Type': 'application/json', ...corsHeaders }
-            });
-        };
+        const sendJson = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
 
         try {
             let body = {};
-            try {
-                if (request.method !== 'GET' && request.method !== 'HEAD') {
-                    body = await request.json();
-                }
-            } catch (e) {}
-
+            try { if (request.method !== 'GET') body = await request.json(); } catch (e) {}
             let action = body.action || '';
 
-            // Routing for legacy paths
+            // Map URL path to action if not present in body
             if (!action) {
-                if (path.includes('/auth')) action = 'auth';
-                else if (path.includes('/update-token')) action = 'update_token';
+                if (path.includes('/gemini-proxy')) action = 'gemini_proxy';
+                else if (path.includes('/auth')) action = 'auth';
                 else if (path.includes('/upload')) action = 'upload';
                 else if (path.includes('/create')) action = 'create';
                 else if (path.includes('/upscale')) action = 'upscale';
                 else if (path.includes('/check')) action = 'check';
             }
 
-            // --- API HANDLERS ---
-
-            if (action === 'auth') {
+            // --- ROUTING ---
+            if (action === 'gemini_proxy') {
+                const result = await handleGeminiProxy(body, env);
+                return sendJson(result);
+            }
+            else if (action === 'auth') {
                 const token = await getAccessToken(env);
                 return sendJson({ token });
             }
-            
-            else if (action === 'update_token') {
-                const { token, secret } = body;
-                const adminSecret = env.ADMIN_SECRET || "opzen_admin_secret_123";
-                
-                if (secret !== adminSecret) {
-                    return sendJson({ error: "Unauthorized: Sai Admin Secret" }, 401);
-                }
-                
-                if (!token) return sendJson({ error: "Token is empty" }, 400);
-
-                await env.VIDEO_KV.put('GOOGLE_TOKEN', token);
-                return sendJson({ success: true, message: "Token đã được cập nhật thành công từ Python Script" });
-            }
-
             else if (action === 'upload') {
-                const { image } = body;
-                const token = await getAccessToken(env);
-                const mediaId = await uploadImage(token, image);
+                const mediaId = await uploadImage(await getAccessToken(env), body.image);
                 return sendJson({ mediaId });
             }
             else if (action === 'create') {
-                const { prompt, mediaId } = body;
-                const token = await getAccessToken(env);
-                const result = await triggerGeneration(token, prompt, mediaId);
+                const result = await triggerGeneration(await getAccessToken(env), body.prompt, body.mediaId);
                 return sendJson(result);
             }
             else if (action === 'upscale') {
-                const { mediaId } = body;
-                const token = await getAccessToken(env);
-                const result = await triggerUpscale(token, mediaId);
+                const result = await triggerUpscale(await getAccessToken(env), body.mediaId);
                 return sendJson(result);
             }
             else if (action === 'check') {
-                const { task_id, scene_id } = body;
-                const token = await getAccessToken(env);
-                const result = await checkStatus(token, task_id, scene_id);
+                const result = await checkStatus(await getAccessToken(env), body.task_id, body.scene_id);
                 return sendJson(result);
             }
             else {
-                return sendJson({ status: "ok", message: "Video API Worker Running" }, 200);
+                return sendJson({ status: "ok", message: "Worker Active" });
             }
 
         } catch (error) {
-            return sendJson({ error: true, message: error.message || String(error) }, 500);
+            return sendJson({ error: true, message: error.message }, 500);
         }
     }
 };
