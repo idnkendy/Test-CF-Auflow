@@ -105,10 +105,15 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
                     </div>
-                    <div className="grid grid-cols-2 gap-4">
+                    
+                    <div>
                         <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                    </div>
+                    
+                    <div>
                         <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
                     </div>
+
                     <button
                         onClick={handleGenerate}
                         disabled={isLoading || userCredits < cost}
