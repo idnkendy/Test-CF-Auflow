@@ -10,9 +10,6 @@ const BASE_URL = 'https://generativelanguage.googleapis.com';
 // KHÓA BÍ MẬT: Phải khớp hoàn toàn với biến v_secret trong hàm SQL trên Supabase
 const ENCRYPTION_SECRET = 'OPZEN_SUPER_SECRET_2025'; 
 
-// --- KEY MANAGEMENT ---
-let cachedKey: string | null = null;
-
 /**
  * Lớp giải mã (Translation Layer)
  * Giải mã chuỗi Base64 + XOR nhận được từ Server thành API Key thật.
@@ -48,9 +45,9 @@ const decryptKey = (encryptedBase64: string): string => {
     }
 };
 
-const getApiKey = async (forceRefresh = false): Promise<string> => {
-    // Nếu đã có cache và không yêu cầu refresh, dùng lại key cũ để tiết kiệm request DB
-    if (cachedKey && !forceRefresh) return cachedKey;
+const getApiKey = async (): Promise<string> => {
+    // Không sử dụng Cache để đảm bảo mỗi request đều gọi xuống DB lấy key mới
+    // giúp tính năng Load Balancing và Usage Counting hoạt động chính xác.
 
     try {
         // Gọi RPC function từ Supabase
@@ -72,9 +69,7 @@ const getApiKey = async (forceRefresh = false): Promise<string> => {
         }
 
         // GIẢI MÃ KEY TRƯỚC KHI DÙNG
-        const realKey = decryptKey(data);
-        cachedKey = realKey;
-        return realKey;
+        return decryptKey(data);
 
     } catch (e) {
         // Fallback cuối cùng nếu mọi thứ lỗi
@@ -112,8 +107,8 @@ const handleGeminiError = (error: any) => {
 // --- CORE DIRECT CALL FUNCTION ---
 async function callGeminiDirect(model: string, payload: any, method: string = 'generateContent', retryCount = 0) {
     try {
-        // Nếu đang retry, force refresh để lấy key mới (Load Balancing)
-        const apiKey = await getApiKey(retryCount > 0);
+        // Luôn lấy key mới mỗi lần gọi API (kể cả khi retry)
+        const apiKey = await getApiKey();
         const url = `${BASE_URL}/${API_VERSION}/models/${model}:${method}?key=${apiKey}`;
 
         const response = await fetch(url, {
@@ -133,7 +128,7 @@ async function callGeminiDirect(model: string, payload: any, method: string = 'g
             // Nếu lỗi Key hoặc Quota, thử lại với Key khác (tối đa 2 lần)
             if ((isKeyError || isForbidden || isQuota) && retryCount < 2) {
                 console.warn(`API Error (${response.status}). Rotating key and retrying...`);
-                cachedKey = null; // Xóa cache key lỗi
+                // Gọi đệ quy sẽ tự động lấy key mới vì getApiKey không còn cache
                 return callGeminiDirect(model, payload, method, retryCount + 1);
             }
 
@@ -154,7 +149,6 @@ async function callGeminiDirect(model: string, payload: any, method: string = 'g
         // Nếu lỗi mạng hoặc quota ở tầng fetch, cũng thử retry
         if (e.message && (e.message.includes('Quota') || e.message.includes('Exceeded')) && retryCount < 2) {
              console.warn("Quota exceeded exception. Retrying...");
-             cachedKey = null;
              return callGeminiDirect(model, payload, method, retryCount + 1);
         }
         throw handleGeminiError(e);
