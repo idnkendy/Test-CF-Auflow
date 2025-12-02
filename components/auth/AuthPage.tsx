@@ -6,7 +6,7 @@ import { Logo } from '../common/Logo';
 
 interface AuthPageProps {
   onGoHome: () => void;
-  initialMode?: 'login' | 'signup';
+  initialMode?: 'login' | 'signup'; // Giữ lại để tương thích props, nhưng không sử dụng logic này nữa
 }
 
 const GoogleIcon = () => (
@@ -18,45 +18,9 @@ const GoogleIcon = () => (
     </svg>
 );
 
-const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) => {
-  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
-
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-
-    try {
-        if (mode === 'signup') {
-            const { error: signUpError, data } = await supabase.auth.signUp({
-                email,
-                password,
-            });
-            if (signUpError) throw signUpError;
-            if (data.user && data.session) {
-                 // Auto signed in?
-            } else if (data.user && !data.session) {
-                setMessage("Đăng ký thành công! Vui lòng kiểm tra email để xác thực.");
-            }
-        } else {
-            const { error: signInError } = await supabase.auth.signInWithPassword({
-                email,
-                password,
-            });
-            if (signInError) throw signInError;
-        }
-    } catch (err: any) {
-        setError(err.message || "Đã xảy ra lỗi.");
-    } finally {
-        setLoading(false);
-    }
-  };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -84,12 +48,12 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) 
                  <Logo className="w-20 h-20 mr-2" />
                 <span className="text-text-primary dark:text-white text-4xl font-bold">OPZEN AI</span>
             </div>
-            <div className="bg-surface dark:bg-dark-bg p-8 rounded-2xl shadow-xl border border-border-color dark:border-gray-700">
+            <div className="bg-surface dark:bg-dark-bg p-8 rounded-2xl shadow-xl border border-border-color dark:border-gray-700 text-center">
                 <h2 className="text-2xl font-bold text-center text-text-primary dark:text-white mb-2">
-                    {mode === 'login' ? 'Chào mừng trở lại!' : 'Tạo tài khoản mới'}
+                    Chào mừng trở lại!
                 </h2>
-                <p className="text-center text-text-secondary dark:text-gray-400 mb-6 text-sm">
-                    {mode === 'login' ? 'Đăng nhập để tiếp tục sáng tạo' : 'Đăng ký để bắt đầu hành trình sáng tạo'}
+                <p className="text-center text-text-secondary dark:text-gray-400 mb-8 text-sm">
+                    Đăng nhập để tiếp tục sáng tạo không giới hạn
                 </p>
                 
                 {!isSupabaseConfigured && (
@@ -99,76 +63,15 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) 
                     </div>
                 )}
                 
-                {error && <div className="mb-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm text-left">{error}</div>}
-                {message && <div className="mb-4 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/50 dark:border-green-500 dark:text-green-300 rounded-lg text-sm text-left">{message}</div>}
-
-                <form onSubmit={handleEmailAuth} className="space-y-4 mb-4">
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">Email</label>
-                        <input 
-                            type="email" 
-                            required 
-                            className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#7f13ec] focus:border-transparent outline-none text-text-primary dark:text-white transition-all"
-                            placeholder="name@example.com"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">Mật khẩu</label>
-                        <input 
-                            type="password" 
-                            required 
-                            className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-700 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#7f13ec] focus:border-transparent outline-none text-text-primary dark:text-white transition-all"
-                            placeholder="••••••••"
-                            minLength={6}
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                        />
-                    </div>
-                    <button
-                        type="submit"
-                        disabled={loading || !isSupabaseConfigured}
-                        className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg shadow-purple-500/20 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                        {loading ? <Spinner /> : (mode === 'login' ? 'Đăng nhập' : 'Đăng ký')}
-                    </button>
-                </form>
-
-                <div className="relative my-6">
-                    <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-border-color dark:border-gray-700"></div>
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                        <span className="px-2 bg-surface dark:bg-dark-bg text-text-secondary dark:text-gray-500">Hoặc</span>
-                    </div>
-                </div>
+                {error && <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm text-left">{error}</div>}
 
                 <button
                   onClick={handleGoogleSignIn}
                   disabled={loading || !isSupabaseConfigured}
                   className="w-full flex justify-center items-center gap-3 bg-white hover:bg-gray-50 text-gray-900 font-medium py-3 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-300 shadow-sm"
                 >
-                    {loading && !email ? <Spinner /> : <><GoogleIcon /><span className="text-sm">Tiếp tục với Google</span></>}
+                    {loading ? <Spinner /> : <><GoogleIcon /><span className="text-sm">Tiếp tục với Google</span></>}
                 </button>
-
-                <div className="mt-6 text-center text-sm text-text-secondary dark:text-gray-400">
-                    {mode === 'login' ? (
-                        <>
-                            Chưa có tài khoản?{' '}
-                            <button onClick={() => setMode('signup')} className="text-[#7f13ec] font-bold hover:underline">
-                                Đăng ký ngay
-                            </button>
-                        </>
-                    ) : (
-                        <>
-                            Đã có tài khoản?{' '}
-                            <button onClick={() => setMode('login')} className="text-[#7f13ec] font-bold hover:underline">
-                                Đăng nhập
-                            </button>
-                        </>
-                    )}
-                </div>
             </div>
         </div>
     </div>
