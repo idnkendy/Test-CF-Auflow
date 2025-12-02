@@ -27,6 +27,9 @@ const handleProxyError = (error: any) => {
     if (message.includes('SAFETY')) {
         return new Error("Nội dung bị chặn bởi bộ lọc an toàn của Google.");
     }
+    if (message.includes('GEMINI_API_KEY not configured')) {
+        return new Error("Hệ thống chưa được cấu hình API Key. Vui lòng kiểm tra file api/index.js hoặc biến môi trường.");
+    }
     
     return new Error(message);
 };
@@ -46,7 +49,27 @@ async function callGeminiProxy(model: string, payload: any, method: string = 'ge
             })
         });
 
-        const data = await response.json();
+        // Robust handling for non-JSON responses (e.g. 405 Method Not Allowed, 404, 500 HTML pages)
+        const contentType = response.headers.get("content-type");
+        let data;
+        
+        if (contentType && contentType.includes("application/json")) {
+            data = await response.json();
+        } else {
+            // Handle text/html error responses without crashing
+            const text = await response.text();
+            if (!response.ok) {
+                 if (response.status === 405) {
+                     throw new Error(`Lỗi cấu hình API (405 Method Not Allowed). Vui lòng kiểm tra Routing của Cloudflare Worker.`);
+                 }
+                 if (response.status === 404) {
+                     throw new Error(`Không tìm thấy API (404 Not Found). Vui lòng kiểm tra đường dẫn API.`);
+                 }
+                 throw new Error(`Lỗi Server (${response.status}): ${text.substring(0, 100)}`);
+            }
+            // Should be JSON but isn't
+            throw new Error("Phản hồi từ server không đúng định dạng JSON.");
+        }
 
         if (!response.ok || data.error) {
             throw new Error(data.message || data.error || "Unknown Proxy Error");
