@@ -334,16 +334,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         } catch (err: any) {
             console.error("Generation Error:", err);
             
-            // GENERIC ERROR MESSAGE FOR USERS
-            let userErrorMessage = 'Đã xảy ra lỗi trong quá trình xử lý. Vui lòng thử lại sau.';
+            // Allow specific known errors to pass through
+            let userErrorMessage = err.message;
             
-            // Allow specific known errors to pass through if safe
-            if (err.message.includes('không đủ credits') || err.message.includes('Credits')) {
-                userErrorMessage = err.message;
-            } else if (err.message.includes('Hệ thống quá tải')) {
-                userErrorMessage = err.message;
-            } else if (err.message.includes('Lỗi kết nối')) {
-                userErrorMessage = err.message;
+            // Simplify unexpected errors
+            if (!userErrorMessage.includes('không đủ credits') && !userErrorMessage.includes('API Key') && !userErrorMessage.includes('Hệ thống')) {
+                 userErrorMessage = 'Đã xảy ra lỗi trong quá trình xử lý. Vui lòng thử lại sau.';
             }
 
             onStateChange({ error: userErrorMessage });
@@ -526,7 +522,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Render'}
                     </button>
-                     {error && <p className="mt-3 text-xs text-red-500 text-center bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-800">{error}</p>}
+                     {error && <p className="mt-3 text-sm text-red-500 text-center bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-800 font-medium">{error}</p>}
                 </div>
             </div>
 

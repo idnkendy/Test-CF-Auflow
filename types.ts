@@ -23,6 +23,12 @@ export enum Tool {
   LuBanRuler = 'LuBanRuler',
   Pricing = 'Pricing',
   Profile = 'Profile',
+  ExtendedFeaturesDashboard = 'ExtendedFeaturesDashboard',
+  // New Tools
+  LayoutGenerator = 'LayoutGenerator',
+  DrawingGenerator = 'DrawingGenerator',
+  DiagramGenerator = 'DiagramGenerator',
+  RealEstatePoster = 'RealEstatePoster',
 }
 
 export type AspectRatio = "1:1" | "3:4" | "4:3" | "9:16" | "16:9";

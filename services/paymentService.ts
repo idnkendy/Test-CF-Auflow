@@ -80,17 +80,51 @@ export const deductCredits = async (userId: string, amount: number, description:
 };
 
 export const refundCredits = async (userId: string, amount: number, description: string): Promise<void> => {
-    // STRICTLY USE RPC. REMOVED UNSAFE CLIENT-SIDE FALLBACK.
-    // Writing to the DB from client with (current + amount) is dangerous if 'current' is stale.
+    console.log(`[PaymentService] Attempting to refund ${amount} credits for user ${userId}. Reason: ${description}`);
+    
+    // 1. Try RPC first (Atomic, Safe, Best Practice)
     const { error } = await supabase.rpc('refund_credits', {
         p_user_id: userId,
         p_amount: amount,
         p_description: description
     });
 
-    if (error) {
-        console.error("refundCredits RPC error:", error.message || JSON.stringify(error));
-        // If RPC fails, we log it. We DO NOT try to fix it client-side to avoid resetting credits to wrong values.
+    if (!error) {
+        console.log("[PaymentService] Refund successful via RPC.");
+        return; 
+    }
+
+    console.warn("[PaymentService] refundCredits RPC failed, attempting client-side fallback. Error:", error.message);
+
+    // 2. Fallback: Client-side update (Race-condition prone but strictly better than money loss)
+    // Only fetch credits, calculate new amount, and update.
+    try {
+        const { data: profile, error: fetchError } = await supabase
+            .from('profiles')
+            .select('credits')
+            .eq('id', userId)
+            .single();
+        
+        if (fetchError) throw fetchError;
+
+        if (profile) {
+            const newCredits = (profile.credits || 0) + amount;
+            
+            const { error: updateError } = await supabase
+                .from('profiles')
+                .update({ credits: newCredits })
+                .eq('id', userId);
+            
+            if (updateError) throw updateError;
+
+            console.log(`[PaymentService] Refund successful via Client Fallback. New balance: ${newCredits}`);
+            
+            // Optional: Log the refund manually to transaction or logs table if exists, 
+            // but for now just ensuring credits are back is priority.
+        }
+    } catch (e: any) {
+        console.error("[PaymentService] CRITICAL: Client-side refund fallback also failed:", e.message || e);
+        // At this point, we can't do much more without backend changes.
     }
 };
 

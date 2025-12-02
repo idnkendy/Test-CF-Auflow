@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { Tool } from '../types';
 
-// Icons mimicking Heroicons style (kept mostly same, slightly cleaned up usage)
+// Icons mimicking Heroicons style
 const FloorPlanIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2z" /><path strokeLinecap="round" strokeLinejoin="round" d="M3 12h18M9 7v12" /></svg>
 );
@@ -60,6 +60,18 @@ const FengShuiIcon = () => (
 const PencilAltIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2"><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
 );
+const TemplateIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" /></svg>
+);
+const BlueprintIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
+);
+const DiagramIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" /></svg>
+);
+const PosterIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+);
 
 interface NavigationProps {
   activeTool: Tool;
@@ -68,131 +80,262 @@ interface NavigationProps {
   onCloseMobile?: () => void;
 }
 
-const mainNavItems = [
+export const mainNavItems = [
     { tool: Tool.ArchitecturalRendering, label: 'Render Kiến trúc', icon: <PhotoIcon /> },
     { tool: Tool.InteriorRendering, label: 'Render Nội thất', icon: <InteriorIcon /> },
     { tool: Tool.Renovation, label: 'Cải Tạo AI', icon: <RenovationIcon /> },
     { tool: Tool.ViewSync, label: 'Đồng Bộ View', icon: <ViewGridIcon /> },
-    { tool: Tool.ImageEditing, label: 'Chỉnh Sửa Ảnh AI', icon: <SparklesIcon /> },
+    { tool: Tool.ImageEditing, label: 'Chỉnh Sửa Ảnh', icon: <SparklesIcon /> },
 ];
 
-const utilityToolsGroup = {
+export const utilityToolsGroup = {
     label: 'Tính năng mở rộng',
     icon: <PlusCircleIcon />,
     tools: [
-        { tool: Tool.FloorPlan, label: 'Render Mặt Bằng', icon: <FloorPlanIcon /> },
-        { tool: Tool.UrbanPlanning, label: 'Render Quy hoạch', icon: <UrbanPlanningIcon /> },
-        { tool: Tool.LandscapeRendering, label: 'Render Sân vườn', icon: <LandscapeIcon /> },
-        { tool: Tool.VirtualTour, label: 'Tham Quan Ảo', icon: <VirtualTourIcon /> },
-        { tool: Tool.Moodboard, label: 'Tạo Moodboard', icon: <MoodboardIcon /> },
-        { tool: Tool.Upscale, label: 'Upscale AI', icon: <UpscaleIcon /> },
-        { tool: Tool.VideoGeneration, label: 'Tạo Video AI', icon: <FilmIcon /> },
-        { tool: Tool.MaterialSwap, label: 'Thay Vật Liệu', icon: <ColorSwatchIcon /> },
-        { tool: Tool.Staging, label: 'AI Staging', icon: <CubeIcon /> },
-        { tool: Tool.SketchConverter, label: 'Ảnh thành Sketch', icon: <PencilAltIcon /> },
-        { tool: Tool.AITechnicalDrawings, label: 'Bản vẽ kỹ thuật', icon: <RulerIcon /> },
-        { tool: Tool.FengShui, label: 'Phong thủy', icon: <FengShuiIcon /> },
+        { 
+            tool: Tool.FloorPlan, 
+            label: 'Render Mặt Bằng', 
+            icon: <FloorPlanIcon />, 
+            desc: 'Chuyển đổi bản vẽ 2D thành phối cảnh 3D ấn tượng',
+            gradient: 'from-blue-500/20 to-cyan-500/20 hover:border-blue-500/50',
+            image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.LayoutGenerator, 
+            label: 'Tạo Layout', 
+            icon: <TemplateIcon />, 
+            desc: 'Tạo bố cục kiến trúc từ ý tưởng.',
+            gradient: 'from-indigo-500/20 to-blue-500/20 hover:border-indigo-500/50',
+            image: 'https://images.unsplash.com/photo-1507089947368-19c1da9775ae?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.DrawingGenerator, 
+            label: 'Tạo Bản vẽ', 
+            icon: <BlueprintIcon />, 
+            desc: 'Tạo các bản vẽ kỹ thuật chiếu vuông góc.',
+            gradient: 'from-cyan-500/20 to-teal-500/20 hover:border-cyan-500/50',
+            image: 'https://images.unsplash.com/photo-1581093588401-fbb07aa83416?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.DiagramGenerator, 
+            label: 'Tạo Diagram', 
+            icon: <DiagramIcon />, 
+            desc: 'Tạo sơ đồ phân tích kiến trúc.',
+            gradient: 'from-orange-500/20 to-amber-500/20 hover:border-orange-500/50',
+            image: 'https://images.unsplash.com/photo-1555421689-d68471e189f2?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.RealEstatePoster, 
+            label: 'Poster BDS', 
+            icon: <PosterIcon />, 
+            desc: 'Tạo poster quảng cáo bất động sản chuyên nghiệp.',
+            gradient: 'from-slate-500/20 to-gray-500/20 hover:border-slate-500/50',
+            image: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.UrbanPlanning, 
+            label: 'Render Quy hoạch', 
+            icon: <UrbanPlanningIcon />, 
+            desc: 'Phối cảnh tổng thể cho khu đô thị và dự án lớn',
+            gradient: 'from-green-500/20 to-emerald-500/20 hover:border-green-500/50',
+            image: 'https://images.unsplash.com/photo-1486325212027-8081e485255e?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.LandscapeRendering, 
+            label: 'Render Sân vườn', 
+            icon: <LandscapeIcon />, 
+            desc: 'Thiết kế cảnh quan, sân vườn và tiểu cảnh',
+            gradient: 'from-lime-500/20 to-green-500/20 hover:border-lime-500/50',
+            image: 'https://images.unsplash.com/photo-1558293842-c0fd3db86157?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.VirtualTour, 
+            label: 'Tham Quan Ảo', 
+            icon: <VirtualTourIcon />, 
+            desc: 'Tạo video panorama và tour 360 độ từ ảnh tĩnh',
+            gradient: 'from-indigo-500/20 to-purple-500/20 hover:border-indigo-500/50',
+            image: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.Moodboard, 
+            label: 'Tạo Moodboard', 
+            icon: <MoodboardIcon />, 
+            desc: 'Sắp xếp ý tưởng, màu sắc và vật liệu',
+            gradient: 'from-pink-500/20 to-rose-500/20 hover:border-pink-500/50',
+            image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.Upscale, 
+            label: 'Upscale AI', 
+            icon: <UpscaleIcon />, 
+            desc: 'Nâng cao chất lượng và độ phân giải ảnh',
+            gradient: 'from-yellow-500/20 to-orange-500/20 hover:border-yellow-500/50',
+            image: 'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.VideoGeneration, 
+            label: 'Tạo Video AI', 
+            icon: <FilmIcon />, 
+            desc: 'Biến ảnh tĩnh thành video chuyển động sống động',
+            gradient: 'from-red-500/20 to-orange-500/20 hover:border-red-500/50',
+            image: 'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.MaterialSwap, 
+            label: 'Thay Vật Liệu', 
+            icon: <ColorSwatchIcon />, 
+            desc: 'Thử nghiệm các loại vật liệu khác nhau trên bề mặt',
+            gradient: 'from-teal-500/20 to-cyan-500/20 hover:border-teal-500/50',
+            image: 'https://images.unsplash.com/photo-1615529182904-14819c35db37?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.Staging, 
+            label: 'AI Staging', 
+            icon: <CubeIcon />, 
+            desc: 'Thêm đồ nội thất vào phòng trống tự động',
+            gradient: 'from-violet-500/20 to-fuchsia-500/20 hover:border-violet-500/50',
+            image: 'https://images.unsplash.com/photo-1631679706909-1844bbd07221?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.SketchConverter, 
+            label: 'Ảnh thành Sketch', 
+            icon: <PencilAltIcon />, 
+            desc: 'Chuyển ảnh render hoặc chụp thành tranh vẽ tay',
+            gradient: 'from-gray-500/20 to-slate-500/20 hover:border-gray-500/50',
+            image: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.AITechnicalDrawings, 
+            label: 'Bản vẽ kỹ thuật', 
+            icon: <RulerIcon />, 
+            desc: 'Tạo mặt bằng, mặt đứng từ ảnh phối cảnh',
+            gradient: 'from-cyan-600/20 to-blue-600/20 hover:border-cyan-600/50',
+            image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.FengShui, 
+            label: 'Phong thủy', 
+            icon: <FengShuiIcon />, 
+            desc: 'Phân tích phong thủy bát trạch và huyền không',
+            gradient: 'from-amber-500/20 to-yellow-500/20 hover:border-amber-500/50',
+            image: 'https://images.unsplash.com/photo-1587586062323-836089e60d52?q=80&w=600&auto=format&fit=crop'
+        },
     ]
 };
 
 const historyItem = { tool: Tool.History, label: 'Lịch sử', icon: <HistoryIcon /> };
 
 const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMobileOpen = false, onCloseMobile }) => {
-    const isGroupActive = utilityToolsGroup.tools.some(item => item.tool === activeTool);
-    const [isGroupOpen, setIsGroupOpen] = useState(isGroupActive);
+    
+    // Logic to highlight "Extended Features" if a sub-tool is active
+    const isExtendedToolActive = utilityToolsGroup.tools.some(item => item.tool === activeTool) || activeTool === Tool.ExtendedFeaturesDashboard;
 
-    useEffect(() => {
-        if (isGroupActive) {
-            setIsGroupOpen(true);
-        }
-    }, [isGroupActive]);
-
-    const renderItem = (item: { tool: Tool; label: string; icon: React.ReactElement; }) => (
+    const renderItem = (item: { tool: Tool; label: string; icon: React.ReactElement; }, isCompact: boolean = false) => (
         <button
             key={item.tool}
             onClick={() => setActiveTool(item.tool)}
-            className={`group flex items-center w-full gap-3 px-4 py-3 rounded-full lg:rounded-lg text-left transition-all duration-200 text-sm font-medium mb-1 ${
-              activeTool === item.tool
-                ? 'bg-[#7f13ec] text-white shadow-lg shadow-[#7f13ec]/25'
-                : 'text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white'
-            }`}
+            className={`group relative flex items-center gap-2.5 px-5 py-2.5 rounded-2xl transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
+              ${activeTool === item.tool
+                ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-lg shadow-purple-500/25 ring-1 ring-white/10' 
+                : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'
+              }`}
           >
-            <span className={`${activeTool === item.tool ? 'text-white' : 'text-gray-400 group-hover:text-[#7f13ec]'} transition-colors`}>
+            <span className={`relative z-10 transition-colors duration-300 ${activeTool === item.tool ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
                 {item.icon}
             </span>
-            <span className="truncate">{item.label}</span>
+            <span className={`relative z-10 ${isCompact ? 'hidden xl:inline' : ''}`}>{item.label}</span>
           </button>
     );
 
   return (
     <>
-      {/* Backdrop for Mobile */}
+      {/* Mobile Drawer */}
       {isMobileOpen && (
         <div 
-            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-40 md:hidden transition-opacity"
+            className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 md:hidden transition-opacity"
             onClick={onCloseMobile}
-        />
-      )}
-
-      <aside className={`
-        fixed inset-y-0 left-0 z-50 w-[80%] max-w-[300px] bg-surface dark:bg-[#121212] border-r border-border-color dark:border-[#302839] shadow-2xl
-        transform transition-transform duration-300 ease-in-out
-        md:translate-x-0 md:static md:w-64 md:bg-surface/80 dark:md:bg-[#121212]/80 md:shadow-none md:border md:rounded-2xl md:m-6 md:h-[calc(100dvh-96px)]
-        ${isMobileOpen ? 'translate-x-0' : '-translate-x-full'}
-      `}>
-        <div className="h-full flex flex-col p-4 overflow-y-auto scrollbar-hide">
-            <div className="flex justify-between items-center md:hidden mb-6 px-2 pt-2">
-                <h2 className="text-xl font-bold text-text-primary dark:text-white">Menu</h2>
-                <button 
-                    onClick={onCloseMobile} 
-                    className="p-2 rounded-lg bg-gray-100 dark:bg-[#302839] text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white"
-                >
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                </button>
-            </div>
-
-            <h2 className="text-xs font-bold text-text-secondary dark:text-gray-500 uppercase tracking-wider px-4 pb-3 hidden md:block">Công cụ chính</h2>
-            
-            <nav className="flex-1 space-y-1">
-                {mainNavItems.map(item => renderItem(item))}
-
-                <div className="w-full md:h-4"></div>
-
-                <div className="w-full">
+        >
+             <aside className="absolute inset-y-0 left-0 w-[80%] max-w-[300px] bg-surface dark:bg-[#121212] border-r border-border-color dark:border-[#302839] shadow-2xl p-4 flex flex-col h-full overflow-y-auto">
+                <div className="flex justify-between items-center mb-6 px-2">
+                    <h2 className="text-xl font-bold text-text-primary dark:text-white">Menu</h2>
+                    <button 
+                        onClick={onCloseMobile} 
+                        className="p-2 rounded-lg bg-gray-100 dark:bg-[#302839] text-text-secondary dark:text-gray-400 hover:text-white"
+                    >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
+                
+                <div className="space-y-1">
+                    {mainNavItems.map(item => (
+                        <button
+                            key={item.tool}
+                            onClick={() => setActiveTool(item.tool)}
+                            className={`group flex items-center w-full gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 text-sm font-medium ${
+                            activeTool === item.tool
+                                ? 'bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white shadow-md'
+                                : 'text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white'
+                            }`}
+                        >
+                            <span className={`${activeTool === item.tool ? 'text-white' : 'text-gray-400 group-hover:text-[#7f13ec]'}`}>
+                                {item.icon}
+                            </span>
+                            <span className="truncate">{item.label}</span>
+                        </button>
+                    ))}
+                    
+                    {/* Extended Features Link in Mobile */}
                     <button
-                        onClick={() => setIsGroupOpen(!isGroupOpen)}
-                        className={`flex items-center justify-between w-full gap-3 px-4 py-3 rounded-lg text-left transition-all duration-200 text-sm font-medium mb-1 ${
-                        isGroupActive
-                            ? 'bg-gray-100 dark:bg-[#191919] text-text-primary dark:text-white'
+                        onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)}
+                        className={`group flex items-center w-full gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 text-sm font-medium ${
+                        isExtendedToolActive
+                            ? 'bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white shadow-md'
                             : 'text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white'
                         }`}
                     >
-                        <div className="flex items-center gap-3">
-                            <span className="text-gray-400 group-hover:text-[#7f13ec]">
-                                {utilityToolsGroup.icon}
-                            </span>
-                            <span className="truncate">{utilityToolsGroup.label}</span>
-                        </div>
-                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-4 w-4 transition-transform duration-200 ${isGroupOpen ? 'rotate-180' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                        </svg>
+                        <span className={`${isExtendedToolActive ? 'text-white' : 'text-gray-400 group-hover:text-[#7f13ec]'}`}>
+                            {utilityToolsGroup.icon}
+                        </span>
+                        <span className="truncate">{utilityToolsGroup.label}</span>
                     </button>
 
-                    <div className={`overflow-hidden transition-all duration-300 ease-in-out ${isGroupOpen ? 'max-h-[1000px] opacity-100 mt-1' : 'max-h-0 opacity-0'}`}>
-                        <div className="pl-2 space-y-1">
-                            {utilityToolsGroup.tools.map(item => renderItem(item))}
-                        </div>
+                    <div className="pt-4 mt-4 border-t border-border-color dark:border-[#302839]">
+                         {renderItem(historyItem)}
                     </div>
                 </div>
-            </nav>
-            
-            <div className="w-full mt-auto pt-4 border-t border-border-color dark:border-[#302839]">
-                {renderItem(historyItem)}
+             </aside>
+        </div>
+      )}
+
+      {/* Desktop Horizontal Toolbar */}
+      <nav className="hidden md:flex w-full sticky top-0 z-30 bg-surface/90 dark:bg-[#121212]/90 backdrop-blur-2xl border-b border-border-color dark:border-[#302839] shadow-sm justify-center h-20">
+        <div className="max-w-[1600px] w-full px-4 sm:px-6 lg:px-8 flex items-center">
+            <div className="flex items-center gap-3 overflow-x-auto scrollbar-hide w-full justify-center">
+                {mainNavItems.map(item => renderItem(item, false))}
+                
+                {/* Separator */}
+                <div className="h-8 w-px bg-gray-200 dark:bg-gray-800 mx-3 flex-shrink-0"></div>
+
+                {/* Extended Features Button */}
+                <button
+                    onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)}
+                    className={`group relative flex items-center gap-2.5 px-5 py-2.5 rounded-2xl transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
+                    ${isExtendedToolActive
+                        ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-lg shadow-purple-500/25 ring-1 ring-white/10'
+                        : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/5'
+                    }`}
+                >
+                    <span className={`relative z-10 transition-colors duration-300 ${isExtendedToolActive ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
+                        {utilityToolsGroup.icon}
+                    </span>
+                    <span className="relative z-10">{utilityToolsGroup.label}</span>
+                </button>
+
+                <div className="flex-grow"></div>
+                {renderItem(historyItem, true)}
             </div>
         </div>
-      </aside>
+      </nav>
     </>
   );
 };

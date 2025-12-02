@@ -6,7 +6,14 @@
 // SUPABASE_URL, SUPABASE_SERVICE_KEY (Để xử lý Webhook thanh toán & Lấy Key)
 // GEMINI_API_KEY (KEY DỰ PHÒNG)
 
+// !!! QUAN TRỌNG: DÁN API KEY CỦA BẠN VÀO ĐÂY NẾU CHƯA CẤU HÌNH ENV !!!
+const FALLBACK_GEMINI_API_KEY = ""; 
+
 const PROJECT_ID = "eb9c4bc9-54aa-4068-b146-c0a8076f7d7a";
+
+// Fallback credentials from client source if Env vars are missing
+const DEFAULT_SUPABASE_URL = 'https://mtlomjjlgvsjpudxlspq.supabase.co';
+const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMzAwMjcsImV4cCI6MjA3ODkwNjAyN30.6K-rSAFVJxQPLVjZKdJpBspb5tHE1dZiry4lS6u6JzQ";
 
 const HEADERS = {
     'content-type': 'text/plain;charset=UTF-8',
@@ -66,53 +73,64 @@ async function getAccessToken(env) {
 
 // --- LOGIC LẤY KEY GEMINI TỪ SUPABASE (Server-Side) ---
 async function getGeminiKeySecurely(env) {
-    // 1. Nếu có biến môi trường GEMINI_API_KEY, dùng nó làm dự phòng hoặc ưu tiên tùy logic
-    // Nhưng theo yêu cầu, ta sẽ ưu tiên lấy từ Supabase để bạn dễ quản lý "usage"
-    
-    if (env.SUPABASE_URL && env.SUPABASE_SERVICE_KEY) {
-        // Kiểm tra cache trong KV trước để đỡ tốn request gọi DB (Cache ngắn hạn 60s)
-        if (env.VIDEO_KV) {
-            const cachedKey = await env.VIDEO_KV.get('GEMINI_ACTIVE_KEY');
-            if (cachedKey) return cachedKey;
-        }
+    // 1. Kiểm tra cache trong KV trước để đỡ tốn request gọi DB (Cache ngắn hạn 60s)
+    if (env.VIDEO_KV) {
+        const cachedKey = await env.VIDEO_KV.get('GEMINI_ACTIVE_KEY');
+        if (cachedKey) return cachedKey;
+    }
 
-        console.log("[Proxy] Fetching API Key from Supabase...");
+    // 2. Ưu tiên 1: Biến môi trường
+    if (env.GEMINI_API_KEY) return env.GEMINI_API_KEY;
+
+    // 3. Ưu tiên 2: Hardcoded Fallback (Dành cho Dev nhanh)
+    if (FALLBACK_GEMINI_API_KEY && FALLBACK_GEMINI_API_KEY.length > 10) return FALLBACK_GEMINI_API_KEY;
+
+    // 4. Ưu tiên 3: Lấy từ Supabase 'api_keys' table
+    const sbUrl = env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
+    const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
+
+    if (sbUrl && sbKey) {
+        // console.log("[Proxy] Fetching API Key from Supabase...");
         try {
-            // Lấy 1 key cụ thể (ví dụ: 'google_gemini_api_key')
-            // Bạn có thể đổi tên key này trong bảng app_config trên Supabase
-            const response = await fetch(`${env.SUPABASE_URL}/rest/v1/app_config?key_name=eq.google_gemini_api_key&select=value`, {
+            // Lấy tất cả active keys từ bảng api_keys
+            // Lưu ý: Cột tên là 'key_value' chứ không phải 'key'
+            const response = await fetch(`${sbUrl}/rest/v1/api_keys?select=key_value&is_active=eq.true`, {
                 headers: {
-                    'apikey': env.SUPABASE_SERVICE_KEY,
-                    'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}`
+                    'apikey': sbKey,
+                    'Authorization': `Bearer ${sbKey}`
                 }
             });
             
-            if (!response.ok) throw new Error("Failed to connect to Supabase");
-            
-            const data = await response.json();
-            
-            if (data && data.length > 0 && data[0].value) {
-                const key = data[0].value;
-                
-                // Cache key này vào KV trong 5 phút để giảm tải cho Supabase
-                if (env.VIDEO_KV) {
-                    await env.VIDEO_KV.put('GEMINI_ACTIVE_KEY', key, { expirationTtl: 300 });
+            if (response.ok) {
+                const data = await response.json();
+                if (data && data.length > 0) {
+                    // Randomly select one active key to distribute load
+                    const randomIndex = Math.floor(Math.random() * data.length);
+                    const key = data[randomIndex].key_value;
+                    
+                    if (key) {
+                        // Cache key này vào KV trong 5 phút
+                        if (env.VIDEO_KV) {
+                            await env.VIDEO_KV.put('GEMINI_ACTIVE_KEY', key, { expirationTtl: 300 });
+                        }
+                        return key;
+                    }
+                } else {
+                    console.warn("[Proxy] Connected to Supabase but found no active keys in 'api_keys' table.");
                 }
-                return key;
+            } else {
+                console.error("[Proxy] Failed to fetch keys from Supabase:", response.status, await response.text());
             }
         } catch (e) {
-            console.error("Failed to fetch key from Supabase:", e);
+            console.error("[Proxy] Exception fetching key from Supabase:", e);
         }
     }
 
-    // Fallback: Dùng biến môi trường nếu không lấy được từ Supabase
-    if (env.GEMINI_API_KEY) return env.GEMINI_API_KEY;
-
-    throw new Error("GEMINI_API_KEY not configured on Server (Supabase/Env)");
+    throw new Error("GEMINI_API_KEY not configured. Please check 'api_keys' table in Supabase or set env var.");
 }
 
 // --- PROXY HANDLER (Image/Text Generation) ---
-async function handleGeminiProxy(body, env) {
+async function handleGeminiProxy(body, env, request) {
     const { model, payload, method = 'generateContent' } = body;
     
     // Lấy Key an toàn từ Supabase/Env
@@ -121,7 +139,9 @@ async function handleGeminiProxy(body, env) {
     const version = 'v1beta'; 
     const url = `https://generativelanguage.googleapis.com/${version}/models/${model}:${method}?key=${apiKey}`;
 
-    console.log(`[Gemini Proxy] Calling Google: ${model}:${method}`);
+    // Debugging Cloudflare Colocation (Server Location)
+    const cfColo = request?.cf?.colo || 'UNKNOWN';
+    console.log(`[Gemini Proxy] Region: ${cfColo} | Calling: ${model}:${method}`);
 
     const response = await fetch(url, {
         method: 'POST',
@@ -131,17 +151,26 @@ async function handleGeminiProxy(body, env) {
         body: JSON.stringify(payload)
     });
 
-    const data = await response.json();
-    
-    if (!response.ok) {
-        console.error("[Gemini Proxy] Google Error:", data);
-        // Trả lỗi về client nhưng TUYỆT ĐỐI KHÔNG trả về API Key trong message lỗi
-        const errMessage = data.error?.message || "Error from Google API";
-        const safeMessage = errMessage.replace(apiKey, 'HIDDEN_KEY');
-        throw new Error(safeMessage);
+    // Safely parse JSON to avoid crashing on HTML error pages from Google (Common with Geo-blocking)
+    let data;
+    const contentType = response.headers.get("content-type");
+    if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+    } else {
+        const text = await response.text();
+        // Return a structured error if response is not JSON (e.g., HTML 403 Forbidden)
+        data = { 
+            error: { 
+                message: `Upstream Google Error (${response.status}): ${text.substring(0, 200)}...`, // Truncate long HTML
+                status: response.status,
+                type: 'upstream_error',
+                region: cfColo // Include region in error for frontend to debug
+            } 
+        };
     }
-
-    return data;
+    
+    // Forward the original status code and data
+    return { data, status: response.status, ok: response.ok };
 }
 
 // --- VIDEO GENERATION FUNCTIONS (Veo) ---
@@ -243,11 +272,13 @@ async function handleSePayWebhook(request, env) {
         const transactionCode = match ? match[0].toUpperCase() : null;
 
         if (!transactionCode) return new Response(JSON.stringify({ success: false, message: "No transaction code" }), { status: 200 });
-        if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_KEY) throw new Error("Missing Supabase Config");
+        
+        const sbUrl = env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
+        const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
 
-        const response = await fetch(`${env.SUPABASE_URL}/rest/v1/rpc/webhook_approve_transaction`, {
+        const response = await fetch(`${sbUrl}/rest/v1/rpc/webhook_approve_transaction`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'apikey': env.SUPABASE_SERVICE_KEY, 'Authorization': `Bearer ${env.SUPABASE_SERVICE_KEY}` },
+            headers: { 'Content-Type': 'application/json', 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` },
             body: JSON.stringify({ p_transaction_code: transactionCode, p_amount: amount })
         });
         return new Response(JSON.stringify(await response.json()), { status: 200 });
@@ -290,8 +321,10 @@ export default {
 
             // --- ROUTING ---
             if (action === 'gemini_proxy') {
-                const result = await handleGeminiProxy(body, env);
-                return sendJson(result);
+                // PASS request object to access request.cf
+                const { data, status, ok } = await handleGeminiProxy(body, env, request);
+                // Return data with original status code from Google (e.g. 400 for location error)
+                return sendJson(data, status); 
             }
             else if (action === 'auth') {
                 const token = await getAccessToken(env);

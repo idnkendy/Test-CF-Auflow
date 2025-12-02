@@ -256,6 +256,48 @@ export interface LuBanRulerState {
     checkDimension: 'width' | 'height';
 }
 
+export interface LayoutGeneratorState {
+    prompt: string;
+    sourceImage: FileData | null; // Sketch
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    resolution: ImageResolution;
+}
+
+export interface DrawingGeneratorState {
+    prompt: string;
+    sourceImage: FileData | null; // Render
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    resolution: ImageResolution;
+}
+
+export interface DiagramGeneratorState {
+    prompt: string;
+    sourceImage: FileData | null; // Model view
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    diagramType: 'exploded' | 'circulation' | 'massing' | 'environmental';
+    resolution: ImageResolution;
+}
+
+export interface RealEstatePosterState {
+    prompt: string;
+    sourceImage: FileData | null; // Property Photo
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    posterStyle: 'luxury' | 'modern' | 'minimalist' | 'commercial';
+    resolution: ImageResolution;
+}
+
 export interface PricingState {
     // Now mostly unused but kept for compatibility if needed
 }
@@ -512,6 +554,44 @@ export const initialToolStates = {
         height: '2400',
         checkDimension: 'width',
     } as LuBanRulerState,
+    [Tool.LayoutGenerator]: {
+        prompt: 'Bố cục mặt bằng nội thất hiện đại cho căn hộ 2 phòng ngủ, tối ưu không gian.',
+        sourceImage: null,
+        isLoading: false,
+        error: null,
+        resultImages: [],
+        numberOfImages: 1,
+        resolution: 'Standard',
+    } as LayoutGeneratorState,
+    [Tool.DrawingGenerator]: {
+        prompt: 'Tạo bản vẽ kỹ thuật chi tiết mặt đứng với kích thước chuẩn.',
+        sourceImage: null,
+        isLoading: false,
+        error: null,
+        resultImages: [],
+        numberOfImages: 1,
+        resolution: 'Standard',
+    } as DrawingGeneratorState,
+    [Tool.DiagramGenerator]: {
+        prompt: 'Phân tích hình khối và luồng giao thông (circulation) của công trình.',
+        sourceImage: null,
+        isLoading: false,
+        error: null,
+        resultImages: [],
+        numberOfImages: 1,
+        diagramType: 'exploded',
+        resolution: 'Standard',
+    } as DiagramGeneratorState,
+    [Tool.RealEstatePoster]: {
+        prompt: 'Poster bán biệt thự cao cấp, phong cách sang trọng, tối giản, có chỗ cho tiêu đề.',
+        sourceImage: null,
+        isLoading: false,
+        error: null,
+        resultImages: [],
+        numberOfImages: 1,
+        posterStyle: 'luxury',
+        resolution: 'Standard',
+    } as RealEstatePosterState,
     [Tool.Pricing]: {} as PricingState,
     [Tool.Profile]: { activeTab: 'profile' } as ProfileState,
     [Tool.History]: {},

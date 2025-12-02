@@ -1,10 +1,10 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabaseClient';
 import { Tool, FileData, UserStatus, PricingPlan } from './types';
 import Header from './components/Header';
-import Navigation from './components/Navigation';
+import Navigation, { utilityToolsGroup } from './components/Navigation';
 import ImageGenerator from './components/ImageGenerator';
 import VideoGenerator from './components/VideoGenerator';
 import ImageEditor from './components/ImageEditor';
@@ -23,6 +23,10 @@ import MoodboardGenerator from './components/MoodboardGenerator';
 import AITechnicalDrawings from './components/AITechnicalDrawings';
 import SketchConverter from './components/SketchConverter';
 import FengShui from './components/FengShui';
+import LayoutGenerator from './components/LayoutGenerator';
+import DrawingGenerator from './components/DrawingGenerator';
+import DiagramGenerator from './components/DiagramGenerator';
+import RealEstatePoster from './components/RealEstatePoster';
 import UserProfile from './components/UserProfile';
 import Checkout from './components/Checkout'; 
 import PaymentPage from './components/PaymentPage';
@@ -35,6 +39,7 @@ import TermsOfServicePage from './components/TermsOfServicePage'; // Import Term
 import { getUserStatus, deductCredits } from './services/paymentService';
 import * as jobService from './services/jobService';
 import { plans } from './constants/plans';
+import RegionBlockedModal from './components/common/RegionBlockedModal';
 
 // Helper functions for safe navigation history
 const safeHistoryPush = (path: string) => {
@@ -59,6 +64,9 @@ const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
+  // Region Blocked State
+  const [showRegionBlockedModal, setShowRegionBlockedModal] = useState(false);
+
   // FIX: Initialize activeTool from localStorage to persist state on reload
   const [activeTool, setActiveTool] = useState<Tool>(() => {
       const savedTool = localStorage.getItem('activeTool');
@@ -78,28 +86,27 @@ const App: React.FC = () => {
   // State to remember plan if user selects it while logged out
   const [pendingPlan, setPendingPlan] = useState<PricingPlan | null>(null);
 
+  // Ref to the main content area for scroll resetting
+  const mainContentRef = useRef<HTMLDivElement>(null);
+
+  // Region Blocked Listener
+  useEffect(() => {
+      const handleRegionBlocked = () => setShowRegionBlockedModal(true);
+      window.addEventListener('gemini-region-blocked', handleRegionBlocked);
+      return () => window.removeEventListener('gemini-region-blocked', handleRegionBlocked);
+  }, []);
+
+  // Scroll to top whenever activeTool changes
+  useEffect(() => {
+      if (mainContentRef.current) {
+          mainContentRef.current.scrollTo(0, 0);
+      }
+  }, [activeTool]);
+
   // FIX: Persist activeTool whenever it changes
   useEffect(() => {
       localStorage.setItem('activeTool', activeTool);
   }, [activeTool]);
-
-  // Check for pending tab focus to auto-login after email verification
-  useEffect(() => {
-    const handleFocus = async () => {
-        const { data: { session: currentSession } } = await supabase.auth.getSession();
-        if (currentSession) {
-            setSession(currentSession);
-        }
-    };
-
-    window.addEventListener('focus', handleFocus);
-    window.addEventListener('visibilitychange', handleFocus);
-
-    return () => {
-        window.removeEventListener('focus', handleFocus);
-        window.removeEventListener('visibilitychange', handleFocus);
-    };
-  }, []);
 
   useEffect(() => {
     const root = window.document.documentElement;
@@ -122,7 +129,6 @@ const App: React.FC = () => {
                } else if (session) {
                    setView('app');
                } else {
-                   // If not logged in but trying to access payment, verify plan exists
                    if (plan) {
                        setPendingPlan(plan);
                        localStorage.setItem('pendingPlanId', plan.id);
@@ -132,14 +138,11 @@ const App: React.FC = () => {
           } else if (path === '/pricing') {
               setView('pricing');
           } else if (path === '/') {
-              // Allow homepage even if logged in
               setView('homepage');
           } else if (path === '/feature') {
-              // FIX: Strict check for session on popstate to /feature
               if (session) {
                   setView('app');
               } else {
-                  // If backing into feature without session, force home
                   safeHistoryReplace('/');
                   setView('homepage');
               }
@@ -150,124 +153,119 @@ const App: React.FC = () => {
       return () => window.removeEventListener('popstate', handlePopState);
   }, [session]);
 
-  // 1. INITIAL SESSION CHECK (Runs once on mount)
+  // AUTH LOGIC - OPTIMIZED FOR GOOGLE REDIRECT
   useEffect(() => {
-    const initSession = async () => {
-        setLoadingSession(true);
-        const { data: { session: initialSession } } = await supabase.auth.getSession();
-        
-        // Check URL for plan param (e.g. returning from OAuth redirect)
-        const params = new URLSearchParams(window.location.search);
-        const planIdParam = params.get('plan');
-        const urlPlan = planIdParam ? plans.find(p => p.id === planIdParam) : null;
+    let mounted = true;
 
-        if (initialSession) {
-            setSession(initialSession);
-            
-            // PRIORITY 1: URL Param Plan (OAuth redirect)
-            if (urlPlan) {
-                setSelectedPlan(urlPlan);
-                setView('payment');
-                safeHistoryReplace('/'); // Clean URL
-            } 
-            // PRIORITY 2: Pending Plan from LocalStorage (OAuth/Refresh persistence)
-            else {
-                const savedPlanId = localStorage.getItem('pendingPlanId');
-                const plan = savedPlanId ? plans.find(p => p.id === savedPlanId) : pendingPlan;
+    // 1. Setup Auth Listener
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (!mounted) return;
 
-                if (plan) {
-                    setSelectedPlan(plan);
-                    setPendingPlan(null);
-                    localStorage.removeItem('pendingPlanId'); // Clear it
-                    setView('payment');
-                }
-                // PRIORITY 3: Check if path is explicitly pricing
-                else if (window.location.pathname === '/pricing') {
-                    setView('pricing');
-                }
-                // PRIORITY 4: App View ONLY if specifically on /feature
-                else if (window.location.pathname === '/feature') {
-                     setView('app');
-                }
-                // PRIORITY 5: If on root ('/'), stay on Homepage even if logged in (Standard SaaS behavior)
-                // This fixes the "URL mismatch" issue.
-                else {
-                    setView('homepage');
-                }
-            }
-        } else {
-            // Not logged in
-            if (window.location.pathname === '/pricing') {
-                setView('pricing');
-            } else if (window.location.pathname === '/feature') {
-                // FIX: If trying to access feature without auth on load, redirect to home
-                safeHistoryReplace('/');
-                setView('homepage');
-            }
-        }
-        setLoadingSession(false);
-    };
+      // === CRITICAL FIX: Clean URL immediately upon SIGNED_IN ===
+      // This prevents the "slow load" feel by removing the giant token string instantly
+      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+          if (window.location.hash && window.location.hash.includes('access_token')) {
+              // Clean the URL hash without reloading the page
+              window.history.replaceState(null, '', window.location.pathname + window.location.search);
+          }
+      }
 
-    initSession();
-  }, []);
+      setSession(newSession);
 
-  // 2. AUTH STATE LISTENER (Runs when auth state or view changes)
-  useEffect(() => {
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      
-      // FIX: Handle SIGNED_OUT explicitly to clear state cleanly
       if (event === 'SIGNED_OUT') {
           setSession(null);
           setUserStatus(null);
           setSelectedPlan(null);
-          // Don't rely on 'view' state here to avoid race conditions, force homepage
           if (window.location.pathname === '/feature' || window.location.pathname === '/payment') {
               setView('homepage');
               safeHistoryReplace('/');
           }
+          setLoadingSession(false);
           return;
       }
-
-      setSession(session);
       
-      if (session) {
-          // Check if we have a pending plan waiting (from State or LocalStorage)
+      if (newSession) {
+          // Handle Pending Plans (e.g. user clicked "Buy" then logged in)
           const savedPlanId = localStorage.getItem('pendingPlanId');
           const plan = savedPlanId ? plans.find(p => p.id === savedPlanId) : pendingPlan;
 
-          if (plan) {
+          // Check URL for plan param (OAuth redirect scenario)
+          const params = new URLSearchParams(window.location.search);
+          const urlPlanId = params.get('plan');
+          const urlPlan = urlPlanId ? plans.find(p => p.id === urlPlanId) : null;
+
+          if (urlPlan) {
+              setSelectedPlan(urlPlan);
+              setView('payment');
+              safeHistoryReplace('/'); // Clean URL
+          } else if (plan) {
               setSelectedPlan(plan);
               setPendingPlan(null);
               localStorage.removeItem('pendingPlanId');
               setView('payment');
-          } 
-          // Only redirect to app if we are currently on the Auth page (Login/Signup success)
-          else if (view === 'auth') {
+          } else if (view === 'auth') {
+              // Redirect to app if logging in from Auth page
               setView('app');
               safeHistoryReplace('/feature');
+          } else if (window.location.pathname === '/feature') {
+              setView('app');
           }
-          // Note: We intentionally DO NOT redirect from 'homepage' or 'pricing' here 
-          // to allow logged-in users to browse those pages.
       } else {
-          // Logged out
+          // No session
           if (view === 'app' || view === 'payment') {
               setView('homepage');
               safeHistoryPush('/');
           }
       }
+      
+      // Stop loading spinner immediately when Auth state resolves
       setLoadingSession(false);
     });
 
-    return () => subscription.unsubscribe();
-  }, [pendingPlan, view]);
+    // 2. Initial Session Check
+    // Optimization: If we have an access_token in the URL, DO NOT call getSession manually.
+    // Let onAuthStateChange handle it. Calling getSession here causes a race condition and double-processing.
+    const isRedirectingFromProvider = window.location.hash && window.location.hash.includes('access_token');
+    
+    if (!isRedirectingFromProvider) {
+        const initSession = async () => {
+            const { data: { session: initialSession } } = await supabase.auth.getSession();
+            if (mounted) {
+                if (initialSession) {
+                    setSession(initialSession);
+                    // Routing Logic for Initial Load
+                    if (window.location.pathname === '/pricing') setView('pricing');
+                    else if (window.location.pathname === '/feature') setView('app');
+                    else if (window.location.pathname === '/payment') {
+                         const params = new URLSearchParams(window.location.search);
+                         const planId = params.get('plan');
+                         const plan = plans.find(p => p.id === planId);
+                         if (plan) { setSelectedPlan(plan); setView('payment'); }
+                         else setView('app');
+                    }
+                    else setView('homepage'); // Default to homepage
+                } else {
+                    // Not logged in routing
+                    if (window.location.pathname === '/pricing') setView('pricing');
+                    else if (window.location.pathname === '/feature') {
+                        setView('homepage');
+                        safeHistoryReplace('/');
+                    }
+                }
+                setLoadingSession(false);
+            }
+        };
+        initSession();
+    } else {
+        // If redirecting, we are essentially "loading" until the event listener fires
+        setLoadingSession(true);
+    }
 
-  // FIX: Safety Guard - Redirect if on feature page without session
-  useEffect(() => {
-      if (!loadingSession && !session && window.location.pathname === '/feature') {
-           setView('homepage');
-           safeHistoryReplace('/');
-      }
-  }, [loadingSession, session]);
+    return () => {
+        mounted = false;
+        subscription.unsubscribe();
+    };
+  }, [pendingPlan]); // Removed 'view' dependency to prevent loops
 
   // Define fetchUserStatus using useCallback to be stable
   const fetchUserStatus = useCallback(async () => {
@@ -321,20 +319,17 @@ const App: React.FC = () => {
 
   const handleSignOut = async () => {
     try {
-        // FIX: Call Supabase signOut FIRST
         await supabase.auth.signOut();
     } catch (error) {
         console.error("Sign out error:", error);
     } finally {
-        // FIX: Explicitly clear persistent tool state on logout
         localStorage.removeItem('activeTool');
         localStorage.removeItem('pendingPlanId');
         
-        // THEN clear local state
         setSession(null);
         setUserStatus(null);
         setSelectedPlan(null);
-        setActiveTool(Tool.ArchitecturalRendering); // Reset tool for next user
+        setActiveTool(Tool.ArchitecturalRendering);
         
         setView('homepage');
         safeHistoryReplace('/'); 
@@ -342,7 +337,6 @@ const App: React.FC = () => {
   };
   
   const handleGoHome = () => {
-    // Always go to homepage view regardless of session state
     setView('homepage');
     safeHistoryPush('/');
   }
@@ -368,7 +362,6 @@ const App: React.FC = () => {
     }));
   };
 
-  // This function now specifically routes to the Public Pricing page /pricing
   const handleNavigateToPricing = () => {
       setView('pricing');
       safeHistoryPush('/pricing');
@@ -383,18 +376,15 @@ const App: React.FC = () => {
       }
   }
 
-  // Logic xử lý khi chọn gói từ trang Bảng giá hoặc Checkout
   const handleSelectPlanForPayment = (plan: PricingPlan) => {
       if (session) {
-          // Đã đăng nhập -> Vào thẳng trang thanh toán
           setSelectedPlan(plan);
           setView('payment');
           safeHistoryPush(`/payment?plan=${plan.id}`);
       } else {
-          // Chưa đăng nhập -> Lưu gói lại -> Chuyển sang đăng nhập
           setPendingPlan(plan);
-          localStorage.setItem('pendingPlanId', plan.id); // Backup to localStorage for OAuth redirects
-          setAuthMode('login'); // Mặc định chuyển sang đăng nhập
+          localStorage.setItem('pendingPlanId', plan.id);
+          setAuthMode('login'); 
           setView('auth');
       }
   };
@@ -425,7 +415,6 @@ const App: React.FC = () => {
 
   // --- RENDER LOGIC ---
 
-  // Independent Routing Check for Terms of Service (No Session Required)
   if (window.location.pathname === '/terms-of-service') {
       return <TermsOfServicePage />;
   }
@@ -438,10 +427,15 @@ const App: React.FC = () => {
     );
   }
   
-  // Payment Page (Protected but handled by session logic)
+  // Render Modal if region blocked
+  const regionModal = showRegionBlockedModal ? (
+      <RegionBlockedModal onClose={() => setShowRegionBlockedModal(false)} />
+  ) : null;
+  
   if (view === 'payment' && selectedPlan && session) {
       return (
           <div className="min-h-screen bg-main-bg dark:bg-[#121212] font-sans">
+              {regionModal}
               <Header 
                   onGoHome={handleGoHome} 
                   onThemeToggle={handleThemeToggle} 
@@ -461,25 +455,29 @@ const App: React.FC = () => {
       );
   }
 
-  // Public Pricing Page (Accessible by both)
   if (view === 'pricing') {
       return (
-        <PublicPricing 
-            onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} 
-            onAuthNavigate={handleAuthNavigate} 
-            onPlanSelect={handleSelectPlanForPayment}
-            session={session}
-            userStatus={userStatus}
-            onDashboardNavigate={() => { setView('app'); safeHistoryPush('/feature'); }}
-            onSignOut={handleSignOut}
-        />
+        <div className="relative">
+            {regionModal}
+            <PublicPricing 
+                onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} 
+                onAuthNavigate={handleAuthNavigate} 
+                onPlanSelect={handleSelectPlanForPayment}
+                session={session}
+                userStatus={userStatus}
+                onDashboardNavigate={() => { setView('app'); safeHistoryPush('/feature'); }}
+                onSignOut={handleSignOut}
+            />
+        </div>
       );
   }
 
-  // LOGGED IN APP VIEW - STRICT CHECK
   if (session && view === 'app') {
+      const isExtendedTool = utilityToolsGroup.tools.some(t => t.tool === activeTool);
+
       return (
-          <div className="h-[100dvh] bg-main-bg dark:bg-[#121212] font-sans text-text-primary dark:text-[#EAEAEA] flex flex-col transition-colors duration-300 overflow-hidden">
+          <div className="h-[100dvh] bg-main-bg dark:bg-[#121212] font-sans text-text-primary dark:text-[#EAEAEA] flex flex-col transition-colors duration-300 overflow-hidden relative">
+              {regionModal}
               <Header 
                   onGoHome={handleGoHome} 
                   onThemeToggle={handleThemeToggle} 
@@ -492,20 +490,85 @@ const App: React.FC = () => {
                   user={session.user}
                   onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
               />
-              <div className="relative flex flex-col md:flex-row flex-grow overflow-hidden">
-                  <Navigation 
-                      activeTool={activeTool} 
-                      setActiveTool={(tool) => {
-                          setActiveTool(tool);
-                          setIsMobileNavOpen(false);
-                      }} 
-                      isMobileOpen={isMobileNavOpen}
-                      onCloseMobile={() => setIsMobileNavOpen(false)}
-                  />
+              
+              <Navigation 
+                  activeTool={activeTool} 
+                  setActiveTool={(tool) => {
+                      setActiveTool(tool);
+                      setIsMobileNavOpen(false);
+                  }} 
+                  isMobileOpen={isMobileNavOpen}
+                  onCloseMobile={() => setIsMobileNavOpen(false)}
+              />
+
+              <div className="relative flex flex-col flex-grow overflow-hidden">
                   <main 
-                      className="flex-1 bg-surface/90 dark:bg-[#191919]/90 backdrop-blur-md md:m-6 md:ml-0 md:rounded-2xl shadow-lg border-t md:border border-border-color dark:border-[#302839] overflow-y-auto scrollbar-hide p-3 sm:p-6 lg:p-8 relative z-0 transition-colors duration-300"
+                      ref={mainContentRef}
+                      className="flex-1 bg-surface/90 dark:bg-[#191919]/90 backdrop-blur-md overflow-y-auto scrollbar-hide p-3 sm:p-6 lg:p-8 relative z-0 transition-colors duration-300"
                       style={{ WebkitOverflowScrolling: 'touch' }}
                   >
+                      {/* Back Button for Extended Tools */}
+                      {isExtendedTool && (
+                          <button 
+                              onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)}
+                              className="flex items-center gap-2 text-text-secondary dark:text-gray-400 hover:text-[#7f13ec] dark:hover:text-[#7f13ec] mb-6 transition-colors font-medium text-sm group"
+                          >
+                              <div className="p-1.5 rounded-full bg-gray-100 dark:bg-gray-800 group-hover:bg-[#7f13ec]/10 transition-colors">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+                                  </svg>
+                              </div>
+                              Quay lại tiện ích
+                          </button>
+                      )}
+
+                      {/* Extended Features Dashboard Grid */}
+                      {activeTool === Tool.ExtendedFeaturesDashboard && (
+                          <div className="max-w-7xl mx-auto pb-10">
+                              <div className="mb-10 text-center animate-fade-in-up">
+                                  <h2 className="text-3xl font-extrabold text-text-primary dark:text-white mb-3">Kho Tiện Ích Mở Rộng</h2>
+                                  <p className="text-text-secondary dark:text-gray-400 max-w-2xl mx-auto text-base">Khám phá các công cụ AI chuyên sâu hỗ trợ mọi giai đoạn thiết kế, quy hoạch và hoàn thiện ý tưởng.</p>
+                              </div>
+                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                  {utilityToolsGroup.tools.map((item, index) => (
+                                      <button
+                                          key={item.tool}
+                                          onClick={() => setActiveTool(item.tool)}
+                                          className={`group relative flex flex-col h-64 rounded-2xl border border-gray-200 dark:border-white/5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl shadow-lg`}
+                                          style={{ animationDelay: `${index * 50}ms` }}
+                                      >
+                                          {/* Background Image with Zoom Effect */}
+                                          {item.image && (
+                                              <img 
+                                                  src={item.image} 
+                                                  alt={item.label} 
+                                                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                              />
+                                          )}
+                                          
+                                          {/* Gradient Overlay for Text Readability */}
+                                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent dark:from-black/90 dark:via-black/60 dark:to-black/20"></div>
+                                          
+                                          {/* Content */}
+                                          <div className="relative z-10 flex flex-col h-full p-6 justify-end text-left">
+                                              <div className="flex items-center gap-3 mb-2">
+                                                   <div className="p-2 rounded-lg bg-white/10 backdrop-blur-md text-white border border-white/20 group-hover:bg-[#7f13ec] group-hover:border-[#7f13ec] transition-colors duration-300">
+                                                      {React.cloneElement(item.icon, { className: "h-6 w-6" })}
+                                                  </div>
+                                                  <h3 className="text-lg font-bold text-white group-hover:text-[#E0E0E0] transition-colors">{item.label}</h3>
+                                              </div>
+                                              
+                                              <p className="text-sm text-gray-300 line-clamp-2 leading-relaxed opacity-90 group-hover:opacity-100 transition-opacity">
+                                                  {item.desc || "Công cụ hỗ trợ thiết kế chuyên nghiệp."}
+                                              </p>
+                                          </div>
+                                      </button>
+                                  ))}
+                              </div>
+                          </div>
+                      )}
+
+                      {/* Tools Rendering */}
                       {activeTool === Tool.Pricing ? (
                           <Checkout onPlanSelect={handleSelectPlanForPayment} />
                       ) : activeTool === Tool.FloorPlan ? (
@@ -640,6 +703,34 @@ const App: React.FC = () => {
                               onTabChange={(tab) => handleToolStateChange(Tool.Profile, { activeTab: tab })}
                               onPurchaseSuccess={fetchUserStatus}
                           /> 
+                      ) : activeTool === Tool.LayoutGenerator ? (
+                          <LayoutGenerator
+                              state={toolStates.LayoutGenerator}
+                              onStateChange={(newState) => handleToolStateChange(Tool.LayoutGenerator, newState)}
+                              userCredits={userCredits}
+                              onDeductCredits={handleDeductCredits}
+                          />
+                      ) : activeTool === Tool.DrawingGenerator ? (
+                          <DrawingGenerator
+                              state={toolStates.DrawingGenerator}
+                              onStateChange={(newState) => handleToolStateChange(Tool.DrawingGenerator, newState)}
+                              userCredits={userCredits}
+                              onDeductCredits={handleDeductCredits}
+                          />
+                      ) : activeTool === Tool.DiagramGenerator ? (
+                          <DiagramGenerator
+                              state={toolStates.DiagramGenerator}
+                              onStateChange={(newState) => handleToolStateChange(Tool.DiagramGenerator, newState)}
+                              userCredits={userCredits}
+                              onDeductCredits={handleDeductCredits}
+                          />
+                      ) : activeTool === Tool.RealEstatePoster ? (
+                          <RealEstatePoster
+                              state={toolStates.RealEstatePoster}
+                              onStateChange={(newState) => handleToolStateChange(Tool.RealEstatePoster, newState)}
+                              userCredits={userCredits}
+                              onDeductCredits={handleDeductCredits}
+                          />
                       ) : null}
                   </main>
               </div>
@@ -654,17 +745,20 @@ const App: React.FC = () => {
   
   // Homepage View
   return (
-    <Homepage 
-        onStart={handleStartDesigning} 
-        onAuthNavigate={handleAuthNavigate} 
-        onNavigateToPricing={handleNavigateToPricing} 
-        session={session}
-        userStatus={userStatus}
-        onGoToGallery={handleOpenGallery}
-        onOpenProfile={handleOpenProfile}
-        onNavigateToTool={handleNavigateToTool}
-        onSignOut={handleSignOut}
-    />
+    <div className="relative">
+        {regionModal}
+        <Homepage 
+            onStart={handleStartDesigning} 
+            onAuthNavigate={handleAuthNavigate} 
+            onNavigateToPricing={handleNavigateToPricing} 
+            session={session}
+            userStatus={userStatus}
+            onGoToGallery={handleOpenGallery}
+            onOpenProfile={handleOpenProfile}
+            onNavigateToTool={handleNavigateToTool}
+            onSignOut={handleSignOut}
+        />
+    </div>
   );
 };
 
