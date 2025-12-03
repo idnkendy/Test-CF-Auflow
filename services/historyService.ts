@@ -73,7 +73,7 @@ const uploadToStorage = async (userId: string, dataUrlOrBase64: string, folder: 
     }
 };
 
-export const getHistory = async (): Promise<HistoryItem[]> => {
+export const getHistory = async (limit = 10, offset = 0): Promise<HistoryItem[]> => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
@@ -81,7 +81,8 @@ export const getHistory = async (): Promise<HistoryItem[]> => {
         .from(TABLE_NAME)
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(offset, offset + limit - 1); // Pagination logic
 
     if (error) {
         console.error('Error fetching history from Supabase:', error);

@@ -41,27 +41,69 @@ const DownloadIcon = () => (
     </svg>
 );
 
+// Helper to use Supabase Image Transformation
+// Note: This works best with Supabase Pro, but on Free tier it gracefully falls back (no harm done)
+// We request a smaller width (500px) and webp format for the grid view
+const getOptimizedUrl = (url: string) => {
+    if (!url) return '';
+    // Only optimize Supabase Storage URLs
+    if (url.includes('supabase.co') && url.includes('/storage/v1/object/public/')) {
+        // If query params already exist, append. Otherwise start with ?
+        const separator = url.includes('?') ? '&' : '?';
+        // Request resizing to 500px width, quality 60%, and webp format for speed
+        return `${url}${separator}width=500&quality=60&format=webp&resize=contain`;
+    }
+    return url;
+};
+
+const ITEMS_PER_PAGE = 10;
+
 const HistoryPanel: React.FC = () => {
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
     const [isLoading, setIsLoading] = useState(true);
+    const [isLoadingMore, setIsLoadingMore] = useState(false);
     const [isDeletingId, setIsDeletingId] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    
+    // Pagination State
+    const [offset, setOffset] = useState(0);
+    const [hasMore, setHasMore] = useState(true);
+
+    const loadHistory = async (isInitial = false) => {
+        if (isInitial) setIsLoading(true);
+        else setIsLoadingMore(true);
+
+        try {
+            const currentOffset = isInitial ? 0 : offset;
+            const items = await historyService.getHistory(ITEMS_PER_PAGE, currentOffset);
+            
+            if (items.length < ITEMS_PER_PAGE) {
+                setHasMore(false);
+            }
+
+            if (isInitial) {
+                setHistory(items);
+                setOffset(ITEMS_PER_PAGE);
+            } else {
+                setHistory(prev => [...prev, ...items]);
+                setOffset(prev => prev + items.length);
+            }
+        } catch (error) {
+            console.error("Failed to load history from Supabase", error);
+        } finally {
+            if (isInitial) setIsLoading(false);
+            else setIsLoadingMore(false);
+        }
+    };
 
     useEffect(() => {
-        const loadHistory = async () => {
-            setIsLoading(true);
-            try {
-                const items = await historyService.getHistory();
-                setHistory(items);
-            } catch (error) {
-                console.error("Failed to load history from Supabase", error);
-            } finally {
-                setIsLoading(false);
-            }
-        };
-        loadHistory();
+        loadHistory(true);
     }, []);
+
+    const handleLoadMore = () => {
+        loadHistory(false);
+    };
 
     const handleClearHistory = async () => {
         if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử không? Hành động này không thể hoàn tác.')) {
@@ -69,6 +111,8 @@ const HistoryPanel: React.FC = () => {
             try {
                 await historyService.clearHistory();
                 setHistory([]);
+                setOffset(0);
+                setHasMore(false);
             } catch (error) {
                 alert("Có lỗi xảy ra khi xóa lịch sử.");
             } finally {
@@ -190,6 +234,7 @@ const HistoryPanel: React.FC = () => {
                             {isVideo ? (
                                 <video controls autoPlay src={displayUrl} className="w-full h-full max-h-[60vh] object-contain" />
                             ) : (
+                                // For the modal, we load the FULL quality image, not the optimized one
                                 displayUrl && <img src={displayUrl} alt="Kết quả đã tạo" className="w-full h-full max-h-[60vh] object-contain" />
                             )}
                         </div>
@@ -294,65 +339,87 @@ const HistoryPanel: React.FC = () => {
                     <p className="text-sm text-text-secondary dark:text-gray-400">Hãy bắt đầu sáng tạo để lưu lại các tác phẩm của bạn tại đây.</p>
                 </div>
             ) : (
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                    {history.map(item => {
-                         const displayUrl = item.media_url || item.resultImageURL || item.resultVideoURL;
-                         const isVideo = item.media_type === 'video' || !!item.resultVideoURL;
-                         const dateString = item.created_at 
-                            ? new Date(item.created_at).toLocaleDateString('vi-VN')
-                            : (item.timestamp ? new Date(item.timestamp).toLocaleDateString('vi-VN') : '');
-                         
-                         const isDeleting = isDeletingId === item.id;
+                <div className="space-y-8">
+                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
+                        {history.map(item => {
+                             const displayUrl = item.media_url || item.resultImageURL || item.resultVideoURL;
+                             const isVideo = item.media_type === 'video' || !!item.resultVideoURL;
+                             const dateString = item.created_at 
+                                ? new Date(item.created_at).toLocaleDateString('vi-VN')
+                                : (item.timestamp ? new Date(item.timestamp).toLocaleDateString('vi-VN') : '');
+                             
+                             const isDeleting = isDeletingId === item.id;
 
-                         return (
-                            <div 
-                                key={item.id} 
-                                className="group relative aspect-square bg-surface dark:bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl border border-border-color dark:border-gray-700 hover:border-accent dark:hover:border-accent transition-all duration-300" 
-                                onClick={() => setSelectedItem(item)}
-                            >
-                                {isVideo ? (
-                                    <>
-                                        <video 
-                                            src={displayUrl} 
-                                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
-                                            muted 
-                                            autoPlay 
-                                            loop 
-                                            playsInline
-                                        />
-                                        <div className="absolute inset-0 bg-black/10 flex items-center justify-center pointer-events-none">
-                                            <div className="bg-black/30 p-2 rounded-full backdrop-blur-sm">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                                                </svg>
+                             return (
+                                <div 
+                                    key={item.id} 
+                                    className="group relative aspect-square bg-surface dark:bg-gray-800 rounded-xl overflow-hidden cursor-pointer shadow-sm hover:shadow-xl border border-border-color dark:border-gray-700 hover:border-accent dark:hover:border-accent transition-all duration-300" 
+                                    onClick={() => setSelectedItem(item)}
+                                >
+                                    {isVideo ? (
+                                        <>
+                                            <video 
+                                                src={displayUrl} 
+                                                className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" 
+                                                muted 
+                                                // Don't autoplay grid videos to save bandwidth
+                                                playsInline
+                                            />
+                                            <div className="absolute inset-0 bg-black/10 flex items-center justify-center pointer-events-none">
+                                                <div className="bg-black/30 p-2 rounded-full backdrop-blur-sm">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-white" viewBox="0 0 20 20" fill="currentColor">
+                                                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                                    </svg>
+                                                </div>
                                             </div>
-                                        </div>
-                                    </>
-                                ) : (
-                                    displayUrl && <img src={displayUrl} alt={item.prompt} className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105" loading="lazy" />
-                                )}
-                                
-                                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
-                                    <p className="text-white text-xs font-bold mb-0.5 truncate">{toolDisplayNames[item.tool] || item.tool}</p>
-                                    <p className="text-gray-300 text-[10px]">{dateString}</p>
-                                </div>
-
-                                {isDeleting ? (
-                                    <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-20 backdrop-blur-sm">
-                                        <Spinner />
+                                        </>
+                                    ) : (
+                                        // Use Optimized URL + Lazy Loading + Async Decoding
+                                        displayUrl && <img 
+                                            src={getOptimizedUrl(displayUrl)} 
+                                            alt={item.prompt} 
+                                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105 bg-gray-200 dark:bg-gray-700" 
+                                            loading="lazy"
+                                            decoding="async"
+                                        />
+                                    )}
+                                    
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-3">
+                                        <p className="text-white text-xs font-bold mb-0.5 truncate">{toolDisplayNames[item.tool] || item.tool}</p>
+                                        <p className="text-gray-300 text-[10px]">{dateString}</p>
                                     </div>
-                                ) : (
-                                    <button
-                                        onClick={(e) => handleDeleteItem(item.id, e)}
-                                        className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 backdrop-blur-md shadow-sm hover:scale-110"
-                                        title="Xóa mục này"
-                                    >
-                                        <TrashIcon />
-                                    </button>
-                                )}
-                            </div>
-                        );
-                    })}
+
+                                    {isDeleting ? (
+                                        <div className="absolute inset-0 bg-black/70 flex items-center justify-center z-20 backdrop-blur-sm">
+                                            <Spinner />
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={(e) => handleDeleteItem(item.id, e)}
+                                            className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 backdrop-blur-md shadow-sm hover:scale-110"
+                                            title="Xóa mục này"
+                                        >
+                                            <TrashIcon />
+                                        </button>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    
+                    {/* Load More Button */}
+                    {hasMore && (
+                        <div className="flex justify-center pt-6">
+                            <button 
+                                onClick={handleLoadMore}
+                                disabled={isLoadingMore}
+                                className="px-6 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full text-text-secondary dark:text-gray-300 font-medium text-sm hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition-all flex items-center gap-2"
+                            >
+                                {isLoadingMore && <Spinner />}
+                                {isLoadingMore ? 'Đang tải...' : 'Xem thêm'}
+                            </button>
+                        </div>
+                    )}
                 </div>
             )}
         </div>

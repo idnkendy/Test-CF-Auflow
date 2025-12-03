@@ -25,14 +25,14 @@ const handleGeminiError = (error: any) => {
 
     // 1. Lỗi Quá Tải / Hết Quota (429)
     if (message.includes('429') || lowerMsg.includes('quota') || lowerMsg.includes('resource_exhausted')) {
-        customError.message = "Hệ thống đang nhận quá nhiều yêu cầu. Đang tự động thử lại...";
+        customError.message = "Hệ thống đang nhận quá nhiều yêu cầu. Vui lòng đợi 30 giây rồi thử lại.";
         customError.isRetryable = true;
         return customError;
     }
     
     // 2. Lỗi Server Google (500, 503)
     if (message.includes('503') || message.includes('500') || lowerMsg.includes('overloaded') || lowerMsg.includes('unavailable') || lowerMsg.includes('internal')) {
-        customError.message = "Máy chủ AI đang quá tải. Đang tự động thử lại...";
+        customError.message = "Máy chủ AI đang quá tải. Vui lòng thử lại sau ít phút.";
         customError.isRetryable = true;
         return customError;
     }
@@ -128,7 +128,7 @@ async function callGeminiProxy(model: string, payload: any): Promise<any> {
             // If not retryable or max attempts reached, throw the final error
             if (attempt === MAX_ATTEMPTS) {
                 console.error(`[Gemini Proxy] Max retries reached (${MAX_ATTEMPTS}). Giving up.`);
-                processedError.message = "Hệ thống quá tải trong thời gian dài. Vui lòng thử lại sau ít phút.";
+                // Keep the last specific overload message
             }
             
             throw processedError;
