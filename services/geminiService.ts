@@ -49,7 +49,7 @@ const getGeminiApiKey = async (): Promise<string> => {
     try {
         // Gọi RPC (Stored Procedure) từ Supabase để lấy key
         // Logic SQL của bạn xử lý: Random, Rate Limit, Encryption
-        const { data: encryptedKey, error } = await supabase.rpc('get_api_key');
+        const { data: encryptedKey, error } = await supabase.rpc('get_random_api_key');
 
         if (error) {
             console.error("Supabase RPC Error:", error);
