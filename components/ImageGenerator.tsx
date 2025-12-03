@@ -102,7 +102,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             };
             
             checkQueue(); // Initial check
-            interval = setInterval(checkQueue, 5000); // Check every 5s
+            // Optimization: Increased from 3s to 8s to reduce DB load for 300 concurrent users
+            interval = setInterval(checkQueue, 8000); 
         } else {
             setQueuePosition(null);
         }
@@ -433,6 +434,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             </div>
             
             {/* --- INPUTS CONTAINER --- */}
+            {/* Adjusted padding for tablet optimization: p-4 on small, p-6 on tablet/desktop */}
             <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-4 md:p-6 rounded-xl border border-border-color dark:border-gray-700">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                     

@@ -1,83 +1,17 @@
 
 import { AspectRatio, FileData, ImageResolution } from "../types";
-import { supabase } from "./supabaseClient";
 
 // --- API CONFIGURATION ---
-const API_VERSION = 'v1beta';
-const BASE_URL = 'https://generativelanguage.googleapis.com';
+// Get API URL from env var if available (Set VITE_API_URL in Cloudflare Pages Settings)
+// @ts-ignore
+const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || ""; 
 
-// --- SECURITY CONFIGURATION ---
-// KHÓA BÍ MẬT: Phải khớp hoàn toàn với biến v_secret trong hàm SQL trên Supabase
-const ENCRYPTION_SECRET = 'OPZEN_SUPER_SECRET_2025'; 
-
-/**
- * Lớp giải mã (Translation Layer)
- * Giải mã chuỗi Base64 + XOR nhận được từ Server thành API Key thật.
- */
-const decryptKey = (encryptedBase64: string): string => {
-    try {
-        if (!encryptedBase64) return '';
-        
-        // 1. Decode Base64 (Server trả về Base64)
-        const encryptedString = atob(encryptedBase64);
-        
-        // 2. XOR Decrypt (Đảo ngược quá trình của SQL)
-        let decrypted = '';
-        const secretLen = ENCRYPTION_SECRET.length;
-
-        for (let i = 0; i < encryptedString.length; i++) {
-            const charCode = encryptedString.charCodeAt(i) ^ ENCRYPTION_SECRET.charCodeAt(i % secretLen);
-            decrypted += String.fromCharCode(charCode);
-        }
-
-        // Kiểm tra sơ bộ: API Key Google thường bắt đầu bằng "AIza"
-        if (!decrypted.startsWith("AIza")) {
-            console.warn("Key giải mã có vẻ không đúng định dạng (Không bắt đầu bằng AIza). Đang dùng chuỗi gốc...");
-            // Fallback: Có thể Server chưa cập nhật SQL mới, trả về nguyên gốc nếu nó giống key thật
-            if (encryptedBase64.startsWith("AIza")) return encryptedBase64;
-        }
-
-        return decrypted;
-    } catch (e) {
-        console.error("Lỗi giải mã API Key:", e);
-        // Fallback an toàn: Trả về chuỗi gốc nếu giải mã lỗi
-        return encryptedBase64;
+// Helper to construct API URL
+const getProxyUrl = () => {
+    if (BACKEND_URL) {
+        return `${BACKEND_URL.replace(/\/$/, "")}`; 
     }
-};
-
-const getApiKey = async (): Promise<string> => {
-    // Không sử dụng Cache để đảm bảo mỗi request đều gọi xuống DB lấy key mới
-    // giúp tính năng Load Balancing và Usage Counting hoạt động chính xác.
-
-    try {
-        // Gọi RPC function từ Supabase
-        const { data, error } = await supabase.rpc('get_random_api_key');
-        
-        if (error) {
-            console.error("Lỗi lấy API Key từ Supabase:", error);
-            // @ts-ignore
-            const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
-            if (envKey) return envKey;
-            throw new Error("Không thể lấy khóa bảo mật hệ thống.");
-        }
-
-        if (!data) {
-             // @ts-ignore
-             const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
-             if (envKey) return envKey;
-             throw new Error("Hệ thống hết Key khả dụng.");
-        }
-
-        // GIẢI MÃ KEY TRƯỚC KHI DÙNG
-        return decryptKey(data);
-
-    } catch (e) {
-        // Fallback cuối cùng nếu mọi thứ lỗi
-        // @ts-ignore
-        const envKey = (import.meta as any).env?.VITE_GEMINI_API_KEY;
-        if (envKey) return envKey;
-        throw e;
-    }
+    return `/api`; // Default to relative path for Cloudflare Pages/Vercel
 };
 
 // --- ERROR HANDLING HELPER ---
@@ -86,325 +20,448 @@ const handleGeminiError = (error: any) => {
     const lowerMsg = message.toLowerCase();
     
     if (message.includes('429') || lowerMsg.includes('quota') || lowerMsg.includes('resource_exhausted')) {
-        return new Error("Hệ thống đang quá tải (Quota Exceeded). Đang chuyển sang Key dự phòng...");
+        return new Error("Hệ thống đang quá tải (Quota Exceeded). Đang thử lại...");
     }
     if (message.includes('503') || lowerMsg.includes('overloaded') || lowerMsg.includes('unavailable')) {
-        return new Error("Server AI đang quá tải. Vui lòng thử lại.");
+        return new Error("Server AI đang bận (503). Đang thử lại...");
     }
     if (message.includes('SAFETY')) {
         return new Error("Nội dung bị chặn bởi bộ lọc an toàn của Google.");
     }
-    if (message.includes('User location is not supported') || lowerMsg.includes('location')) {
+    if (message.includes('User location is not supported') || lowerMsg.includes('location') || lowerMsg.includes('region')) {
+        // Trigger global event for region blocking
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
         }
-        return new Error("Khu vực hiện tại bị chặn IP. Vui lòng bật VPN.");
+        return new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
     }
-    
     return new Error(message);
 };
 
-// --- CORE DIRECT CALL FUNCTION ---
-async function callGeminiDirect(model: string, payload: any, method: string = 'generateContent', retryCount = 0) {
-    try {
-        // Luôn lấy key mới mỗi lần gọi API (kể cả khi retry)
-        const apiKey = await getApiKey();
-        const url = `${BASE_URL}/${API_VERSION}/models/${model}:${method}?key=${apiKey}`;
+// --- PROXY CALLER ---
+// Sends request to our own backend (/api) which then forwards to Google.
+// API Key is injected on the backend, never exposed to client.
+async function callGeminiProxy(model: string, payload: any, retryCount = 0): Promise<any> {
+    const maxRetries = 3;
+    const url = getProxyUrl();
 
+    try {
         const response = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: 'gemini_proxy',
+                model: model,
+                payload: payload
+            })
         });
+
+        const data = await response.json();
 
         if (!response.ok) {
-            const errorText = await response.text();
-            
-            // Xử lý lỗi Key (400) hoặc Quota (429) hoặc Forbidden (403)
-            const isKeyError = response.status === 400 && errorText.includes('API_KEY');
-            const isForbidden = response.status === 403;
-            const isQuota = response.status === 429;
-
-            // Nếu lỗi Key hoặc Quota, thử lại với Key khác (tối đa 2 lần)
-            if ((isKeyError || isForbidden || isQuota) && retryCount < 2) {
-                console.warn(`API Error (${response.status}). Rotating key and retrying...`);
-                // Gọi đệ quy sẽ tự động lấy key mới vì getApiKey không còn cache
-                return callGeminiDirect(model, payload, method, retryCount + 1);
-            }
-
-            let errorData;
-            try {
-                errorData = JSON.parse(errorText);
-            } catch {
-                if (response.status === 403) {
-                     throw new Error("User location is not supported");
-                }
-                throw new Error(`Google API Error (${response.status}): ${errorText.substring(0, 100)}`);
-            }
-            throw new Error(errorData.error?.message || "Unknown Gemini API Error");
+            // Handle error response from Proxy (or Google via Proxy)
+            const errorMsg = data.error?.message || data.message || `Error ${response.status}`;
+            throw new Error(errorMsg);
         }
 
-        return await response.json();
-    } catch (e: any) {
-        // Nếu lỗi mạng hoặc quota ở tầng fetch, cũng thử retry
-        if (e.message && (e.message.includes('Quota') || e.message.includes('Exceeded')) && retryCount < 2) {
-             console.warn("Quota exceeded exception. Retrying...");
-             return callGeminiDirect(model, payload, method, retryCount + 1);
+        // Check for Google API specific errors embedded in 200 OK response (rare but possible)
+        if (data.error) {
+            throw new Error(data.error.message || JSON.stringify(data.error));
         }
-        throw handleGeminiError(e);
+
+        return data;
+
+    } catch (error: any) {
+        console.error(`[Gemini Proxy] Error calling ${model} (Attempt ${retryCount + 1}):`, error);
+
+        // Retry logic for 503/429 errors
+        const shouldRetry = error.message.includes('503') || error.message.includes('429') || error.message.includes('overloaded');
+        
+        if (shouldRetry && retryCount < maxRetries) {
+            const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000; // Exponential backoff
+            console.log(`Retrying in ${delay}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return callGeminiProxy(model, payload, retryCount + 1);
+        }
+
+        throw handleGeminiError(error);
     }
 }
-
-// --- DATA PREPARATION HELPERS ---
-
-const buildContents = (prompt: string, images?: FileData[]) => {
-    const parts: any[] = [];
-    
-    if (images && images.length > 0) {
-        images.forEach(img => {
-            const cleanBase64 = img.base64.includes(',') ? img.base64.split(',')[1] : img.base64;
-            parts.push({
-                inlineData: {
-                    mimeType: img.mimeType,
-                    data: cleanBase64
-                }
-            });
-        });
-    }
-    
-    parts.push({ text: prompt });
-    return { contents: [{ parts }] };
-};
 
 // --- GENERATION FUNCTIONS ---
 
 export const generateStandardImage = async (
     prompt: string, 
     aspectRatio: AspectRatio, 
-    numberOfImages: number = 1, 
+    numberOfImages: number, 
     sourceImage?: FileData,
     jobId?: string
 ): Promise<string[]> => {
-    console.log("[GeminiDirect] Generating Standard Image");
+    const model = 'gemini-2.5-flash-image'; // Standard model
     
-    const imagesToUpload = sourceImage ? [sourceImage] : [];
+    // Construct Prompt
+    const parts: any[] = [{ text: prompt }];
+    if (sourceImage) {
+        parts.push({
+            inlineData: {
+                mimeType: sourceImage.mimeType,
+                data: sourceImage.base64
+            }
+        });
+    }
+
     const payload = {
-        ...buildContents(prompt, imagesToUpload),
+        contents: [{ parts }],
         generationConfig: {
-            responseModalities: ["IMAGE"],
-            imageConfig: { aspectRatio: aspectRatio },
-            candidateCount: numberOfImages
+            // Explicitly set candidateCount to 1. 
+            // We handle multiple images by calling the API multiple times in parallel.
+            candidateCount: 1,
         }
     };
 
-    try {
-        const response = await callGeminiDirect('gemini-2.5-flash-image', payload);
-        
-        const imageUrls: string[] = [];
-        if (response.candidates) {
-            for (const candidate of response.candidates) {
-                if (candidate.content?.parts) {
-                    for (const part of candidate.content.parts) {
-                        if (part.inlineData) {
-                            imageUrls.push(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
-                        }
-                    }
-                }
-            }
-        }
+    // Parallel requests for multiple images if API doesn't support batching natively effectively
+    const promises = Array.from({ length: numberOfImages }).map(() => 
+        callGeminiProxy(model, payload)
+            .then(data => extractImagesFromResponse(data))
+    );
 
-        if (imageUrls.length === 0) throw new Error("No image data returned from API");
-        return imageUrls;
-
-    } catch (e) {
-        throw handleGeminiError(e);
-    }
-};
-
-export const generateImage = async (prompt: string, aspectRatio: AspectRatio, numberOfImages: number = 1, jobId?: string): Promise<string[]> => {
-    return generateStandardImage(prompt, aspectRatio, numberOfImages, undefined, jobId);
+    const results = await Promise.all(promises);
+    return results.flat();
 };
 
 export const generateHighQualityImage = async (
     prompt: string, 
     aspectRatio: AspectRatio, 
-    resolution: ImageResolution,
+    resolution: ImageResolution, 
     sourceImage?: FileData,
     jobId?: string,
     referenceImages?: FileData[]
 ): Promise<string[]> => {
+    const model = 'gemini-3-pro-image-preview'; // High quality model
     
-    console.log("[GeminiDirect] Generating High Quality Image");
+    const parts: any[] = [{ text: prompt }];
+    
+    if (sourceImage) {
+        parts.push({
+            inlineData: {
+                mimeType: sourceImage.mimeType,
+                data: sourceImage.base64
+            }
+        });
+    }
 
-    const imagesToUpload: FileData[] = [];
-    if (sourceImage) imagesToUpload.push(sourceImage);
-    if (referenceImages) imagesToUpload.push(...referenceImages);
-
-    const textPart = sourceImage || (referenceImages && referenceImages.length > 0) 
-        ? `${prompt}. Maintain composition/style from provided images.` 
-        : prompt;
-
-    const imageSize = (resolution === 'Standard' ? '1K' : resolution) as "1K" | "2K" | "4K";
+    if (referenceImages && referenceImages.length > 0) {
+        referenceImages.forEach(ref => {
+            parts.push({
+                inlineData: {
+                    mimeType: ref.mimeType,
+                    data: ref.base64
+                }
+            });
+        });
+    }
 
     const payload = {
-        ...buildContents(textPart, imagesToUpload),
+        contents: [{ parts }],
         generationConfig: {
+            // Explicitly set candidateCount to 1 to avoid "Multiple candidates is not enabled" error
+            candidateCount: 1,
             imageConfig: {
                 aspectRatio: aspectRatio,
-                imageSize: imageSize
+                imageSize: resolution === 'Standard' ? '1K' : resolution // Map 'Standard' to '1K' or similar
             }
         }
     };
 
-    try {
-        const response = await callGeminiDirect('gemini-3-pro-image-preview', payload);
-        
-        const imageUrls: string[] = [];
-        if (response.candidates?.[0]?.content?.parts) {
-            for (const part of response.candidates[0].content.parts) {
-                if (part.inlineData) {
-                    imageUrls.push(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
-                }
-            }
-        }
-
-        if (imageUrls.length === 0) throw new Error("Gemini 3.0 Pro không trả về hình ảnh.");
-        return imageUrls;
-
-    } catch (e) {
-        throw handleGeminiError(e);
-    }
+    const data = await callGeminiProxy(model, payload);
+    return extractImagesFromResponse(data);
 };
 
-export const generateVideo = async (prompt: string, startImage?: FileData, jobId?: string): Promise<string> => {
-    throw new Error("Vui lòng sử dụng chế độ Veo 3 (External) để tạo video.");
+export const editImage = async (
+    prompt: string, 
+    image: FileData, 
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
+    // Using standard generation with input image is effectively editing/variation
+    const urls = await generateStandardImage(prompt, '4:3', numberOfImages, image);
+    return urls.map(url => ({ imageUrl: url }));
 };
 
-export const editImage = async (prompt: string, image: FileData, numberOfImages: number = 1, jobId?: string) => {
-    return generateStandardImage(prompt, '1:1', numberOfImages, image, jobId).then(urls => urls.map(url => ({ imageUrl: url, text: '' })));
-};
+export const editImageWithMask = async (
+    prompt: string, 
+    image: FileData, 
+    mask: FileData, 
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
+    
+    const model = 'gemini-2.5-flash-image';
+    
+    const parts = [
+        { text: `Edit the first image based on the second mask image (white area is the edit zone). Instruction: ${prompt}` },
+        { inlineData: { mimeType: image.mimeType, data: image.base64 } },
+        { inlineData: { mimeType: mask.mimeType, data: mask.base64 } }
+    ];
 
-export const editImageWithMask = async (prompt: string, image: FileData, mask: FileData, numberOfImages: number = 1, jobId?: string) => {
-    return generateStandardImage(prompt, '1:1', numberOfImages, undefined, jobId).then(urls => urls.map(url => ({ imageUrl: url, text: '' })));
-};
-
-export const editImageWithReference = async (prompt: string, source: FileData, ref: FileData, numberOfImages: number = 1, jobId?: string) => {
-    const payload = {
-        ...buildContents(prompt, [source, ref]),
+    const payload = { 
+        contents: [{ parts }],
         generationConfig: {
-            responseModalities: ["IMAGE"],
-            candidateCount: numberOfImages
+            candidateCount: 1
         }
     };
-    const response = await callGeminiDirect('gemini-2.5-flash-image', payload);
-    const urls = extractImagesFromResponse(response);
-    return urls.map(url => ({ imageUrl: url, text: '' }));
+    
+    const promises = Array.from({ length: numberOfImages }).map(() => 
+        callGeminiProxy(model, payload).then(data => extractImagesFromResponse(data))
+    );
+
+    const results = await Promise.all(promises);
+    return results.flat().map(url => ({ imageUrl: url }));
 };
 
-export const editImageWithMaskAndReference = async (prompt: string, source: FileData, mask: FileData, ref: FileData, numberOfImages: number = 1, jobId?: string) => {
-    const payload = {
-        ...buildContents(prompt, [source, mask, ref]),
-        generationConfig: { responseModalities: ["IMAGE"], candidateCount: numberOfImages }
+export const editImageWithReference = async (
+    prompt: string, 
+    sourceImage: FileData | null, 
+    referenceImage: FileData | null, 
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
+    const model = 'gemini-2.5-flash-image';
+    
+    const parts: any[] = [{ text: prompt }];
+    if (sourceImage) parts.push({ inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } });
+    if (referenceImage) parts.push({ inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.base64 } });
+
+    const payload = { 
+        contents: [{ parts }],
+        generationConfig: {
+            candidateCount: 1
+        }
     };
-    const response = await callGeminiDirect('gemini-2.5-flash-image', payload);
-    const urls = extractImagesFromResponse(response);
-    return urls.map(url => ({ imageUrl: url, text: '' }));
+
+    const promises = Array.from({ length: numberOfImages }).map(() => 
+        callGeminiProxy(model, payload).then(data => extractImagesFromResponse(data))
+    );
+
+    const results = await Promise.all(promises);
+    return results.flat().map(url => ({ imageUrl: url }));
 };
 
-export const editImageWithMultipleReferences = async (prompt: string, source: FileData, refs: FileData[], numberOfImages: number = 1, jobId?: string) => {
-    const payload = {
-        ...buildContents(prompt, [source, ...refs]),
-        generationConfig: { responseModalities: ["IMAGE"], candidateCount: numberOfImages }
+export const editImageWithMaskAndReference = async (
+    prompt: string, 
+    sourceImage: FileData, 
+    maskImage: FileData, 
+    referenceImage: FileData, 
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
+    const model = 'gemini-2.5-flash-image';
+    
+    const parts: any[] = [
+        { text: prompt },
+        { inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } },
+        { inlineData: { mimeType: maskImage.mimeType, data: maskImage.base64 } },
+        { inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.base64 } }
+    ];
+
+    const payload = { 
+        contents: [{ parts }],
+        generationConfig: {
+            candidateCount: 1
+        }
     };
-    const response = await callGeminiDirect('gemini-2.5-flash-image', payload);
-    const urls = extractImagesFromResponse(response);
-    return urls.map(url => ({ imageUrl: url, text: '' }));
+
+    const promises = Array.from({ length: numberOfImages }).map(() => 
+        callGeminiProxy(model, payload).then(data => extractImagesFromResponse(data))
+    );
+
+    const results = await Promise.all(promises);
+    return results.flat().map(url => ({ imageUrl: url }));
 };
 
-export const editImageWithMaskAndMultipleReferences = async (prompt: string, source: FileData, mask: FileData, refs: FileData[], numberOfImages: number = 1, jobId?: string) => {
-    const payload = {
-        ...buildContents(prompt, [source, mask, ...refs]),
-        generationConfig: { responseModalities: ["IMAGE"], candidateCount: numberOfImages }
-    };
-    const response = await callGeminiDirect('gemini-2.5-flash-image', payload);
-    const urls = extractImagesFromResponse(response);
-    return urls.map(url => ({ imageUrl: url, text: '' }));
-};
+export const editImageWithMultipleReferences = async (
+    prompt: string,
+    sourceImage: FileData,
+    referenceImages: FileData[],
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
+    const model = 'gemini-2.5-flash-image';
+    const parts: any[] = [{ text: prompt }];
+    parts.push({ inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } });
+    
+    referenceImages.forEach(ref => {
+        parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.base64 } });
+    });
 
-export const generateStagingImage = async (prompt: string, scene: FileData, objects: FileData[], numberOfImages: number = 1, jobId?: string) => {
-    const payload = {
-        ...buildContents(prompt, [scene, ...objects]),
-        generationConfig: { responseModalities: ["IMAGE"], candidateCount: numberOfImages }
+    const payload = { 
+        contents: [{ parts }],
+        generationConfig: {
+            candidateCount: 1
+        }
     };
-    const response = await callGeminiDirect('gemini-2.5-flash-image', payload);
-    const urls = extractImagesFromResponse(response);
-    return urls.map(url => ({ imageUrl: url, text: '' }));
-};
+    const promises = Array.from({ length: numberOfImages }).map(() => 
+        callGeminiProxy(model, payload).then(data => extractImagesFromResponse(data))
+    );
+    const results = await Promise.all(promises);
+    return results.flat().map(url => ({ imageUrl: url }));
+}
+
+export const editImageWithMaskAndMultipleReferences = async (
+    prompt: string,
+    sourceImage: FileData,
+    maskImage: FileData,
+    referenceImages: FileData[],
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
+    const model = 'gemini-2.5-flash-image';
+    const parts: any[] = [{ text: prompt }];
+    parts.push({ inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } });
+    parts.push({ inlineData: { mimeType: maskImage.mimeType, data: maskImage.base64 } });
+    
+    referenceImages.forEach(ref => {
+        parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.base64 } });
+    });
+
+    const payload = { 
+        contents: [{ parts }],
+        generationConfig: {
+            candidateCount: 1
+        }
+    };
+    const promises = Array.from({ length: numberOfImages }).map(() => 
+        callGeminiProxy(model, payload).then(data => extractImagesFromResponse(data))
+    );
+    const results = await Promise.all(promises);
+    return results.flat().map(url => ({ imageUrl: url }));
+}
+
+// --- TEXT GENERATION FUNCTIONS ---
 
 export const generateText = async (prompt: string): Promise<string> => {
+    const model = 'gemini-2.5-flash';
     const payload = {
-        ...buildContents(prompt),
-        generationConfig: { responseModalities: ["TEXT"] }
+        contents: [{ parts: [{ text: prompt }] }],
+        // Text models DO support multiple candidates, but we only need 1 here.
+        generationConfig: {
+            candidateCount: 1
+        }
     };
+    
+    const data = await callGeminiProxy(model, payload);
+    return extractTextFromResponse(data);
+};
+
+export const generatePromptSuggestions = async (
+    image: FileData, 
+    subject: string, 
+    count: number,
+    customInstruction: string = ''
+): Promise<Record<string, string[]> | null> => {
+    const model = 'gemini-2.5-flash';
+    
+    const prompt = `Analyze this image and generate ${count} creative prompts for an AI image generator to create a similar architectural/interior style or view. 
+    Focus on: ${subject === 'all' ? 'various aspects' : subject}. 
+    ${customInstruction ? `Additional instruction: ${customInstruction}` : ''}
+    
+    Return the output strictly as a JSON object where keys are categories (e.g., "Lighting", "Composition", "Style") and values are arrays of prompt strings. Do not use Markdown code blocks.`;
+
+    const payload = {
+        contents: [{
+            parts: [
+                { text: prompt },
+                { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+            ]
+        }],
+        generationConfig: { 
+            responseMimeType: "application/json",
+            candidateCount: 1
+        }
+    };
+
+    const data = await callGeminiProxy(model, payload);
+    const text = extractTextFromResponse(data);
+    
     try {
-        const response = await callGeminiDirect('gemini-2.5-flash', payload);
-        return response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    } catch (e) {
-        console.error("Text Gen Error:", e);
-        return "";
-    }
-};
-
-export const generatePromptFromImageAndText = async (image: FileData, prompt: string): Promise<string> => {
-    const payload = {
-        ...buildContents(prompt, [image]),
-        generationConfig: { responseModalities: ["TEXT"] }
-    };
-    const response = await callGeminiDirect('gemini-2.5-flash', payload);
-    return response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-};
-
-export const enhancePrompt = async (prompt: string, image?: FileData): Promise<string> => {
-    const fullPrompt = `Enhance this prompt for architecture: ${prompt}`;
-    const payload = {
-        ...buildContents(fullPrompt, image ? [image] : []),
-        generationConfig: { responseModalities: ["TEXT"] }
-    };
-    const response = await callGeminiDirect('gemini-2.5-flash', payload);
-    return response.candidates?.[0]?.content?.parts?.[0]?.text || '';
-};
-
-export const generateMoodboardPromptFromScene = async (image: FileData): Promise<string> => {
-    return generatePromptFromImageAndText(image, "Create a detailed moodboard prompt describing style, colors, and materials.");
-};
-
-export const generatePromptSuggestions = async (image: FileData, subject: string, count: number, instruction: string): Promise<Record<string, string[]>> => {
-    const prompt = `Analyze this image. Provide ${count} prompts based on "${subject}". ${instruction}. Output strictly JSON.`;
-    const payload = {
-        ...buildContents(prompt, [image]),
-        generationConfig: { responseMimeType: "application/json" }
-    };
-    try {
-        const response = await callGeminiDirect('gemini-2.5-flash', payload);
-        const text = response.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
         return JSON.parse(text);
-    } catch {
-        return {};
+    } catch (e) {
+        console.error("Failed to parse suggestion JSON", e);
+        return null;
     }
 };
 
-function extractImagesFromResponse(response: any): string[] {
-    const imageUrls: string[] = [];
-    if (response.candidates) {
-        for (const candidate of response.candidates) {
+export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
+    const model = 'gemini-2.5-flash';
+    
+    const parts: any[] = [{ text: `Act as an expert architectural prompt engineer. Enhance the following user input into a detailed, professional prompt suitable for high-quality AI rendering (like Midjourney or Gemini). Focus on lighting, materials, atmosphere, and camera specifications. \n\nUser Input: "${userInput}"` }];
+    
+    if (image) {
+        parts.push({ inlineData: { mimeType: image.mimeType, data: image.base64 } });
+        parts[0].text += " \n\nAlso use the visual style of the attached image as a reference.";
+    }
+
+    const payload = { 
+        contents: [{ parts }],
+        generationConfig: {
+            candidateCount: 1
+        }
+    };
+    const data = await callGeminiProxy(model, payload);
+    return extractTextFromResponse(data);
+};
+
+// --- VIDEO GENERATION (GOOGLE SOURCE) ---
+export const generateVideo = async (prompt: string, startImage?: FileData, jobId?: string): Promise<string> => {
+    const model = 'veo-3.1-fast-generate-preview'; 
+    throw new Error("Please use the specialized Video Generation service (Veo 3) for this task.");
+};
+
+export const generateStagingImage = async (prompt: string, sceneImage: FileData, objectImages: FileData[], numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
+    const model = 'gemini-2.5-flash-image';
+    const parts: any[] = [{ text: prompt }];
+    parts.push({ inlineData: { mimeType: sceneImage.mimeType, data: sceneImage.base64 } });
+    
+    objectImages.forEach(obj => {
+        parts.push({ inlineData: { mimeType: obj.mimeType, data: obj.base64 } });
+    });
+
+    const payload = { 
+        contents: [{ parts }],
+        generationConfig: {
+            candidateCount: 1
+        }
+    };
+    const promises = Array.from({ length: numberOfImages }).map(() => 
+        callGeminiProxy(model, payload).then(data => extractImagesFromResponse(data))
+    );
+    const results = await Promise.all(promises);
+    return results.flat().map(url => ({ imageUrl: url }));
+};
+
+
+// --- UTILS ---
+
+const extractImagesFromResponse = (data: any): string[] => {
+    const images: string[] = [];
+    if (data?.candidates) {
+        for (const candidate of data.candidates) {
             if (candidate.content?.parts) {
                 for (const part of candidate.content.parts) {
                     if (part.inlineData) {
-                        imageUrls.push(`data:${part.inlineData.mimeType};base64,${part.inlineData.data}`);
+                        // Gemini returns raw base64, usually no prefix
+                        // We assume PNG or JPEG based on header or default
+                        images.push(`data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`);
                     }
                 }
             }
         }
     }
-    return imageUrls;
-}
+    if (images.length === 0) {
+        // Fallback: Check if it generated text instead (error message or refusal)
+        const text = extractTextFromResponse(data);
+        if (text) throw new Error(`AI returned text instead of image: ${text.substring(0, 100)}...`);
+        throw new Error("No image generated.");
+    }
+    return images;
+};
+
+const extractTextFromResponse = (data: any): string => {
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+};

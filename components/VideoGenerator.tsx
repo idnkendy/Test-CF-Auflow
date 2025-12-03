@@ -103,7 +103,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                 const currentIndex = loadingMessages.indexOf(loadingMessage);
                 const nextIndex = (currentIndex + 1) % loadingMessages.length;
                 onStateChange({ loadingMessage: loadingMessages[nextIndex] });
-            }, 3000);
+            }, 5000); // Increased from 3000ms to 5000ms
         }
         return () => {
             if (interval) clearInterval(interval);

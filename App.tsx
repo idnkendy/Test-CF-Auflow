@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabaseClient';
@@ -270,7 +269,8 @@ const App: React.FC = () => {
   // Define fetchUserStatus using useCallback to be stable
   const fetchUserStatus = useCallback(async () => {
     if (session?.user) {
-      await jobService.cleanupStaleJobs(session.user.id);
+      // PERFORMANCE FIX: Removed client-side cleanupStaleJobs to prevent DB CPU spikes.
+      // This should be handled by a scheduled server-side task (pg_cron or Edge Function).
       const status = await getUserStatus(session.user.id, session.user.email);
       setUserStatus(status);
     } else {

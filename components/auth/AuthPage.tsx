@@ -1,12 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../../services/supabaseClient';
 import Spinner from '../Spinner';
 import { Logo } from '../common/Logo';
 
 interface AuthPageProps {
   onGoHome: () => void;
-  initialMode?: 'login' | 'signup'; // Giữ lại để tương thích props, nhưng không sử dụng logic này nữa
+  initialMode?: 'login' | 'signup';
 }
 
 const GoogleIcon = () => (
@@ -18,9 +18,20 @@ const GoogleIcon = () => (
     </svg>
 );
 
-const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
+const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) => {
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  useEffect(() => {
+      setMode(initialMode);
+      setError(null);
+      setMessage(null);
+  }, [initialMode]);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -37,6 +48,46 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
     }
   };
 
+  const handleEmailAuth = async (e: React.FormEvent) => {
+      e.preventDefault();
+      setLoading(true);
+      setError(null);
+      setMessage(null);
+
+      try {
+          if (mode === 'signup') {
+              const { data, error } = await supabase.auth.signUp({
+                  email,
+                  password,
+              });
+              if (error) throw error;
+              
+              if (data.user && !data.session) {
+                  setMessage("Đăng ký thành công! Vui lòng kiểm tra email để xác thực tài khoản trước khi đăng nhập.");
+                  setMode('login'); // Switch to login view
+              } else {
+                  // Auto logged in (if email confirm is off)
+              }
+          } else {
+              const { error } = await supabase.auth.signInWithPassword({
+                  email,
+                  password,
+              });
+              if (error) throw error;
+          }
+      } catch (err: any) {
+          setError(err.message || "Đã xảy ra lỗi.");
+      } finally {
+          setLoading(false);
+      }
+  };
+
+  const toggleMode = () => {
+      setMode(mode === 'login' ? 'signup' : 'login');
+      setError(null);
+      setMessage(null);
+  }
+
   return (
     <div className="min-h-screen bg-main-bg dark:bg-gray-900 flex flex-col items-center justify-center p-4 relative font-sans">
         <button onClick={onGoHome} className="absolute top-4 left-4 text-text-secondary dark:text-gray-400 hover:text-accent transition-colors flex items-center gap-2">
@@ -50,10 +101,10 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
             </div>
             <div className="bg-surface dark:bg-dark-bg p-8 rounded-2xl shadow-xl border border-border-color dark:border-gray-700 text-center">
                 <h2 className="text-2xl font-bold text-center text-text-primary dark:text-white mb-2">
-                    Chào mừng trở lại!
+                    {mode === 'login' ? 'Đăng Nhập' : 'Đăng Ký Tài Khoản'}
                 </h2>
-                <p className="text-center text-text-secondary dark:text-gray-400 mb-8 text-sm">
-                    Đăng nhập để tiếp tục sáng tạo không giới hạn
+                <p className="text-center text-text-secondary dark:text-gray-400 mb-6 text-sm">
+                    {mode === 'login' ? 'Chào mừng trở lại! Sáng tạo không giới hạn.' : 'Tạo tài khoản mới để bắt đầu hành trình sáng tạo.'}
                 </p>
                 
                 {!isSupabaseConfigured && (
@@ -63,15 +114,75 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                     </div>
                 )}
                 
+                {message && <div className="mb-6 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/50 dark:border-green-500 dark:text-green-300 rounded-lg text-sm text-left">{message}</div>}
                 {error && <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm text-left">{error}</div>}
+
+                {/* Email/Password Form */}
+                <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
+                    <div>
+                        <input
+                            type="email"
+                            placeholder="Email"
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-xl px-4 py-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] focus:outline-none transition-all"
+                        />
+                    </div>
+                    <div>
+                        <input
+                            type="password"
+                            placeholder="Mật khẩu"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            minLength={6}
+                            className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-xl px-4 py-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] focus:outline-none transition-all"
+                        />
+                    </div>
+                    <button
+                        type="submit"
+                        disabled={loading || !isSupabaseConfigured}
+                        className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md hover:shadow-lg flex items-center justify-center gap-2"
+                    >
+                        {loading ? <Spinner /> : (mode === 'login' ? 'Đăng nhập' : 'Đăng ký')}
+                    </button>
+                </form>
+
+                <div className="relative mb-6">
+                    <div className="absolute inset-0 flex items-center">
+                        <div className="w-full border-t border-border-color dark:border-gray-600"></div>
+                    </div>
+                    <div className="relative flex justify-center text-sm">
+                        <span className="px-2 bg-surface dark:bg-dark-bg text-text-secondary dark:text-gray-400">Hoặc tiếp tục với</span>
+                    </div>
+                </div>
 
                 <button
                   onClick={handleGoogleSignIn}
                   disabled={loading || !isSupabaseConfigured}
-                  className="w-full flex justify-center items-center gap-3 bg-white hover:bg-gray-50 text-gray-900 font-medium py-3 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-300 shadow-sm"
+                  className="w-full flex justify-center items-center gap-3 bg-white hover:bg-gray-50 text-gray-900 font-medium py-3 px-4 rounded-xl transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-300 shadow-sm mb-6"
                 >
-                    {loading ? <Spinner /> : <><GoogleIcon /><span className="text-sm">Tiếp tục với Google</span></>}
+                    <GoogleIcon /><span className="text-sm">Google</span>
                 </button>
+
+                <div className="text-sm text-text-secondary dark:text-gray-400">
+                    {mode === 'login' ? (
+                        <p>
+                            Chưa có tài khoản?{' '}
+                            <button onClick={toggleMode} className="text-[#7f13ec] hover:underline font-bold">
+                                Đăng ký ngay
+                            </button>
+                        </p>
+                    ) : (
+                        <p>
+                            Đã có tài khoản?{' '}
+                            <button onClick={toggleMode} className="text-[#7f13ec] hover:underline font-bold">
+                                Đăng nhập
+                            </button>
+                        </p>
+                    )}
+                </div>
             </div>
         </div>
     </div>

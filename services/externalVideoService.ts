@@ -181,7 +181,8 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
         
         while (attempts < maxRetries) {
             attempts++;
-            await wait(5000);
+            // Optimization: Increased wait time to 8s to reduce server load
+            await wait(8000); 
 
             try {
                 const checkData = await fetchJson('/check', {
@@ -247,7 +248,7 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
 
         while (attempts < maxRetries) {
             attempts++;
-            await wait(5000);
+            await wait(8000); // Increased from 5000ms to 8000ms
 
             const checkData = await fetchJson('/check', {
                 method: 'POST',

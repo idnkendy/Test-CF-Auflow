@@ -227,23 +227,25 @@ const historyItem = { tool: Tool.History, label: 'Lịch sử', icon: <HistoryIc
 
 const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMobileOpen = false, onCloseMobile }) => {
     
-    // Logic to highlight "Extended Features" if a sub-tool is active
     const isExtendedToolActive = utilityToolsGroup.tools.some(item => item.tool === activeTool) || activeTool === Tool.ExtendedFeaturesDashboard;
 
-    const renderItem = (item: { tool: Tool; label: string; icon: React.ReactElement<any>; }, isCompact: boolean = false) => (
+    // isCompact logic: Force compact mode on 'md' screens (tablet), show text on 'lg' and up
+    const renderItem = (item: { tool: Tool; label: string; icon: React.ReactElement<any>; }) => (
         <button
             key={item.tool}
             onClick={() => setActiveTool(item.tool)}
-            className={`group relative flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
+            className={`group relative flex items-center gap-2 px-3 lg:px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
               ${activeTool === item.tool
                 ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10' 
                 : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'
               }`}
+            title={item.label}
           >
             <span className={`relative z-10 transition-colors duration-300 ${activeTool === item.tool ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
-                {React.cloneElement(item.icon, { className: "h-4 w-4" })}
+                {React.cloneElement(item.icon, { className: "h-5 w-5 md:h-6 md:w-6" })}
             </span>
-            <span className={`relative z-10 ${isCompact ? 'hidden xl:inline' : ''}`}>{item.label}</span>
+            {/* Optimized for Tablet: Hidden on md, visible on lg+ */}
+            <span className={`relative z-10 hidden lg:inline`}>{item.label}</span>
           </button>
     );
 
@@ -284,7 +286,6 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                         </button>
                     ))}
                     
-                    {/* Extended Features Link in Mobile */}
                     <button
                         onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)}
                         className={`group flex items-center w-full gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 text-sm font-medium ${
@@ -300,7 +301,19 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                     </button>
 
                     <div className="pt-4 mt-4 border-t border-border-color dark:border-[#302839]">
-                         {renderItem(historyItem)}
+                         <button
+                            onClick={() => setActiveTool(historyItem.tool)}
+                            className={`group flex items-center w-full gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 text-sm font-medium ${
+                            activeTool === historyItem.tool
+                                ? 'bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white shadow-md'
+                                : 'text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white'
+                            }`}
+                        >
+                            <span className={`${activeTool === historyItem.tool ? 'text-white' : 'text-gray-400 group-hover:text-[#7f13ec]'}`}>
+                                {historyItem.icon}
+                            </span>
+                            <span className="truncate">{historyItem.label}</span>
+                        </button>
                     </div>
                 </div>
              </aside>
@@ -317,7 +330,6 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                     {mainNavItems.map((item, index) => (
                         <React.Fragment key={item.tool}>
                             {renderItem(item)}
-                            {/* Separator after every item */}
                             <div className="h-4 w-px bg-gray-300 dark:bg-white/10 mx-1"></div>
                         </React.Fragment>
                     ))}
@@ -325,16 +337,18 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                     {/* Extended Features Button merged here */}
                     <button
                         onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)}
-                        className={`group relative flex items-center gap-2 px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
+                        className={`group relative flex items-center gap-2 px-3 lg:px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
                         ${isExtendedToolActive
                             ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10'
                             : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'
                         }`}
+                        title={utilityToolsGroup.label}
                     >
                         <span className={`relative z-10 transition-colors duration-300 ${isExtendedToolActive ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
-                            {React.cloneElement(utilityToolsGroup.icon, { className: "h-4 w-4" })}
+                            {React.cloneElement(utilityToolsGroup.icon, { className: "h-5 w-5 md:h-6 md:w-6" })}
                         </span>
-                        <span className="relative z-10">{utilityToolsGroup.label}</span>
+                        {/* Hidden on md, visible on lg+ */}
+                        <span className="relative z-10 hidden lg:inline">{utilityToolsGroup.label}</span>
                     </button>
                 </div>
             </div>
@@ -342,7 +356,20 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
             {/* Right Side Tools - History */}
             <div className="absolute right-6 flex items-center">
                 <div className="flex items-center p-1.5 rounded-full bg-gray-50/80 dark:bg-white/5 border border-gray-200 dark:border-white/5 shadow-inner">
-                    {renderItem(historyItem)}
+                    <button
+                        onClick={() => setActiveTool(historyItem.tool)}
+                        className={`group relative flex items-center gap-2 px-3 lg:px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
+                        ${activeTool === historyItem.tool
+                            ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10' 
+                            : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'
+                        }`}
+                        title={historyItem.label}
+                    >
+                        <span className={`relative z-10 transition-colors duration-300 ${activeTool === historyItem.tool ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
+                            {React.cloneElement(historyItem.icon, { className: "h-5 w-5 md:h-6 md:w-6" })}
+                        </span>
+                        <span className={`relative z-10 hidden lg:inline`}>{historyItem.label}</span>
+                    </button>
                 </div>
             </div>
         </div>

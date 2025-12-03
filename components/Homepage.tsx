@@ -112,8 +112,8 @@ const Header: React.FC<HomepageProps> = ({ onStart, onAuthNavigate, session, onG
             </div>
             
             {/* DESKTOP MENU (Visible on LG and above) */}
-            <div className="hidden lg:flex flex-1 justify-end gap-8 items-center">
-                <div className="flex items-center gap-9">
+            <div className="hidden lg:flex flex-1 justify-end gap-4 lg:gap-8 items-center">
+                <div className="flex items-center gap-4 lg:gap-9">
                     <button onClick={() => handleNavClick(Tool.ArchitecturalRendering)} className="text-white/80 hover:text-white text-sm font-medium leading-normal transition-colors">Tạo ảnh</button>
                     
                     <button onClick={() => handleNavClick(Tool.VideoGeneration)} className="text-white/80 hover:text-white text-sm font-medium leading-normal transition-colors">Tạo video</button>
@@ -301,7 +301,8 @@ const Gallery = () => {
     return (
         <section className="flex flex-col gap-8">
             <h2 className="text-white text-3xl font-bold leading-tight tracking-tight px-4 text-center">Khám phá Sáng tạo từ AI</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 px-4 md:px-0">
+            {/* Grid optimized for Tablets: 2 cols on md, 4 cols on lg */}
+            <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-4 gap-4 px-4 md:px-0">
                 <div className="group relative col-span-2 row-span-2 overflow-hidden rounded-2xl cursor-pointer shadow-lg">
                     <img alt="Modern minimalist interior" className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA19aRDxDU95a9KRAABOaXVyi6Ua-lDchfK0VuaaWODCeI6STnJmSKXb3nbMiH6nh8bu62abuZhBLOdzwuhANyVWfLN5yzDUaTdmkqbQ7NjiAIeWxcAIfk2iFOJiHHEcr4EIQx7EhUIoDUMp6peNcm3kx9MFFpTAz34pb9pTfshlDMxvloBJajRQDxUnyej-jIRhsil6i_OXQKjcj4T9PY90eGPRNx8FGrq5DuG0gWtpjNkQrcUX3zQ3mOvycEgoWkux0JIJ-ZuB2RO"/>
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-80"></div>
@@ -348,7 +349,8 @@ const FeatureShowcase: React.FC<{onStart: () => void, onNavigateToTool?: (tool: 
                     Nền tảng trực quan của chúng tôi giúp bạn dễ dàng biến ý tưởng thành hiện thực. Từ một câu mô tả đơn giản đến bản thiết kế hoàn chỉnh, quy trình luôn liền mạch và nhanh chóng.
                 </p>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 p-0 w-full text-left">
+            {/* Optimized Grid: 2 cols on MD, 3 cols on LG */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 p-0 w-full text-left">
                 <div 
                     className="group relative flex flex-col gap-4 rounded-2xl border border-[#302839] bg-[#191919] p-8 transition-all duration-300 hover:border-[#7f13ec]/50 hover:shadow-2xl hover:shadow-[#7f13ec]/10 cursor-pointer hover:-translate-y-1"
                     onClick={() => handleFeatureClick(Tool.ArchitecturalRendering)}
