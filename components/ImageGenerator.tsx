@@ -102,7 +102,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             };
             
             checkQueue(); // Initial check
-            // Optimization: Increased from 3s to 8s to reduce DB load for 300 concurrent users
             interval = setInterval(checkQueue, 8000); 
         } else {
             setQueuePosition(null);
@@ -189,7 +188,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         onStateChange({ referenceImage: fileData });
     };
 
-    // Calculate cost based on resolution
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -212,7 +210,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         jobId?: string
     ): Promise<string[]> => {
         
-        // Construct a rich prompt
         let promptForService = "";
         if (sourceImage) {
              promptForService = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${prompt}`;
@@ -223,7 +220,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
              promptForService = `${prompt}, photorealistic architectural rendering, high detail, masterpiece`;
         }
 
-        // High Quality (Nano Banana Pro 1K/2K/4K)
         if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
             const promises = Array.from({ length: numberOfImages }).map(async () => {
                 const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId);
@@ -232,7 +228,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             return await Promise.all(promises);
         }
 
-        // Standard (Nano Banana Flash)
         return await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId);
     };
 
@@ -254,12 +249,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         let logId: string | null = null;
 
         try {
-            // 1. Deduct credits
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Render kiến trúc (${numberOfImages} ảnh) - ${resolution}`);
             }
             
-            // 2. Create Job
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                  jobId = await jobService.createJob({
@@ -269,12 +262,11 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     cost: cost,
                     usage_log_id: logId
                 });
-                setActiveJobId(jobId); // Set for queue polling
+                setActiveJobId(jobId);
             }
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            // 3. Perform Generation (Service handles smart retries automatically)
             const imageUrls = await performGeneration(
                 customPrompt, 
                 sourceImage, 
@@ -290,7 +282,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
             }
 
-            // Add history
             const historyPrompt = sourceImage 
                 ? `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. The main creative instruction is: ${customPrompt}`
                 : `${customPrompt}, photorealistic architectural rendering, high detail, masterpiece`;
@@ -312,7 +303,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                  userErrorMessage = 'Đã xảy ra lỗi trong quá trình xử lý.';
             }
 
-            // Append Refund Notice to the error message if money was taken
             if (logId) {
                 userErrorMessage += " (Credits đã được hoàn lại)";
             }
@@ -323,7 +313,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
             }
             
-            // Refund logic: Only refund if logId exists (money was actually taken)
              const { data: { user } } = await supabase.auth.getUser();
              if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi khi render kiến trúc (${err.message})`);
@@ -344,17 +333,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         onStateChange({ isUpscaling: true, error: null });
 
         try {
-            const parts = resultImage.split(';base64,');
-            if (parts.length < 2) throw new Error("Invalid result image format for upscaling.");
-            
-            const mimeType = parts[0].split(':')[1];
-            const base64 = parts[1];
-            
-            const imageToUpscale: FileData = {
-                base64,
-                mimeType,
-                objectURL: resultImage
-            };
+            // FIX: Use safe helper to get base64 data regardless of URL type (blob or data uri)
+            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImage);
 
             const upscalePrompt = "Upscale this architectural rendering to a high resolution. Enhance the details, textures, and lighting to make it look photorealistic and professional. Do not change the composition or the core design.";
             
@@ -379,23 +359,14 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         document.body.removeChild(link);
     };
 
-    const handleSendImageToSync = (imageUrl: string) => {
-        const parts = imageUrl.split(';base64,');
-        if (parts.length < 2) {
+    const handleSendImageToSync = async (imageUrl: string) => {
+        try {
+            // FIX: Use safe helper to get base64 data regardless of URL type (blob or data uri)
+            const fileData = await geminiService.getFileDataFromUrl(imageUrl);
+            onSendToViewSync(fileData);
+        } catch (e) {
             onStateChange({ error: "Không thể chuyển ảnh, định dạng không hợp lệ." });
-            return;
         }
-
-        const mimeType = parts[0].split(':')[1];
-        const base64 = parts[1];
-
-        const fileData: FileData = {
-            base64,
-            mimeType,
-            objectURL: imageUrl,
-        };
-
-        onSendToViewSync(fileData);
     };
 
     return (
@@ -408,7 +379,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             </div>
             
             {/* --- INPUTS CONTAINER --- */}
-            {/* Adjusted padding for tablet optimization: p-4 on small, p-6 on tablet/desktop */}
             <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-4 md:p-6 rounded-xl border border-border-color dark:border-gray-700">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                     
@@ -448,7 +418,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                                 <OptionSelector id="building-type-selector" label="Loại công trình" options={buildingTypeOptions} value={buildingType} onChange={handleBuildingTypeChange} disabled={isLoading} variant="grid" />
                                 <OptionSelector id="style-selector" label="Phong cách" options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
                                 
-                                {/* Adjusted Grid for Better Spacing on Tablet/Mobile */}
                                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                                     <OptionSelector id="context-selector" label="Bối cảnh" options={contextOptions} value={context} onChange={handleContextChange} disabled={isLoading} variant="select" />
                                     <OptionSelector id="lighting-selector" label="Ánh sáng" options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
@@ -467,7 +436,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                             </div>
                         </div>
                         
-                        {/* Resolution Selector on its own row */}
                         <div className="pt-4">
                             <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading || isUpscaling} />
                         </div>
@@ -512,7 +480,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                          Kết quả
                     </h3>
                     
-                    {/* Action Buttons for Result */}
                     {resultImages.length === 1 && (
                         <div className="flex flex-wrap items-center gap-2">
                             {!upscaledImage && (
@@ -547,7 +514,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     )}
                 </div>
 
-                {/* Main Canvas Area */}
                 <div className="w-full aspect-[4/3] bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden relative group">
                     {isLoading && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">

@@ -85,7 +85,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 if (referenceImage) finalPrompt += " Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image.";
 
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    // Use generateHighQualityImage which takes sourceImage
                     const images = await geminiService.generateHighQualityImage(finalPrompt, aspectRatio, resolution, sourceImage || undefined);
                     return { imageUrl: images[0] };
                 });

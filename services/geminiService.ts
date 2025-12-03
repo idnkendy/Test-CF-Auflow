@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from "./supabaseClient";
 import { AspectRatio, FileData, ImageResolution } from "../types";
@@ -11,33 +12,20 @@ const XOR_SECRET = 'OPZEN_SUPER_SECRET_2025';
 const decryptCode = (encryptedBase64: string): string => {
     try {
         if (!encryptedBase64) return "";
-        
-        // 1. Giải mã Base64 thành chuỗi nhị phân (binary string)
-        // SQL: encode(v_encrypted, 'base64') -> JS: atob()
         const binaryString = atob(encryptedBase64);
-        
         let decrypted = '';
-        
-        // 2. Giải mã XOR
-        // SQL Loop: 1..len -> (i-1)%secret_len
-        // JS Loop: 0..len-1 -> i%secret_len
         for (let i = 0; i < binaryString.length; i++) {
             const secretChar = XOR_SECRET.charCodeAt(i % XOR_SECRET.length);
             const encryptedChar = binaryString.charCodeAt(i);
-            
-            // XOR operation (A ^ B = C => C ^ B = A)
             decrypted += String.fromCharCode(encryptedChar ^ secretChar);
         }
-        
         return decrypted;
     } catch (e) {
         console.error("Lỗi giải mã API Key:", e);
-        // Fallback: trả về nguyên bản nếu không phải format mong đợi
         return encryptedBase64;
     }
 };
 
-// Hàm chuẩn hóa key (Xóa khoảng trắng, xuống dòng thừa)
 const normalizeCode = (code: string): string => {
     if (!code) return "";
     return code.trim().replace(/[\n\r\s]/g, '');
@@ -47,14 +35,10 @@ const normalizeCode = (code: string): string => {
 
 const getGeminiApiKey = async (): Promise<string> => {
     try {
-        // Gọi RPC (Stored Procedure) từ Supabase để lấy key
-        // Logic SQL của bạn xử lý: Random, Rate Limit, Encryption
         const { data: encryptedKey, error } = await supabase.rpc('get_random_api_key');
 
         if (error) {
             console.error("Supabase RPC Error:", error);
-            
-            // FALLBACK: Nếu chưa tạo function RPC, thử lấy trực tiếp (chỉ dùng khi dev/test)
             if (error.message?.includes('function') && error.message?.includes('not found')) {
                  console.warn("Falling back to direct table select...");
                  const { data: keys } = await supabase
@@ -62,23 +46,14 @@ const getGeminiApiKey = async (): Promise<string> => {
                     .select('key_value')
                     .eq('is_active', true)
                     .limit(1);
-                 
                  if (keys && keys.length > 0) return keys[0].key_value;
             }
-            
             throw new Error("Không thể lấy API Key từ hệ thống.");
         }
 
-        if (!encryptedKey) {
-             throw new Error("Hệ thống đang bận hoặc hết lượt sử dụng Key.");
-        }
-
-        // Giải mã và chuẩn hóa
+        if (!encryptedKey) throw new Error("Hệ thống đang bận hoặc hết lượt sử dụng Key.");
         const apiKey = normalizeCode(decryptCode(encryptedKey));
-
-        if (!apiKey || apiKey.length < 10) {
-             throw new Error("API Key giải mã không hợp lệ.");
-        }
+        if (!apiKey || apiKey.length < 10) throw new Error("API Key giải mã không hợp lệ.");
 
         return apiKey;
     } catch (err: any) {
@@ -91,6 +66,66 @@ const getAIClient = async () => {
     return new GoogleGenAI({ apiKey });
 };
 
+// --- HELPER: Memory Optimization (Base64 -> Blob URL) ---
+
+/**
+ * Converts a Base64 string to a Blob URL to prevent Out-Of-Memory crashes in React.
+ */
+const base64ToBlobUrl = (base64: string, mimeType: string = 'image/png'): string => {
+    try {
+        const byteCharacters = atob(base64);
+        const byteNumbers = new Array(byteCharacters.length);
+        for (let i = 0; i < byteCharacters.length; i++) {
+            byteNumbers[i] = byteCharacters.charCodeAt(i);
+        }
+        const byteArray = new Uint8Array(byteNumbers);
+        const blob = new Blob([byteArray], { type: mimeType });
+        return URL.createObjectURL(blob);
+    } catch (e) {
+        console.error("Failed to convert Base64 to Blob", e);
+        return `data:${mimeType};base64,${base64}`; // Fallback
+    }
+};
+
+/**
+ * Extracts raw Base64 and MimeType from a URL (Blob or Data URI) for API transmission.
+ * Used for Upscaling or Editing where the API needs raw data.
+ */
+export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
+    // 1. Handle Data URI
+    if (url.startsWith('data:')) {
+        const arr = url.split(',');
+        const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
+        return {
+            base64: arr[1],
+            mimeType: mime,
+            objectURL: url
+        };
+    }
+
+    // 2. Handle Blob URL or Remote URL
+    try {
+        const response = await fetch(url);
+        const blob = await response.blob();
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onloadend = () => {
+                const base64data = reader.result as string;
+                const arr = base64data.split(',');
+                resolve({
+                    base64: arr[1],
+                    mimeType: blob.type,
+                    objectURL: url
+                });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        throw new Error("Không thể xử lý ảnh này. Vui lòng thử lại.");
+    }
+};
+
 // --- HELPER: Process Response ---
 
 const processContentResponse = (response: any): string[] => {
@@ -99,9 +134,7 @@ const processContentResponse = (response: any): string[] => {
     if (response.candidates && response.candidates.length > 0) {
         const candidate = response.candidates[0];
         
-        // Safety Checks
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
-             // Handle specific safety/block reasons
              if (['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'].includes(candidate.finishReason)) {
                  throw new Error(`AI từ chối xử lý do vi phạm an toàn: ${candidate.finishReason}`);
              }
@@ -110,14 +143,16 @@ const processContentResponse = (response: any): string[] => {
         if (candidate.content?.parts) {
             for (const part of candidate.content.parts) {
                 if (part.inlineData) {
-                    images.push(`data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`);
+                    // MEMORY FIX: Convert to Blob URL immediately
+                    const mime = part.inlineData.mimeType || 'image/png';
+                    const blobUrl = base64ToBlobUrl(part.inlineData.data, mime);
+                    images.push(blobUrl);
                 }
             }
         }
     }
 
     if (images.length === 0) {
-        // Check if there is text (error message or refusal)
         const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
         if (text) {
              throw new Error(`AI phản hồi nhưng không có ảnh: ${text.substring(0, 200)}...`);
@@ -150,19 +185,15 @@ export const generateStandardImage = async (
         });
     }
 
-    // Parallel requests for multiple images (SDK limitation: usually 1 candidate per req for images)
     const promises = Array.from({ length: numberOfImages }).map(async () => {
         try {
             const response = await ai.models.generateContent({
                 model: model,
                 contents: { parts },
-                config: {
-                    // candidateCount: 1 // Default
-                }
+                config: {}
             });
             return processContentResponse(response);
         } catch (e: any) {
-            // Check for region block
             if (e.message?.includes('403') || e.message?.includes('location') || e.message?.includes('User location is not supported')) {
                 window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
                 throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
@@ -234,7 +265,6 @@ export const editImage = async (
     image: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    // Editing uses standard generation with input image prompt
     const urls = await generateStandardImage(prompt, '4:3', numberOfImages, image);
     return urls.map(url => ({ imageUrl: url }));
 };
@@ -507,9 +537,6 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 
 // --- VIDEO GENERATION ---
 export const generateVideo = async (prompt: string, startImage?: FileData, jobId?: string): Promise<string> => {
-    // Veo generation usually requires specific OAuth or Allowlisted projects.
-    // We are maintaining the external service for video to ensure stability with OAuth tokens.
-    // If you want to move this to client-side, you'll need the user to provide an OAuth token with Veo access.
     throw new Error("Please use the specialized Video Generation service (Veo 3) which is currently handled via external service for stability.");
 };
 

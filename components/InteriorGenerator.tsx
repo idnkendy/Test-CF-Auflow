@@ -143,7 +143,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         onStateChange({ referenceImage: fileData });
     };
 
-    // Calculate cost based on resolution
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -173,7 +172,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
 
-        // Standardized prompt construction
         let promptForService = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition of the interior scene from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${customPrompt}. Make it photorealistic interior design.`;
         
         if (referenceImage) {
@@ -203,7 +201,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
             let imageUrls: string[] = [];
             
-            // High Quality (Pro) Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId || undefined);
@@ -211,7 +208,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 });
                 imageUrls = await Promise.all(promises);
             } 
-            // Standard (Flash) Logic
             else {
                 imageUrls = await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId || undefined);
             }
@@ -232,8 +228,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
             });
         } catch (err: any) {
             let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            
-            // Append Refund Notice to the error message if money was taken
             if (logId) {
                 errorMessage += " (Credits đã được hoàn lại)";
             }
@@ -259,17 +253,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         onStateChange({ isUpscaling: true, error: null });
 
         try {
-            const parts = resultImage.split(';base64,');
-            if (parts.length < 2) throw new Error("Invalid result image format for upscaling.");
-            
-            const mimeType = parts[0].split(':')[1];
-            const base64 = parts[1];
-            
-            const imageToUpscale: FileData = {
-                base64,
-                mimeType,
-                objectURL: resultImage
-            };
+            // FIX: Use safe helper
+            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImage);
 
             const upscalePrompt = "Upscale this interior design rendering to a high resolution. Enhance the details, textures, and lighting to make it look photorealistic and professional. Do not change the composition or the core design.";
             
@@ -294,23 +279,14 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         document.body.removeChild(link);
     };
 
-    const handleSendImageToSync = (imageUrl: string) => {
-        const parts = imageUrl.split(';base64,');
-        if (parts.length < 2) {
+    const handleSendImageToSync = async (imageUrl: string) => {
+        try {
+            // FIX: Use safe helper
+            const fileData = await geminiService.getFileDataFromUrl(imageUrl);
+            onSendToViewSync(fileData);
+        } catch (e) {
             onStateChange({ error: "Không thể chuyển ảnh, định dạng không hợp lệ." });
-            return;
         }
-
-        const mimeType = parts[0].split(':')[1];
-        const base64 = parts[1];
-
-        const fileData: FileData = {
-            base64,
-            mimeType,
-            objectURL: imageUrl,
-        };
-
-        onSendToViewSync(fileData);
     };
 
     return (
@@ -356,7 +332,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                     <OptionSelector id="room-type-selector" label="Loại phòng" options={roomTypeOptions} value={roomType} onChange={handleRoomTypeChange} disabled={isLoading} variant="grid" />
                                     <OptionSelector id="style-selector-int" label="Phong cách thiết kế" options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
                                     
-                                    {/* Optimized Grid */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                         <OptionSelector id="lighting-selector-int" label="Ánh sáng" options={interiorLightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
                                         <OptionSelector id="color-palette-selector" label="Tone màu" options={colorPaletteOptions} value={colorPalette} onChange={handleColorPaletteChange} disabled={isLoading} variant="select" />

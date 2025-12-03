@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { supabase } from './services/supabaseClient';
@@ -34,11 +35,12 @@ import Homepage from './components/Homepage';
 import AuthPage from './components/auth/AuthPage';
 import Spinner from './components/Spinner';
 import PublicPricing from './components/PublicPricing';
-import TermsOfServicePage from './components/TermsOfServicePage'; // Import Terms Page
+import TermsOfServicePage from './components/TermsOfServicePage'; 
 import { getUserStatus, deductCredits } from './services/paymentService';
 import * as jobService from './services/jobService';
 import { plans } from './constants/plans';
 import RegionBlockedModal from './components/common/RegionBlockedModal';
+import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 // Helper functions for safe navigation history
 const safeHistoryPush = (path: string) => {
@@ -522,6 +524,7 @@ const App: React.FC = () => {
                           </button>
                       )}
 
+                      <ErrorBoundary>
                       {/* Extended Features Dashboard Grid */}
                       {activeTool === Tool.ExtendedFeaturesDashboard && (
                           <div className="max-w-7xl mx-auto pb-10">
@@ -732,6 +735,7 @@ const App: React.FC = () => {
                               onDeductCredits={handleDeductCredits}
                           />
                       ) : null}
+                      </ErrorBoundary>
                   </main>
               </div>
           </div>
