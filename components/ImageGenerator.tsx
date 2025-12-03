@@ -335,12 +335,14 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         } catch (err: any) {
             console.error("Generation Error:", err);
             
-            // Allow specific known errors to pass through
             let userErrorMessage = err.message;
-            
-            // Simplify unexpected errors
-            if (!userErrorMessage.includes('không đủ credits') && !userErrorMessage.includes('API Key') && !userErrorMessage.includes('Hệ thống')) {
-                 userErrorMessage = 'Đã xảy ra lỗi trong quá trình xử lý. Vui lòng thử lại sau.';
+            if (!userErrorMessage.includes('không đủ credits') && !userErrorMessage.includes('API Key') && !userErrorMessage.includes('Hệ thống') && !userErrorMessage.includes('Safety Filter')) {
+                 userErrorMessage = 'Đã xảy ra lỗi trong quá trình xử lý.';
+            }
+
+            // Append Refund Notice to the error message if money was taken
+            if (logId) {
+                userErrorMessage += " (Credits đã được hoàn lại)";
             }
 
             onStateChange({ error: userErrorMessage });
@@ -524,7 +526,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Render'}
                     </button>
-                     {error && <p className="mt-3 text-sm text-red-500 text-center bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-800 font-medium">{error}</p>}
+                     {error && <div className="mt-3 text-sm text-red-500 text-center bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-800 font-medium flex items-center justify-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
+                        {error}
+                     </div>}
                 </div>
             </div>
 

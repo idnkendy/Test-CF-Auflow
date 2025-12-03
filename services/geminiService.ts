@@ -26,7 +26,7 @@ const handleGeminiError = (error: any) => {
         return new Error("Server AI đang bận (503). Đang thử lại...");
     }
     if (message.includes('SAFETY')) {
-        return new Error("Nội dung bị chặn bởi bộ lọc an toàn của Google.");
+        return new Error("Nội dung bị chặn bởi bộ lọc an toàn của Google. Vui lòng điều chỉnh lại mô tả.");
     }
     if (message.includes('User location is not supported') || lowerMsg.includes('location') || lowerMsg.includes('region')) {
         // Trigger global event for region blocking
@@ -441,6 +441,22 @@ export const generateStagingImage = async (prompt: string, sceneImage: FileData,
 const extractImagesFromResponse = (data: any): string[] => {
     const images: string[] = [];
     if (data?.candidates) {
+        const candidate = data.candidates[0];
+        
+        // --- IMPROVED ERROR HANDLING FOR SAFETY/RECITATION ---
+        if (candidate?.finishReason) {
+            const reason = candidate.finishReason;
+            if (reason === 'SAFETY') {
+                throw new Error("Nội dung bị chặn bởi bộ lọc an toàn của Google (Safety Filter). Vui lòng tránh các từ khóa nhạy cảm hoặc hình ảnh không phù hợp.");
+            }
+            if (reason === 'RECITATION') {
+                throw new Error("Nội dung bị chặn do vi phạm bản quyền hoặc giống dữ liệu được bảo vệ (Recitation check).");
+            }
+            if (reason === 'OTHER') {
+                throw new Error("Mô hình từ chối xử lý yêu cầu này (Unknown/Other Reason). Vui lòng thử lại.");
+            }
+        }
+
         for (const candidate of data.candidates) {
             if (candidate.content?.parts) {
                 for (const part of candidate.content.parts) {
@@ -453,11 +469,15 @@ const extractImagesFromResponse = (data: any): string[] => {
             }
         }
     }
+    
     if (images.length === 0) {
         // Fallback: Check if it generated text instead (error message or refusal)
         const text = extractTextFromResponse(data);
-        if (text) throw new Error(`AI returned text instead of image: ${text.substring(0, 100)}...`);
-        throw new Error("No image generated.");
+        if (text) {
+             // Often text contains "I cannot generate..."
+             throw new Error(`AI từ chối tạo ảnh: ${text.substring(0, 150)}...`);
+        }
+        throw new Error("Không có ảnh nào được tạo ra. Vui lòng thử lại với mô tả khác.");
     }
     return images;
 };
