@@ -94,7 +94,20 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
             }
             blob = new Blob([u8arr], { type: mime });
         } 
-        // 3. Handle Remote URL (Google/Veo Temporary URLs)
+        // 3. Handle Blob URL (IMPORTANT for preventing data loss from React Blob URLs)
+        else if (data.startsWith('blob:')) {
+            try {
+                const response = await fetch(data);
+                blob = await response.blob();
+                // Infer extension from blob type
+                if (blob.type.includes('jpeg') || blob.type.includes('jpg')) extension = 'jpg';
+                else if (blob.type.includes('png')) extension = 'png';
+            } catch (e) {
+                console.error("Failed to fetch blob data:", e);
+                return null;
+            }
+        }
+        // 4. Handle Remote URL (Google/Veo Temporary URLs)
         else if (data.startsWith('http')) {
             try {
                 const response = await fetch(data);
@@ -113,17 +126,17 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
             return data;
         }
 
-        // 4. Compress/Convert Image (Optimize storage usage and format)
+        // 5. Compress/Convert Image (Optimize storage usage and format)
         if (blob.type.startsWith('image/')) {
             blob = await compressImage(blob);
             extension = 'webp';
         }
 
-        // 5. Generate Path
+        // 6. Generate Path
         // Format: userId/jobs/timestamp_random.ext
         const fileName = `${userId}/jobs/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${extension}`;
 
-        // 6. Upload to Supabase Storage
+        // 7. Upload to Supabase Storage
         const { error: uploadError } = await supabase.storage
             .from(BUCKET_NAME)
             .upload(fileName, blob, {
@@ -137,7 +150,7 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
             return null;
         }
 
-        // 7. Get Public URL
+        // 8. Get Public URL
         const { data: publicData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
         return publicData.publicUrl;
 
@@ -188,7 +201,7 @@ export const updateJobStatus = async (jobId: string, status: 'pending' | 'proces
                 .single();
             
             if (jobData && jobData.user_id) {
-                // Automatically upload Base64 or External URLs to Supabase Storage
+                // Automatically upload Base64, Blob URL or External URLs to Supabase Storage
                 // This ensures DB stays light and links don't expire
                 const persistentUrl = await persistResultToStorage(jobData.user_id, resultUrl);
                 updates.result_url = persistentUrl || resultUrl; // Fallback to original if upload fails
