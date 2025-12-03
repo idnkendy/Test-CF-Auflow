@@ -5,13 +5,14 @@ import { refundCredits } from './paymentService';
 
 const BUCKET_NAME = 'assets';
 
-// Helper: Compress image to JPEG to save storage space
+// Helper: Compress image to WEBP at 100% quality
 const compressImage = async (blob: Blob): Promise<Blob> => {
     // If it's not an image, return as is
     if (!blob.type.startsWith('image/')) return blob;
     
-    // If it's already small enough (< 500KB), return as is
-    if (blob.size < 500 * 1024) return blob;
+    // If it's already small enough (< 500KB) and already webp, return as is.
+    // If it's not webp, we convert it regardless of size to standardize.
+    if (blob.size < 500 * 1024 && blob.type === 'image/webp') return blob;
 
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -23,7 +24,7 @@ const compressImage = async (blob: Blob): Promise<Blob> => {
             let width = img.width;
             let height = img.height;
 
-            // Resize if too big (max 1920px width/height)
+            // Resize if too big (max 1920px width/height) to ensure performant loading
             const MAX_SIZE = 1920;
             if (width > MAX_SIZE || height > MAX_SIZE) {
                 if (width > height) {
@@ -43,19 +44,19 @@ const compressImage = async (blob: Blob): Promise<Blob> => {
                 return;
             }
 
-            // Draw white background (for transparent PNGs converting to JPEG)
+            // Draw white background (for transparent PNGs)
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, width, height);
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Compress to JPEG at 80% quality
+            // Compress to WEBP at 100% quality
             canvas.toBlob((compressedBlob) => {
-                if (compressedBlob && compressedBlob.size < blob.size) {
+                if (compressedBlob) {
                     resolve(compressedBlob);
                 } else {
-                    resolve(blob); // If compression didn't help, return original
+                    resolve(blob); // If compression fails, return original
                 }
-            }, 'image/jpeg', 0.8);
+            }, 'image/webp', 1.0);
         };
 
         img.onerror = (err) => {
@@ -78,7 +79,7 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
         }
 
         let blob: Blob;
-        let extension = 'jpg'; // Default to jpg due to compression
+        let extension = 'webp'; // Default to webp
 
         // 2. Handle Base64 String
         if (data.startsWith('data:')) {
@@ -99,7 +100,7 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
                 const response = await fetch(data);
                 if (!response.ok) throw new Error('Failed to fetch remote URL');
                 blob = await response.blob();
-                // We will convert everything to jpg for consistency and size, unless it's video
+                // We will convert everything to webp for consistency, unless it's video
                 if (blob.type.startsWith('video')) {
                     extension = 'mp4';
                 }
@@ -112,10 +113,10 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
             return data;
         }
 
-        // 4. Compress Image (Optimize storage usage)
+        // 4. Compress/Convert Image (Optimize storage usage and format)
         if (blob.type.startsWith('image/')) {
             blob = await compressImage(blob);
-            extension = 'jpg';
+            extension = 'webp';
         }
 
         // 5. Generate Path
@@ -128,7 +129,7 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
             .upload(fileName, blob, {
                 cacheControl: '31536000', // Cache for 1 year
                 upsert: false,
-                contentType: blob.type
+                contentType: blob.type // Should be image/webp now
             });
 
         if (uploadError) {
