@@ -1,30 +1,84 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from "./supabaseClient";
 import { AspectRatio, FileData, ImageResolution } from "../types";
+
+// --- SECURITY & UTILS ---
+
+// KHÓA BÍ MẬT (Phải khớp với v_secret trong SQL function)
+const XOR_SECRET = 'OPZEN_SUPER_SECRET_2025';
+
+// Hàm giải mã XOR từ chuỗi Base64
+const decryptCode = (encryptedBase64: string): string => {
+    try {
+        if (!encryptedBase64) return "";
+        
+        // 1. Giải mã Base64 thành chuỗi nhị phân (binary string)
+        // SQL: encode(v_encrypted, 'base64') -> JS: atob()
+        const binaryString = atob(encryptedBase64);
+        
+        let decrypted = '';
+        
+        // 2. Giải mã XOR
+        // SQL Loop: 1..len -> (i-1)%secret_len
+        // JS Loop: 0..len-1 -> i%secret_len
+        for (let i = 0; i < binaryString.length; i++) {
+            const secretChar = XOR_SECRET.charCodeAt(i % XOR_SECRET.length);
+            const encryptedChar = binaryString.charCodeAt(i);
+            
+            // XOR operation (A ^ B = C => C ^ B = A)
+            decrypted += String.fromCharCode(encryptedChar ^ secretChar);
+        }
+        
+        return decrypted;
+    } catch (e) {
+        console.error("Lỗi giải mã API Key:", e);
+        // Fallback: trả về nguyên bản nếu không phải format mong đợi
+        return encryptedBase64;
+    }
+};
+
+// Hàm chuẩn hóa key (Xóa khoảng trắng, xuống dòng thừa)
+const normalizeCode = (code: string): string => {
+    if (!code) return "";
+    return code.trim().replace(/[\n\r\s]/g, '');
+};
 
 // --- API KEY MANAGEMENT ---
 
 const getGeminiApiKey = async (): Promise<string> => {
     try {
-        // Fetch all active keys
-        const { data: keys, error } = await supabase
-            .from('api_keys')
-            .select('key_value')
-            .eq('is_active', true);
+        // Gọi RPC (Stored Procedure) từ Supabase để lấy key
+        // Logic SQL của bạn xử lý: Random, Rate Limit, Encryption
+        const { data: encryptedKey, error } = await supabase.rpc('get_api_key');
 
-        if (error || !keys || keys.length === 0) {
-            console.error("Supabase API Key Error:", error);
-            throw new Error("Không tìm thấy API Key khả dụng trong hệ thống.");
+        if (error) {
+            console.error("Supabase RPC Error:", error);
+            
+            // FALLBACK: Nếu chưa tạo function RPC, thử lấy trực tiếp (chỉ dùng khi dev/test)
+            if (error.message?.includes('function') && error.message?.includes('not found')) {
+                 console.warn("Falling back to direct table select...");
+                 const { data: keys } = await supabase
+                    .from('api_keys')
+                    .select('key_value')
+                    .eq('is_active', true)
+                    .limit(1);
+                 
+                 if (keys && keys.length > 0) return keys[0].key_value;
+            }
+            
+            throw new Error("Không thể lấy API Key từ hệ thống.");
         }
 
-        // Randomly select one key to distribute load
-        const randomIndex = Math.floor(Math.random() * keys.length);
-        const apiKey = keys[randomIndex].key_value;
+        if (!encryptedKey) {
+             throw new Error("Hệ thống đang bận hoặc hết lượt sử dụng Key.");
+        }
 
-        // NOTE: If you have encryption logic, apply decryption here on `apiKey`
-        // const decryptedKey = decrypt(apiKey); 
-        // return decryptedKey;
+        // Giải mã và chuẩn hóa
+        const apiKey = normalizeCode(decryptCode(encryptedKey));
+
+        if (!apiKey || apiKey.length < 10) {
+             throw new Error("API Key giải mã không hợp lệ.");
+        }
 
         return apiKey;
     } catch (err: any) {
@@ -109,7 +163,7 @@ export const generateStandardImage = async (
             return processContentResponse(response);
         } catch (e: any) {
             // Check for region block
-            if (e.message?.includes('403') || e.message?.includes('location')) {
+            if (e.message?.includes('403') || e.message?.includes('location') || e.message?.includes('User location is not supported')) {
                 window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
                 throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
             }
@@ -167,7 +221,7 @@ export const generateHighQualityImage = async (
         });
         return processContentResponse(response);
     } catch (e: any) {
-        if (e.message?.includes('403') || e.message?.includes('location')) {
+        if (e.message?.includes('403') || e.message?.includes('location') || e.message?.includes('User location is not supported')) {
             window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
             throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
         }
@@ -201,11 +255,19 @@ export const editImageWithMask = async (
     ];
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: { parts }
-        });
-        return processContentResponse(response);
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts }
+            });
+            return processContentResponse(response);
+        } catch (e: any) {
+            if (e.message?.includes('403') || e.message?.includes('location')) {
+                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
+                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
+            }
+            throw e;
+        }
     });
 
     const results = await Promise.all(promises);
@@ -226,11 +288,19 @@ export const editImageWithReference = async (
     if (referenceImage) parts.push({ inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.base64 } });
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: { parts }
-        });
-        return processContentResponse(response);
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts }
+            });
+            return processContentResponse(response);
+        } catch (e: any) {
+            if (e.message?.includes('403') || e.message?.includes('location')) {
+                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
+                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
+            }
+            throw e;
+        }
     });
 
     const results = await Promise.all(promises);
@@ -255,11 +325,19 @@ export const editImageWithMaskAndReference = async (
     ];
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: { parts }
-        });
-        return processContentResponse(response);
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts }
+            });
+            return processContentResponse(response);
+        } catch (e: any) {
+            if (e.message?.includes('403') || e.message?.includes('location')) {
+                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
+                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
+            }
+            throw e;
+        }
     });
 
     const results = await Promise.all(promises);
@@ -283,11 +361,19 @@ export const editImageWithMultipleReferences = async (
     });
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: { parts }
-        });
-        return processContentResponse(response);
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts }
+            });
+            return processContentResponse(response);
+        } catch (e: any) {
+            if (e.message?.includes('403') || e.message?.includes('location')) {
+                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
+                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
+            }
+            throw e;
+        }
     });
 
     const results = await Promise.all(promises);
@@ -313,11 +399,19 @@ export const editImageWithMaskAndMultipleReferences = async (
     });
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: { parts }
-        });
-        return processContentResponse(response);
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts }
+            });
+            return processContentResponse(response);
+        } catch (e: any) {
+            if (e.message?.includes('403') || e.message?.includes('location')) {
+                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
+                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
+            }
+            throw e;
+        }
     });
 
     const results = await Promise.all(promises);
@@ -337,7 +431,7 @@ export const generateText = async (prompt: string): Promise<string> => {
         });
         return response.text || "";
     } catch (e: any) {
-        if (e.message?.includes('403') || e.message?.includes('location')) {
+        if (e.message?.includes('403') || e.message?.includes('location') || e.message?.includes('User location is not supported')) {
             window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
             throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
         }
@@ -376,8 +470,11 @@ export const generatePromptSuggestions = async (
 
         const text = response.text || "";
         return JSON.parse(text);
-    } catch (e) {
+    } catch (e: any) {
         console.error("Failed to generate/parse suggestions", e);
+        if (e.message?.includes('403') || e.message?.includes('location')) {
+            window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
+        }
         return null;
     }
 };
@@ -393,26 +490,26 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
         parts[0].text += " \n\nAlso use the visual style of the attached image as a reference.";
     }
 
-    const response = await ai.models.generateContent({
-        model: model,
-        contents: { parts }
-    });
-    
-    return response.text || "";
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: { parts }
+        });
+        return response.text || "";
+    } catch (e: any) {
+        if (e.message?.includes('403') || e.message?.includes('location')) {
+            window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
+            throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
+        }
+        throw e;
+    }
 };
 
 // --- VIDEO GENERATION ---
 export const generateVideo = async (prompt: string, startImage?: FileData, jobId?: string): Promise<string> => {
-    // Veo support via direct SDK is limited for 'video' output in browser currently without a proxy for OAuth tokens in some cases.
-    // However, if we are strictly using this file to replace the proxy for IMAGES, we might need to keep Video routed or throw error.
-    // Based on user request, they want to bypass worker.
-    // Veo via SDK requires `generateVideos` which is supported.
-    
-    // NOTE: Veo generation usually requires specific OAuth or Allowlisted projects.
-    // If you are using API Key, 'veo-3.1-fast-generate-preview' might work if enabled for the key.
-    // If not, we might need to stick to the external service for Video or implement full Veo SDK logic.
-    
-    // For now, let's try the standard Veo SDK call.
+    // Veo generation usually requires specific OAuth or Allowlisted projects.
+    // We are maintaining the external service for video to ensure stability with OAuth tokens.
+    // If you want to move this to client-side, you'll need the user to provide an OAuth token with Veo access.
     throw new Error("Please use the specialized Video Generation service (Veo 3) which is currently handled via external service for stability.");
 };
 
@@ -428,11 +525,19 @@ export const generateStagingImage = async (prompt: string, sceneImage: FileData,
     });
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: { parts }
-        });
-        return processContentResponse(response);
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts }
+            });
+            return processContentResponse(response);
+        } catch (e: any) {
+            if (e.message?.includes('403') || e.message?.includes('location')) {
+                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
+                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
+            }
+            throw e;
+        }
     });
 
     const results = await Promise.all(promises);
