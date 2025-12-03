@@ -272,46 +272,18 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 setActiveJobId(jobId); // Set for queue polling
             }
 
-            // If no job was created but money was taken (rare DB error), we should throw to trigger refund
-            if (logId && !jobId) {
-                throw new Error("Không thể khởi tạo tác vụ (DB Error). Đang hoàn tiền...");
-            }
+            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            // 3. Smart Retry Logic
-            let attempts = 0;
-            const maxAttempts = 60; 
-            let imageUrls: string[] = [];
-            let success = false;
-
-            if (resolution !== 'Standard') {
-                 if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-                 // Pass jobId || undefined
-                 imageUrls = await performGeneration(customPrompt, sourceImage, referenceImage, numberOfImages, aspectRatio, resolution, jobId || undefined);
-                 success = true;
-            } else {
-                // Retry Loop for Standard/Flash
-                while (attempts < maxAttempts) {
-                    try {
-                         if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-                         imageUrls = await performGeneration(customPrompt, sourceImage, referenceImage, numberOfImages, aspectRatio, resolution, jobId || undefined);
-                         success = true;
-                         break;
-                    } catch (apiError: any) {
-                        if (apiError.message === 'SYSTEM_BUSY') {
-                            attempts++;
-                            setStatusMessage(`Hệ thống đang bận (${attempts}), vui lòng đợi...`);
-                            if (jobId) await jobService.updateJobStatus(jobId, 'pending');
-                            await new Promise(resolve => setTimeout(resolve, 5000)); 
-                        } else {
-                            throw apiError; 
-                        }
-                    }
-                }
-            }
-
-            if (!success) {
-                 throw new Error("Hệ thống quá tải. Đã hoàn tiền, vui lòng thử lại sau.");
-            }
+            // 3. Perform Generation (Service handles smart retries automatically)
+            const imageUrls = await performGeneration(
+                customPrompt, 
+                sourceImage, 
+                referenceImage, 
+                numberOfImages, 
+                aspectRatio, 
+                resolution, 
+                jobId || undefined
+            );
 
             onStateChange({ resultImages: imageUrls });
             if (jobId && imageUrls.length > 0) {

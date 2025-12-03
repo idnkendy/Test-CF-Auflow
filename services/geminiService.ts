@@ -16,77 +16,123 @@ const getProxyUrl = () => {
 
 // --- ERROR HANDLING HELPER ---
 const handleGeminiError = (error: any) => {
-    let message = error.message || "Lỗi kết nối";
+    let message = error.message || "Lỗi kết nối không xác định";
     const lowerMsg = message.toLowerCase();
     
+    // Create a custom error object to attach properties
+    let customError: any = new Error(message);
+    customError.isRetryable = false;
+
+    // 1. Lỗi Quá Tải / Hết Quota (429)
     if (message.includes('429') || lowerMsg.includes('quota') || lowerMsg.includes('resource_exhausted')) {
-        return new Error("Hệ thống đang quá tải (Quota Exceeded). Đang thử lại...");
+        customError.message = "Hệ thống đang nhận quá nhiều yêu cầu. Đang tự động thử lại...";
+        customError.isRetryable = true;
+        return customError;
     }
-    if (message.includes('503') || lowerMsg.includes('overloaded') || lowerMsg.includes('unavailable')) {
-        return new Error("Server AI đang bận (503). Đang thử lại...");
+    
+    // 2. Lỗi Server Google (500, 503)
+    if (message.includes('503') || message.includes('500') || lowerMsg.includes('overloaded') || lowerMsg.includes('unavailable') || lowerMsg.includes('internal')) {
+        customError.message = "Máy chủ AI đang quá tải. Đang tự động thử lại...";
+        customError.isRetryable = true;
+        return customError;
     }
-    if (message.includes('SAFETY')) {
-        return new Error("Nội dung bị chặn bởi bộ lọc an toàn của Google. Vui lòng điều chỉnh lại mô tả.");
+
+    // 3. Lỗi Dữ Liệu Đầu Vào (400)
+    if (message.includes('400') || lowerMsg.includes('invalid_argument') || lowerMsg.includes('bad request')) {
+        customError.message = "Dữ liệu hình ảnh không hợp lệ hoặc mô tả quá dài. Vui lòng kiểm tra lại.";
+        return customError;
     }
-    if (message.includes('User location is not supported') || lowerMsg.includes('location') || lowerMsg.includes('region')) {
-        // Trigger global event for region blocking
+
+    // 4. Lỗi An Toàn (Safety)
+    if (message.includes('SAFETY') || message.includes('blocked')) {
+        customError.message = "Hệ thống an toàn của AI đã chặn yêu cầu này. Vui lòng tránh các từ khóa nhạy cảm hoặc hình ảnh không phù hợp.";
+        return customError;
+    }
+
+    // 5. Lỗi Khu Vực (Geo-blocking)
+    if (message.includes('User location is not supported') || lowerMsg.includes('location') || lowerMsg.includes('region') || message.includes('403')) {
+        // Trigger global event for region blocking UI
         if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
         }
-        return new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
+        customError.message = "Khu vực của bạn bị chặn IP. Vui lòng bật VPN.";
+        return customError;
     }
-    return new Error(message);
+
+    // 6. Lỗi API Key (401)
+    if (message.includes('401') || lowerMsg.includes('api key')) {
+        customError.message = "Lỗi xác thực API Key. Vui lòng liên hệ quản trị viên.";
+        return customError;
+    }
+
+    // 7. Fallback: Làm sạch thông báo lỗi kĩ thuật
+    try {
+        if (message.startsWith('{') || message.includes('error')) {
+             customError.message = "Đã xảy ra lỗi kỹ thuật khi xử lý ảnh. Vui lòng thử lại.";
+        }
+    } catch (e) {}
+
+    return customError;
 };
 
 // --- PROXY CALLER ---
 // Sends request to our own backend (/api) which then forwards to Google.
 // API Key is injected on the backend, never exposed to client.
-async function callGeminiProxy(model: string, payload: any, retryCount = 0): Promise<any> {
-    const maxRetries = 3;
+async function callGeminiProxy(model: string, payload: any): Promise<any> {
+    // Smart Retry Strategy:
+    // Try up to 60 times with 5s delay (Total ~5 minutes) for retryable errors (429/503).
+    // For other errors, fail immediately.
+    const MAX_ATTEMPTS = 60; 
+    const DELAY_MS = 5000;
     const url = getProxyUrl();
 
-    try {
-        const response = await fetch(url, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                action: 'gemini_proxy',
-                model: model,
-                payload: payload
-            })
-        });
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'gemini_proxy',
+                    model: model,
+                    payload: payload
+                })
+            });
 
-        const data = await response.json();
+            const data = await response.json();
 
-        if (!response.ok) {
-            // Handle error response from Proxy (or Google via Proxy)
-            const errorMsg = data.error?.message || data.message || `Error ${response.status}`;
-            throw new Error(errorMsg);
+            if (!response.ok) {
+                // Handle error response from Proxy (or Google via Proxy)
+                const errorMsg = data.error?.message || data.message || `Error ${response.status}`;
+                throw new Error(errorMsg);
+            }
+
+            // Check for Google API specific errors embedded in 200 OK response (rare but possible)
+            if (data.error) {
+                throw new Error(data.error.message || JSON.stringify(data.error));
+            }
+
+            return data;
+
+        } catch (error: any) {
+            const processedError = handleGeminiError(error);
+            
+            // Retry Logic
+            if (processedError.isRetryable && attempt < MAX_ATTEMPTS) {
+                console.warn(`[Gemini Proxy] Attempt ${attempt}/${MAX_ATTEMPTS} failed (System Busy). Retrying in ${DELAY_MS}ms...`);
+                await new Promise(resolve => setTimeout(resolve, DELAY_MS));
+                continue; 
+            }
+
+            // If not retryable or max attempts reached, throw the final error
+            if (attempt === MAX_ATTEMPTS) {
+                console.error(`[Gemini Proxy] Max retries reached (${MAX_ATTEMPTS}). Giving up.`);
+                processedError.message = "Hệ thống quá tải trong thời gian dài. Vui lòng thử lại sau ít phút.";
+            }
+            
+            throw processedError;
         }
-
-        // Check for Google API specific errors embedded in 200 OK response (rare but possible)
-        if (data.error) {
-            throw new Error(data.error.message || JSON.stringify(data.error));
-        }
-
-        return data;
-
-    } catch (error: any) {
-        console.error(`[Gemini Proxy] Error calling ${model} (Attempt ${retryCount + 1}):`, error);
-
-        // Retry logic for 503/429 errors
-        const shouldRetry = error.message.includes('503') || error.message.includes('429') || error.message.includes('overloaded');
-        
-        if (shouldRetry && retryCount < maxRetries) {
-            const delay = Math.pow(2, retryCount) * 1000 + Math.random() * 1000; // Exponential backoff
-            console.log(`Retrying in ${delay}ms...`);
-            await new Promise(resolve => setTimeout(resolve, delay));
-            return callGeminiProxy(model, payload, retryCount + 1);
-        }
-
-        throw handleGeminiError(error);
     }
 }
 
@@ -121,7 +167,7 @@ export const generateStandardImage = async (
         }
     };
 
-    // Parallel requests for multiple images if API doesn't support batching natively effectively
+    // Parallel requests for multiple images
     const promises = Array.from({ length: numberOfImages }).map(() => 
         callGeminiProxy(model, payload)
             .then(data => extractImagesFromResponse(data))
@@ -446,14 +492,19 @@ const extractImagesFromResponse = (data: any): string[] => {
         // --- IMPROVED ERROR HANDLING FOR SAFETY/RECITATION ---
         if (candidate?.finishReason) {
             const reason = candidate.finishReason;
-            if (reason === 'SAFETY') {
-                throw new Error("Nội dung bị chặn bởi bộ lọc an toàn của Google (Safety Filter). Vui lòng tránh các từ khóa nhạy cảm hoặc hình ảnh không phù hợp.");
-            }
-            if (reason === 'RECITATION') {
-                throw new Error("Nội dung bị chặn do vi phạm bản quyền hoặc giống dữ liệu được bảo vệ (Recitation check).");
-            }
-            if (reason === 'OTHER') {
-                throw new Error("Mô hình từ chối xử lý yêu cầu này (Unknown/Other Reason). Vui lòng thử lại.");
+            switch (reason) {
+                case 'SAFETY':
+                    throw new Error("Hệ thống an toàn của AI đã chặn yêu cầu này. Vui lòng tránh các từ khóa nhạy cảm hoặc hình ảnh không phù hợp.");
+                case 'RECITATION':
+                    throw new Error("Nội dung bị chặn do vi phạm bản quyền hoặc giống dữ liệu được bảo vệ.");
+                case 'BLOCKLIST':
+                    throw new Error("Mô tả chứa các từ khóa bị cấm (Blocklist).");
+                case 'PROHIBITED_CONTENT':
+                    throw new Error("Nội dung bị cấm theo chính sách AI.");
+                case 'SPII':
+                    throw new Error("Nội dung chứa thông tin cá nhân nhạy cảm (SPII).");
+                case 'OTHER':
+                    break; 
             }
         }
 
@@ -462,7 +513,6 @@ const extractImagesFromResponse = (data: any): string[] => {
                 for (const part of candidate.content.parts) {
                     if (part.inlineData) {
                         // Gemini returns raw base64, usually no prefix
-                        // We assume PNG or JPEG based on header or default
                         images.push(`data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`);
                     }
                 }
@@ -474,10 +524,15 @@ const extractImagesFromResponse = (data: any): string[] => {
         // Fallback: Check if it generated text instead (error message or refusal)
         const text = extractTextFromResponse(data);
         if (text) {
-             // Often text contains "I cannot generate..."
              throw new Error(`AI từ chối tạo ảnh: ${text.substring(0, 150)}...`);
         }
-        throw new Error("Không có ảnh nào được tạo ra. Vui lòng thử lại với mô tả khác.");
+        
+        // Check top-level error (sometimes not in candidate)
+        if (data?.error) {
+             throw new Error(`Lỗi từ Google: ${data.error.message || 'Không xác định'}`);
+        }
+
+        throw new Error("Không có ảnh nào được tạo ra (No Output). Vui lòng thử lại với mô tả khác.");
     }
     return images;
 };
