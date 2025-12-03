@@ -77,12 +77,16 @@ export const getHistory = async (limit = 10, offset = 0): Promise<HistoryItem[]>
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
+    // Range in Supabase is inclusive [start, end]
+    const from = offset;
+    const to = offset + limit - 1;
+
     const { data, error } = await supabase
         .from(TABLE_NAME)
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: false })
-        .range(offset, offset + limit - 1); // Pagination logic
+        .range(from, to); 
 
     if (error) {
         console.error('Error fetching history from Supabase:', error);

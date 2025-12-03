@@ -42,8 +42,6 @@ const DownloadIcon = () => (
 );
 
 // Helper to use Supabase Image Transformation
-// Note: This works best with Supabase Pro, but on Free tier it gracefully falls back (no harm done)
-// We request a smaller width (500px) and webp format for the grid view
 const getOptimizedUrl = (url: string) => {
     if (!url) return '';
     // Only optimize Supabase Storage URLs
@@ -71,19 +69,30 @@ const HistoryPanel: React.FC = () => {
     const [hasMore, setHasMore] = useState(true);
 
     const loadHistory = async (isInitial = false) => {
-        if (isInitial) setIsLoading(true);
-        else setIsLoadingMore(true);
+        if (isInitial) {
+            setIsLoading(true);
+            setOffset(0); // Reset offset on initial load
+        } else {
+            setIsLoadingMore(true);
+        }
 
         try {
+            // Determine current offset based on whether it's initial load or load more
+            // If it's initial, fetch starting from 0. If loading more, use current 'offset' state.
             const currentOffset = isInitial ? 0 : offset;
+            
             const items = await historyService.getHistory(ITEMS_PER_PAGE, currentOffset);
             
+            // Check if we reached the end
             if (items.length < ITEMS_PER_PAGE) {
                 setHasMore(false);
+            } else {
+                setHasMore(true);
             }
 
             if (isInitial) {
                 setHistory(items);
+                // Next fetch starts after these items
                 setOffset(ITEMS_PER_PAGE);
             } else {
                 setHistory(prev => [...prev, ...items]);
