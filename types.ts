@@ -83,6 +83,8 @@ export interface Transaction {
   status: 'pending' | 'completed' | 'failed' | 'cancelled';
   payment_method: string;
   transaction_code: string;
+  customer_name?: string; // New field
+  customer_phone?: string; // New field
   created_at: string;
 }
 

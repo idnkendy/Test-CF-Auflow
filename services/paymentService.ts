@@ -20,9 +20,6 @@ export const getUserStatus = async (userId: string, email?: string): Promise<Use
              
              if (insertError) {
                  // RACE CONDITION HANDLING:
-                 // If insert failed (likely code 23505 - unique violation), it means 
-                 // another request created the profile milliseconds ago.
-                 // WE MUST FETCH AGAIN. DO NOT RETURN DEFAULT VALUES.
                  console.warn("Profile creation failed (likely race condition), forcing re-fetch...", insertError.message);
                  
                  const { data: retryData, error: retryError } = await supabase
@@ -33,17 +30,13 @@ export const getUserStatus = async (userId: string, email?: string): Promise<Use
                     
                  if (retryError || !retryData) {
                      console.error("CRITICAL: Retry fetch also failed.", retryError);
-                     // Return 0 only if we absolutely cannot verify the user exists
-                     // This prevents the UI from showing incorrect high balances, but prevents overwriting DB
                      return { credits: 0, subscriptionEnd: null, isExpired: false };
                  }
                  data = retryData;
              } else {
-                 // Insert successful, return default new user state
                  return { credits: 60, subscriptionEnd: null, isExpired: false };
              }
         } else if (!data) {
-            // No data and no email provided (shouldn't happen in auth flow)
             return { credits: 0, subscriptionEnd: null, isExpired: false };
         }
 
@@ -62,9 +55,39 @@ export const getUserStatus = async (userId: string, email?: string): Promise<Use
     }
 };
 
+// NEW: Fetch user profile details (Name, Phone)
+export const getUserProfile = async (userId: string) => {
+    try {
+        const { data, error } = await supabase
+            .from('profiles')
+            .select('full_name, phone')
+            .eq('id', userId)
+            .single();
+        
+        if (error) throw error;
+        return data;
+    } catch (e) {
+        console.error("Error fetching user profile:", e);
+        return null;
+    }
+};
+
+// NEW: Update user profile
+export const updateUserProfile = async (userId: string, fullName: string, phone: string) => {
+    try {
+        const { error } = await supabase
+            .from('profiles')
+            .update({ full_name: fullName, phone: phone })
+            .eq('id', userId);
+            
+        if (error) throw error;
+        return true;
+    } catch (e: any) {
+        throw new Error(e.message || "Lỗi cập nhật thông tin.");
+    }
+};
+
 export const deductCredits = async (userId: string, amount: number, description: string): Promise<string> => {
-    // Strictly use RPC for atomic transactions.
-    // Client-side logic is unsafe for deductions as it relies on potentially stale local state.
     const { data, error } = await supabase.rpc('deduct_credits', {
         p_user_id: userId,
         p_amount: amount,
@@ -82,7 +105,6 @@ export const deductCredits = async (userId: string, amount: number, description:
 export const refundCredits = async (userId: string, amount: number, description: string): Promise<void> => {
     console.log(`[PaymentService] Attempting to refund ${amount} credits for user ${userId}. Reason: ${description}`);
     
-    // 1. Try RPC first (Atomic, Safe, Best Practice)
     const { error } = await supabase.rpc('refund_credits', {
         p_user_id: userId,
         p_amount: amount,
@@ -96,8 +118,6 @@ export const refundCredits = async (userId: string, amount: number, description:
 
     console.warn("[PaymentService] refundCredits RPC failed, attempting client-side fallback. Error:", error.message);
 
-    // 2. Fallback: Client-side update (Race-condition prone but strictly better than money loss)
-    // Only fetch credits, calculate new amount, and update.
     try {
         const { data: profile, error: fetchError } = await supabase
             .from('profiles')
@@ -109,22 +129,15 @@ export const refundCredits = async (userId: string, amount: number, description:
 
         if (profile) {
             const newCredits = (profile.credits || 0) + amount;
-            
             const { error: updateError } = await supabase
                 .from('profiles')
                 .update({ credits: newCredits })
                 .eq('id', userId);
-            
             if (updateError) throw updateError;
-
             console.log(`[PaymentService] Refund successful via Client Fallback. New balance: ${newCredits}`);
-            
-            // Optional: Log the refund manually to transaction or logs table if exists, 
-            // but for now just ensuring credits are back is priority.
         }
     } catch (e: any) {
         console.error("[PaymentService] CRITICAL: Client-side refund fallback also failed:", e.message || e);
-        // At this point, we can't do much more without backend changes.
     }
 };
 
@@ -159,7 +172,7 @@ export const redeemGiftCode = async (userId: string, code: string): Promise<numb
     return data; // returns amount added
 };
 
-export const createPendingTransaction = async (userId: string, plan: PricingPlan, amount: number) => {
+export const createPendingTransaction = async (userId: string, plan: PricingPlan, amount: number, customerInfo?: { name: string, phone: string }) => {
     // Force integer comparison to avoid floating point mismatch
     const intAmount = Math.round(amount);
 
@@ -180,8 +193,20 @@ export const createPendingTransaction = async (userId: string, plan: PricingPlan
         const existingIntAmount = Math.round(existingTx.amount);
 
         // Nếu số tiền khớp hoàn toàn VÀ đúng tiền tố -> Tái sử dụng (Idempotency)
+        // Nếu có thông tin customer mới, ta có thể cập nhật lại vào giao dịch cũ để đảm bảo nhất quán
         if (existingIntAmount === intAmount && isCorrectPrefix) {
             console.log(`[Payment] Reusing existing pending transaction: ${existingTx.transaction_code}`);
+            
+            // Cập nhật thông tin khách hàng nếu có
+            if (customerInfo) {
+                await supabase.from('transactions')
+                    .update({ 
+                        customer_name: customerInfo.name, 
+                        customer_phone: customerInfo.phone 
+                    })
+                    .eq('id', existingTx.id);
+            }
+
             return {
                 transactionId: existingTx.id,
                 transactionCode: existingTx.transaction_code,
@@ -218,7 +243,9 @@ export const createPendingTransaction = async (userId: string, plan: PricingPlan
             credits_added: plan.credits || 0,
             status: 'pending',
             payment_method: 'bank_transfer',
-            transaction_code: transactionCode
+            transaction_code: transactionCode,
+            customer_name: customerInfo?.name,
+            customer_phone: customerInfo?.phone
         })
         .select('id, transaction_code, amount')
         .single();

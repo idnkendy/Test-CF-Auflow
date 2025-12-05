@@ -67,7 +67,7 @@ interface VideoGeneratorProps {
 
 const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     // --- MAINTENANCE MODE TOGGLE ---
-    const isMaintenanceMode = true;
+    const isMaintenanceMode = false;
 
     if (isMaintenanceMode) {
         return (

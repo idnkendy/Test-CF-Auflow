@@ -317,6 +317,7 @@ export default {
                 else if (path.includes('/create')) action = 'create';
                 else if (path.includes('/upscale')) action = 'upscale';
                 else if (path.includes('/check')) action = 'check';
+                else if (path.includes('/update-token')) action = 'update_token';
             }
 
             // --- ROUTING ---
@@ -325,6 +326,20 @@ export default {
                 const { data, status, ok } = await handleGeminiProxy(body, env, request);
                 // Return data with original status code from Google (e.g. 400 for location error)
                 return sendJson(data, status); 
+            }
+            else if (action === 'update_token') {
+                const { admin_secret, oauth_token } = body;
+                // Simple security check (Should use env var in production)
+                if (admin_secret !== (env.ADMIN_SECRET || "opzen_admin_secret_123")) {
+                    return sendJson({ error: "Unauthorized" }, 401);
+                }
+                
+                if (oauth_token && env.VIDEO_KV) {
+                    // Update the KV with the fresh token from Python script
+                    await env.VIDEO_KV.put('GOOGLE_TOKEN', oauth_token);
+                    return sendJson({ status: "updated", type: "oauth_token" });
+                }
+                return sendJson({ status: "ignored", message: "Missing oauth_token or KV binding" });
             }
             else if (action === 'auth') {
                 const token = await getAccessToken(env);
