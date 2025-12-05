@@ -286,7 +286,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             </button>
                         </div>
                     </div>
-                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                    {error && <p className="mt-3 text-sm text-red-500 text-center font-medium">{error}</p>}
                 </div>
             </div>
 

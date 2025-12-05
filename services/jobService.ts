@@ -97,11 +97,14 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
         // 3. Handle Blob URL (IMPORTANT for preventing data loss from React Blob URLs)
         else if (data.startsWith('blob:')) {
             try {
+                // Fetch the actual data from the browser's internal blob registry
                 const response = await fetch(data);
                 blob = await response.blob();
-                // Infer extension from blob type
-                if (blob.type.includes('jpeg') || blob.type.includes('jpg')) extension = 'jpg';
-                else if (blob.type.includes('png')) extension = 'png';
+                
+                // Determine extension based on blob type
+                if (blob.type === 'image/jpeg') extension = 'jpg';
+                else if (blob.type === 'image/png') extension = 'png';
+                else if (blob.type === 'image/webp') extension = 'webp';
             } catch (e) {
                 console.error("Failed to fetch blob data:", e);
                 return null;

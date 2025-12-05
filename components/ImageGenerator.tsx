@@ -112,6 +112,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         };
     }, [isLoading, activeJobId]);
 
+    const escapeRegExp = (string: string) => {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
+
     const updatePrompt = useCallback((type: 'style' | 'context' | 'lighting' | 'weather' | 'buildingType', newValue: string, oldValue: string) => {
         const getPromptPart = (partType: string, value: string): string => {
             if (value === 'none' || !value) return '';
@@ -131,7 +135,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         let nextPrompt = customPrompt;
 
         if (oldPart && nextPrompt.includes(oldPart)) {
-             nextPrompt = newPart ? nextPrompt.replace(oldPart, newPart) : nextPrompt.replace(new RegExp(`,?\\s*${oldPart}`), '').replace(new RegExp(`${oldPart},?\\s*`), '');
+             const escapedOldPart = escapeRegExp(oldPart);
+             nextPrompt = newPart 
+                ? nextPrompt.replace(oldPart, newPart) 
+                : nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), '');
         } else if (newPart) {
             nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart;
         }
@@ -204,7 +211,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         prompt: string, 
         sourceImage: FileData | null, 
         referenceImage: FileData | null, 
-        numberOfImages: number,
+        numberOfImages: number, 
         aspectRatio: AspectRatio,
         resolution: ImageResolution,
         jobId?: string
@@ -299,7 +306,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             console.error("Generation Error:", err);
             
             let userErrorMessage = err.message;
-            if (!userErrorMessage.includes('không đủ credits') && !userErrorMessage.includes('API Key') && !userErrorMessage.includes('Hệ thống') && !userErrorMessage.includes('Safety Filter')) {
+            if (!userErrorMessage.includes('không đủ credits') && !userErrorMessage.includes('API Key') && !userErrorMessage.includes('Hệ thống') && !userErrorMessage.includes('Safety Filter') && !userErrorMessage.includes('IP hiện tại')) {
                  userErrorMessage = 'Đã xảy ra lỗi trong quá trình xử lý.';
             }
 
@@ -466,10 +473,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Render'}
                     </button>
-                     {error && <div className="mt-3 text-sm text-red-500 text-center bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-800 font-medium flex items-center justify-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
-                        {error}
-                     </div>}
+                     {error && <p className="mt-3 text-sm text-red-500 text-center font-medium">{error}</p>}
                 </div>
             </div>
 

@@ -39,7 +39,6 @@ import TermsOfServicePage from './components/TermsOfServicePage';
 import { getUserStatus, deductCredits } from './services/paymentService';
 import * as jobService from './services/jobService';
 import { plans } from './constants/plans';
-import RegionBlockedModal from './components/common/RegionBlockedModal';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 // Helper functions for safe navigation history
@@ -65,9 +64,6 @@ const App: React.FC = () => {
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
-  // Region Blocked State
-  const [showRegionBlockedModal, setShowRegionBlockedModal] = useState(false);
-
   // FIX: Initialize activeTool from localStorage to persist state on reload
   const [activeTool, setActiveTool] = useState<Tool>(() => {
       const savedTool = localStorage.getItem('activeTool');
@@ -89,13 +85,6 @@ const App: React.FC = () => {
 
   // Ref to the main content area for scroll resetting
   const mainContentRef = useRef<HTMLDivElement>(null);
-
-  // Region Blocked Listener
-  useEffect(() => {
-      const handleRegionBlocked = () => setShowRegionBlockedModal(true);
-      window.addEventListener('gemini-region-blocked', handleRegionBlocked);
-      return () => window.removeEventListener('gemini-region-blocked', handleRegionBlocked);
-  }, []);
 
   // Scroll to top whenever activeTool changes
   useEffect(() => {
@@ -429,15 +418,9 @@ const App: React.FC = () => {
     );
   }
   
-  // Render Modal if region blocked
-  const regionModal = showRegionBlockedModal ? (
-      <RegionBlockedModal onClose={() => setShowRegionBlockedModal(false)} />
-  ) : null;
-  
   if (view === 'payment' && selectedPlan && session) {
       return (
           <div className="min-h-screen bg-main-bg dark:bg-[#121212] font-sans">
-              {regionModal}
               <Header 
                   onGoHome={handleGoHome} 
                   onThemeToggle={handleThemeToggle} 
@@ -460,7 +443,6 @@ const App: React.FC = () => {
   if (view === 'pricing') {
       return (
         <div className="relative">
-            {regionModal}
             <PublicPricing 
                 onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} 
                 onAuthNavigate={handleAuthNavigate} 
@@ -479,7 +461,6 @@ const App: React.FC = () => {
 
       return (
           <div className="h-[100dvh] bg-main-bg dark:bg-[#121212] font-sans text-text-primary dark:text-[#EAEAEA] flex flex-col transition-colors duration-300 overflow-hidden relative">
-              {regionModal}
               <Header 
                   onGoHome={handleGoHome} 
                   onThemeToggle={handleThemeToggle} 
@@ -525,216 +506,216 @@ const App: React.FC = () => {
                       )}
 
                       <ErrorBoundary>
-                      {/* Extended Features Dashboard Grid */}
-                      {activeTool === Tool.ExtendedFeaturesDashboard && (
-                          <div className="max-w-7xl mx-auto pb-10">
-                              <div className="mb-10 text-center animate-fade-in-up">
-                                  <h2 className="text-3xl font-extrabold text-text-primary dark:text-white mb-3">Kho Tiện Ích Mở Rộng</h2>
-                                  <p className="text-text-secondary dark:text-gray-400 max-w-2xl mx-auto text-base">Khám phá các công cụ AI chuyên sâu hỗ trợ mọi giai đoạn thiết kế, quy hoạch và hoàn thiện ý tưởng.</p>
-                              </div>
-                              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                  {utilityToolsGroup.tools.map((item, index) => (
-                                      <button
-                                          key={item.tool}
-                                          onClick={() => setActiveTool(item.tool)}
-                                          className={`group relative flex flex-col h-64 rounded-2xl border border-gray-200 dark:border-white/5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl shadow-lg`}
-                                          style={{ animationDelay: `${index * 50}ms` }}
-                                      >
-                                          {/* Background Image with Zoom Effect */}
-                                          {item.image && (
-                                              <img 
-                                                  src={item.image} 
-                                                  alt={item.label} 
-                                                  className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                              />
-                                          )}
-                                          
-                                          {/* Gradient Overlay for Text Readability */}
-                                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent dark:from-black/90 dark:via-black/60 dark:to-black/20"></div>
-                                          
-                                          {/* Content */}
-                                          <div className="relative z-10 flex flex-col h-full p-6 justify-end text-left">
-                                              <div className="flex items-center gap-3 mb-2">
-                                                   <div className="p-2 rounded-lg bg-white/10 backdrop-blur-md text-white border border-white/20 group-hover:bg-[#7f13ec] group-hover:border-[#7f13ec] transition-colors duration-300">
-                                                      {React.cloneElement(item.icon, { className: "h-6 w-6" })}
-                                                  </div>
-                                                  <h3 className="text-lg font-bold text-white group-hover:text-[#E0E0E0] transition-colors">{item.label}</h3>
-                                              </div>
-                                              
-                                              <p className="text-sm text-gray-300 line-clamp-2 leading-relaxed opacity-90 group-hover:opacity-100 transition-opacity">
-                                                  {item.desc || "Công cụ hỗ trợ thiết kế chuyên nghiệp."}
-                                              </p>
-                                          </div>
-                                      </button>
-                                  ))}
-                              </div>
-                          </div>
-                      )}
+                        {/* Extended Features Dashboard Grid */}
+                        {activeTool === Tool.ExtendedFeaturesDashboard && (
+                            <div className="max-w-7xl mx-auto pb-10">
+                                <div className="mb-10 text-center animate-fade-in-up">
+                                    <h2 className="text-3xl font-extrabold text-text-primary dark:text-white mb-3">Kho Tiện Ích Mở Rộng</h2>
+                                    <p className="text-text-secondary dark:text-gray-400 max-w-2xl mx-auto text-base">Khám phá các công cụ AI chuyên sâu hỗ trợ mọi giai đoạn thiết kế, quy hoạch và hoàn thiện ý tưởng.</p>
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                                    {utilityToolsGroup.tools.map((item, index) => (
+                                        <button
+                                            key={item.tool}
+                                            onClick={() => setActiveTool(item.tool)}
+                                            className={`group relative flex flex-col h-64 rounded-2xl border border-gray-200 dark:border-white/5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl shadow-lg`}
+                                            style={{ animationDelay: `${index * 50}ms` }}
+                                        >
+                                            {/* Background Image with Zoom Effect */}
+                                            {item.image && (
+                                                <img 
+                                                    src={item.image} 
+                                                    alt={item.label} 
+                                                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
+                                                />
+                                            )}
+                                            
+                                            {/* Gradient Overlay for Text Readability */}
+                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent dark:from-black/90 dark:via-black/60 dark:to-black/20"></div>
+                                            
+                                            {/* Content */}
+                                            <div className="relative z-10 flex flex-col h-full p-6 justify-end text-left">
+                                                <div className="flex items-center gap-3 mb-2">
+                                                    <div className="p-2 rounded-lg bg-white/10 backdrop-blur-md text-white border border-white/20 group-hover:bg-[#7f13ec] group-hover:border-[#7f13ec] transition-colors duration-300">
+                                                        {React.cloneElement(item.icon, { className: "h-6 w-6" })}
+                                                    </div>
+                                                    <h3 className="text-lg font-bold text-white group-hover:text-[#E0E0E0] transition-colors">{item.label}</h3>
+                                                </div>
+                                                
+                                                <p className="text-sm text-gray-300 line-clamp-2 leading-relaxed opacity-90 group-hover:opacity-100 transition-opacity">
+                                                    {item.desc || "Công cụ hỗ trợ thiết kế chuyên nghiệp."}
+                                                </p>
+                                            </div>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        )}
 
-                      {/* Tools Rendering */}
-                      {activeTool === Tool.Pricing ? (
-                          <Checkout onPlanSelect={handleSelectPlanForPayment} />
-                      ) : activeTool === Tool.FloorPlan ? (
-                          <FloorPlan 
-                              state={toolStates.FloorPlan}
-                              onStateChange={(newState) => handleToolStateChange(Tool.FloorPlan, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.Renovation ? (
-                          <Renovation 
-                              state={toolStates.Renovation}
-                              onStateChange={(newState) => handleToolStateChange(Tool.Renovation, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.ArchitecturalRendering ? (
-                          <ImageGenerator 
-                              state={toolStates.ArchitecturalRendering}
-                              onStateChange={(newState) => handleToolStateChange(Tool.ArchitecturalRendering, newState)}
-                              onSendToViewSync={handleSendToViewSync} 
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.InteriorRendering ? (
-                          <InteriorGenerator
-                              state={toolStates.InteriorRendering}
-                              onStateChange={(newState) => handleToolStateChange(Tool.InteriorRendering, newState)}
-                              onSendToViewSync={handleSendToViewSync} 
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.UrbanPlanning ? (
-                          <UrbanPlanning
-                              state={toolStates.UrbanPlanning}
-                              onStateChange={(newState) => handleToolStateChange(Tool.UrbanPlanning, newState)}
-                              onSendToViewSync={handleSendToViewSync}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.LandscapeRendering ? (
-                          <LandscapeRendering
-                              state={toolStates.LandscapeRendering}
-                              onStateChange={(newState) => handleToolStateChange(Tool.LandscapeRendering, newState)}
-                              onSendToViewSync={handleSendToViewSync}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.AITechnicalDrawings ? (
-                          <AITechnicalDrawings
-                              state={toolStates.AITechnicalDrawings}
-                              onStateChange={(newState) => handleToolStateChange(Tool.AITechnicalDrawings, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.SketchConverter ? (
-                          <SketchConverter
-                              state={toolStates.SketchConverter}
-                              onStateChange={(newState) => handleToolStateChange(Tool.SketchConverter, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.FengShui ? (
-                          <FengShui
-                              state={toolStates.FengShui}
-                              onStateChange={(newState) => handleToolStateChange(Tool.FengShui, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.ViewSync ? (
-                          <ViewSync 
-                              state={toolStates.ViewSync}
-                              onStateChange={(newState) => handleToolStateChange(Tool.ViewSync, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.VirtualTour ? (
-                          <VirtualTour
-                              state={toolStates.VirtualTour}
-                              onStateChange={(newState) => handleToolStateChange(Tool.VirtualTour, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.MaterialSwap ? (
-                          <MaterialSwapper 
-                              state={toolStates.MaterialSwap}
-                              onStateChange={(newState) => handleToolStateChange(Tool.MaterialSwap, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.Staging ? (
-                          <Staging 
-                              state={toolStates.Staging}
-                              onStateChange={(newState) => handleToolStateChange(Tool.Staging, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.Upscale ? (
-                          <Upscale 
-                              state={toolStates.Upscale}
-                              onStateChange={(newState) => handleToolStateChange(Tool.Upscale, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.Moodboard ? (
-                          <MoodboardGenerator 
-                              state={toolStates.Moodboard}
-                              onStateChange={(newState) => handleToolStateChange(Tool.Moodboard, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.VideoGeneration ? (
-                          <VideoGenerator 
-                              state={toolStates.VideoGeneration}
-                              onStateChange={(newState) => handleToolStateChange(Tool.VideoGeneration, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.ImageEditing ? (
-                          <ImageEditor 
-                              state={toolStates.ImageEditing}
-                              onStateChange={(newState) => handleToolStateChange(Tool.ImageEditing, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.History ? (
-                          <HistoryPanel />
-                      ) : activeTool === Tool.Profile ? (
-                          <UserProfile 
-                              session={session} 
-                              initialTab={toolStates.Profile.activeTab || 'profile'}
-                              onTabChange={(tab) => handleToolStateChange(Tool.Profile, { activeTab: tab })}
-                              onPurchaseSuccess={fetchUserStatus}
-                          /> 
-                      ) : activeTool === Tool.LayoutGenerator ? (
-                          <LayoutGenerator
-                              state={toolStates.LayoutGenerator}
-                              onStateChange={(newState) => handleToolStateChange(Tool.LayoutGenerator, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.DrawingGenerator ? (
-                          <DrawingGenerator
-                              state={toolStates.DrawingGenerator}
-                              onStateChange={(newState) => handleToolStateChange(Tool.DrawingGenerator, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.DiagramGenerator ? (
-                          <DiagramGenerator
-                              state={toolStates.DiagramGenerator}
-                              onStateChange={(newState) => handleToolStateChange(Tool.DiagramGenerator, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : activeTool === Tool.RealEstatePoster ? (
-                          <RealEstatePoster
-                              state={toolStates.RealEstatePoster}
-                              onStateChange={(newState) => handleToolStateChange(Tool.RealEstatePoster, newState)}
-                              userCredits={userCredits}
-                              onDeductCredits={handleDeductCredits}
-                          />
-                      ) : null}
+                        {/* Tools Rendering */}
+                        {activeTool === Tool.Pricing ? (
+                            <Checkout onPlanSelect={handleSelectPlanForPayment} />
+                        ) : activeTool === Tool.FloorPlan ? (
+                            <FloorPlan 
+                                state={toolStates.FloorPlan}
+                                onStateChange={(newState) => handleToolStateChange(Tool.FloorPlan, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.Renovation ? (
+                            <Renovation 
+                                state={toolStates.Renovation}
+                                onStateChange={(newState) => handleToolStateChange(Tool.Renovation, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.ArchitecturalRendering ? (
+                            <ImageGenerator 
+                                state={toolStates.ArchitecturalRendering}
+                                onStateChange={(newState) => handleToolStateChange(Tool.ArchitecturalRendering, newState)}
+                                onSendToViewSync={handleSendToViewSync} 
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.InteriorRendering ? (
+                            <InteriorGenerator
+                                state={toolStates.InteriorRendering}
+                                onStateChange={(newState) => handleToolStateChange(Tool.InteriorRendering, newState)}
+                                onSendToViewSync={handleSendToViewSync} 
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.UrbanPlanning ? (
+                            <UrbanPlanning
+                                state={toolStates.UrbanPlanning}
+                                onStateChange={(newState) => handleToolStateChange(Tool.UrbanPlanning, newState)}
+                                onSendToViewSync={handleSendToViewSync}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.LandscapeRendering ? (
+                            <LandscapeRendering
+                                state={toolStates.LandscapeRendering}
+                                onStateChange={(newState) => handleToolStateChange(Tool.LandscapeRendering, newState)}
+                                onSendToViewSync={handleSendToViewSync}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.AITechnicalDrawings ? (
+                            <AITechnicalDrawings
+                                state={toolStates.AITechnicalDrawings}
+                                onStateChange={(newState) => handleToolStateChange(Tool.AITechnicalDrawings, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.SketchConverter ? (
+                            <SketchConverter
+                                state={toolStates.SketchConverter}
+                                onStateChange={(newState) => handleToolStateChange(Tool.SketchConverter, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.FengShui ? (
+                            <FengShui
+                                state={toolStates.FengShui}
+                                onStateChange={(newState) => handleToolStateChange(Tool.FengShui, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.ViewSync ? (
+                            <ViewSync 
+                                state={toolStates.ViewSync}
+                                onStateChange={(newState) => handleToolStateChange(Tool.ViewSync, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.VirtualTour ? (
+                            <VirtualTour
+                                state={toolStates.VirtualTour}
+                                onStateChange={(newState) => handleToolStateChange(Tool.VirtualTour, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.MaterialSwap ? (
+                            <MaterialSwapper 
+                                state={toolStates.MaterialSwap}
+                                onStateChange={(newState) => handleToolStateChange(Tool.MaterialSwap, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.Staging ? (
+                            <Staging 
+                                state={toolStates.Staging}
+                                onStateChange={(newState) => handleToolStateChange(Tool.Staging, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.Upscale ? (
+                            <Upscale 
+                                state={toolStates.Upscale}
+                                onStateChange={(newState) => handleToolStateChange(Tool.Upscale, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.Moodboard ? (
+                            <MoodboardGenerator 
+                                state={toolStates.Moodboard}
+                                onStateChange={(newState) => handleToolStateChange(Tool.Moodboard, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.VideoGeneration ? (
+                            <VideoGenerator 
+                                state={toolStates.VideoGeneration}
+                                onStateChange={(newState) => handleToolStateChange(Tool.VideoGeneration, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.ImageEditing ? (
+                            <ImageEditor 
+                                state={toolStates.ImageEditing}
+                                onStateChange={(newState) => handleToolStateChange(Tool.ImageEditing, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.History ? (
+                            <HistoryPanel />
+                        ) : activeTool === Tool.Profile ? (
+                            <UserProfile 
+                                session={session} 
+                                initialTab={toolStates.Profile.activeTab || 'profile'}
+                                onTabChange={(tab) => handleToolStateChange(Tool.Profile, { activeTab: tab })}
+                                onPurchaseSuccess={fetchUserStatus}
+                            /> 
+                        ) : activeTool === Tool.LayoutGenerator ? (
+                            <LayoutGenerator
+                                state={toolStates.LayoutGenerator}
+                                onStateChange={(newState) => handleToolStateChange(Tool.LayoutGenerator, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.DrawingGenerator ? (
+                            <DrawingGenerator
+                                state={toolStates.DrawingGenerator}
+                                onStateChange={(newState) => handleToolStateChange(Tool.DrawingGenerator, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.DiagramGenerator ? (
+                            <DiagramGenerator
+                                state={toolStates.DiagramGenerator}
+                                onStateChange={(newState) => handleToolStateChange(Tool.DiagramGenerator, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.RealEstatePoster ? (
+                            <RealEstatePoster
+                                state={toolStates.RealEstatePoster}
+                                onStateChange={(newState) => handleToolStateChange(Tool.RealEstatePoster, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : null}
                       </ErrorBoundary>
                   </main>
               </div>
@@ -750,7 +731,6 @@ const App: React.FC = () => {
   // Homepage View
   return (
     <div className="relative">
-        {regionModal}
         <Homepage 
             onStart={handleStartDesigning} 
             onAuthNavigate={handleAuthNavigate} 

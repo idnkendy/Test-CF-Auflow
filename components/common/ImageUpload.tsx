@@ -10,16 +10,77 @@ interface ImageUploadProps {
   directionPreviewUrl?: string | null;
 }
 
-export const fileToBase64 = (file: File): Promise<string> => {
+// Helper: Resize and Compress Image
+export const resizeImage = async (file: File): Promise<{ base64: string; mimeType: string; objectURL: string }> => {
     return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.readAsDataURL(file);
-        reader.onload = () => {
-            const result = reader.result as string;
-            resolve(result.split(',')[1]);
+        const img = new Image();
+        const objectURL = URL.createObjectURL(file);
+        img.src = objectURL;
+
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            // Limit max dimension to 1536px to prevent API 500 Errors and Browser OOM
+            const MAX_WIDTH = 1536;
+            const MAX_HEIGHT = 1536;
+            let width = img.width;
+            let height = img.height;
+
+            if (width > height) {
+                if (width > MAX_WIDTH) {
+                    height *= MAX_WIDTH / width;
+                    width = MAX_WIDTH;
+                }
+            } else {
+                if (height > MAX_HEIGHT) {
+                    width *= MAX_HEIGHT / height;
+                    height = MAX_HEIGHT;
+                }
+            }
+
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                URL.revokeObjectURL(objectURL);
+                reject(new Error("Canvas context error"));
+                return;
+            }
+
+            // Fill white background (handles transparent PNGs converting to JPEG)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, width, height);
+
+            // Compress to JPEG 85% - Good balance for AI vision
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            
+            // Create a new blob URL from the compressed data for efficient rendering
+            canvas.toBlob((blob) => {
+                URL.revokeObjectURL(objectURL); // Clean up original
+                if (blob) {
+                    const newObjectUrl = URL.createObjectURL(blob);
+                    resolve({
+                        base64: dataUrl.split(',')[1],
+                        mimeType: 'image/jpeg',
+                        objectURL: newObjectUrl
+                    });
+                } else {
+                    reject(new Error("Compression failed"));
+                }
+            }, 'image/jpeg', 0.85);
         };
-        reader.onerror = error => reject(error);
+
+        img.onerror = (e) => {
+            URL.revokeObjectURL(objectURL);
+            reject(new Error("Image load failed"));
+        };
     });
+};
+
+// Deprecated: Kept for compatibility if imported elsewhere, but redirects to resize
+export const fileToBase64 = async (file: File): Promise<string> => {
+    const result = await resizeImage(file);
+    return result.base64;
 };
 
 const XIcon = () => (
@@ -36,6 +97,7 @@ const CloudUploadIcon = () => (
 
 const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl, maskPreviewUrl, directionPreviewUrl }) => {
     const [error, setError] = useState<string | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const uniqueId = useMemo(() => id || `file-upload-${Math.random().toString(36).substr(2, 9)}`, [id]);
@@ -43,29 +105,31 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
     const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
-            if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-                setError('Chỉ chấp nhận các tệp PNG, JPG, hoặc WEBP.');
+            // Check for valid types, including explicit jpg check
+            if (!['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(file.type)) {
+                setError('Chỉ chấp nhận các tệp JPG, PNG, hoặc WEBP.');
                 onFileSelect(null);
                 return;
             }
-             if (file.size > 30 * 1024 * 1024) { // 30MB size limit
-                setError('Kích thước tệp không được vượt quá 30MB.');
+             if (file.size > 50 * 1024 * 1024) { // 50MB hard limit (though we compress it)
+                setError('Kích thước tệp quá lớn.');
                 onFileSelect(null);
                 return;
             }
 
             setError(null);
+            setIsProcessing(true);
+            
             try {
-                const base64 = await fileToBase64(file);
-                const objectURL = URL.createObjectURL(file);
-                onFileSelect({ 
-                    base64, 
-                    mimeType: file.type, 
-                    objectURL
-                });
+                // Resize and compress immediately
+                const fileData = await resizeImage(file);
+                onFileSelect(fileData);
             } catch (err) {
-                setError('Không thể đọc tệp hình ảnh.');
+                console.error(err);
+                setError('Không thể xử lý ảnh này. Vui lòng thử ảnh khác.');
                 onFileSelect(null);
+            } finally {
+                setIsProcessing(false);
             }
         }
     }, [onFileSelect]);
@@ -97,7 +161,9 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
     }, [handleFileChange]);
 
     const handleContainerClick = () => {
-        inputRef.current?.click();
+        if (!isProcessing) {
+            inputRef.current?.click();
+        }
     };
 
 
@@ -144,7 +210,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
                     type="file"
                     className="sr-only"
                     onChange={handleFileChange}
-                    accept="image/png, image/jpeg, image/webp"
+                    accept=".jpg, .jpeg, .png, .webp"
                 />
             </div>
         );
@@ -153,17 +219,29 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
     return (
         <div>
             <div 
-                className="group relative w-full aspect-video bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-accent hover:bg-accent/5 transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer p-6"
+                className={`group relative w-full aspect-video bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-accent hover:bg-accent/5 transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer p-6 ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
                 onClick={handleContainerClick}
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
             >
-                <div className="p-3 bg-white dark:bg-gray-700 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform duration-300">
-                    <CloudUploadIcon />
-                </div>
-                <p className="font-medium text-gray-700 dark:text-gray-200 text-sm group-hover:text-accent transition-colors">Nhấp để tải ảnh lên</p>
-                <p className="text-xs text-gray-400 mt-1">hoặc kéo và thả vào đây</p>
-                <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-wide">JPG, PNG, WEBP (Max 30MB)</p>
+                {isProcessing ? (
+                    <div className="flex flex-col items-center">
+                        <svg className="animate-spin h-8 w-8 text-accent mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        <p className="text-sm text-gray-500">Đang tối ưu ảnh...</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="p-3 bg-white dark:bg-gray-700 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform duration-300">
+                            <CloudUploadIcon />
+                        </div>
+                        <p className="font-medium text-gray-700 dark:text-gray-200 text-sm group-hover:text-accent transition-colors">Nhấp để tải ảnh lên</p>
+                        <p className="text-xs text-gray-400 mt-1">hoặc kéo và thả vào đây</p>
+                        <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-wide">JPG, PNG, WEBP</p>
+                    </>
+                )}
                 
                 <input
                     ref={inputRef}
@@ -172,7 +250,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
                     type="file"
                     className="sr-only"
                     onChange={handleFileChange}
-                    accept="image/png, image/jpeg, image/webp"
+                    accept=".jpg, .jpeg, .png, .webp"
                 />
             </div>
             {error && (

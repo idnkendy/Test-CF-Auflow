@@ -73,6 +73,10 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     
+    const escapeRegExp = (string: string) => {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
+
     const updatePrompt = useCallback((type: 'style' | 'roomType' | 'lighting' | 'colorPalette', newValue: string, oldValue: string) => {
         const getPromptPart = (partType: string, value: string): string => {
             if (value === 'none' || !value) return '';
@@ -91,7 +95,10 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         let nextPrompt = customPrompt;
 
         if (oldPart && nextPrompt.includes(oldPart)) {
-            nextPrompt = newPart ? nextPrompt.replace(oldPart, newPart) : nextPrompt.replace(new RegExp(`,?\\s*${oldPart}`), '').replace(new RegExp(`${oldPart},?\\s*`), '');
+            const escapedOldPart = escapeRegExp(oldPart);
+            nextPrompt = newPart 
+                ? nextPrompt.replace(oldPart, newPart) 
+                : nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), '');
         } else if (newPart) {
             nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart;
         }
@@ -377,10 +384,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                            {isLoading ? <><Spinner /> Đang Render...</> : 'Bắt đầu Render'}
                         </button>
                     </div>
-                    {error && <div className="mt-3 text-sm text-red-500 text-center bg-red-50 dark:bg-red-900/20 p-2 rounded border border-red-100 dark:border-red-800 font-medium flex items-center justify-center gap-2">
-                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd"/></svg>
-                        {error}
-                     </div>}
+                    {error && <p className="mt-3 text-sm text-red-500 text-center font-medium">{error}</p>}
                 </div>
             </div>
 
@@ -411,7 +415,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                     title="Chuyển ảnh này tới Đồng Bộ View để xử lý tiếp"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 01-2 2H-2a2 2 0 01-2-2v-2z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 01-2 2H-2a2 2 0 01-2-2v-2z" />
                                     </svg>
                                     Đồng bộ
                                 </button>

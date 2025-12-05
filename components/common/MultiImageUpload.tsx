@@ -1,7 +1,7 @@
 
 import React, { useCallback, useState, useRef } from 'react';
 import { FileData } from '../../types';
-import { fileToBase64 } from './ImageUpload';
+import { resizeImage } from './ImageUpload';
 
 interface MultiImageUploadProps {
   onFilesChange: (files: FileData[]) => void;
@@ -23,25 +23,22 @@ const XIcon = () => (
 const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxFiles = 12 }) => {
     const [files, setFiles] = useState<FileData[]>([]);
     const [error, setError] = useState<string | null>(null);
+    const [isProcessing, setIsProcessing] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const processFiles = async (fileList: FileList): Promise<FileData[]> => {
         const processed: FileData[] = [];
         for (const file of Array.from(fileList)) {
-            if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
+            // Updated validation to include 'image/jpg' just in case
+            if (!['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(file.type)) {
                 setError(`Loại tệp không được hỗ trợ: ${file.name}`);
                 continue;
             }
-            if (file.size > 30 * 1024 * 1024) { // 30MB size limit
-                setError(`Kích thước tệp vượt quá 30MB: ${file.name}`);
-                continue;
-            }
             try {
-                const base64 = await fileToBase64(file);
-                const objectURL = URL.createObjectURL(file);
-                processed.push({ base64, mimeType: file.type, objectURL });
+                const fileData = await resizeImage(file);
+                processed.push(fileData);
             } catch (err) {
-                setError(`Không thể đọc tệp: ${file.name}`);
+                setError(`Không thể xử lý tệp: ${file.name}`);
             }
         }
         return processed;
@@ -51,14 +48,19 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
         const newFiles = event.target.files;
         if (newFiles) {
             setError(null);
+            setIsProcessing(true);
+            
             if (files.length + newFiles.length > maxFiles) {
                 setError(`Bạn chỉ có thể tải lên tối đa ${maxFiles} ảnh.`);
+                setIsProcessing(false);
                 return;
             }
+            
             const processed = await processFiles(newFiles);
             const updatedFiles = [...files, ...processed];
             setFiles(updatedFiles);
             onFilesChange(updatedFiles);
+            setIsProcessing(false);
         }
     }, [files, maxFiles, onFilesChange]);
 
@@ -66,10 +68,14 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
         const updatedFiles = files.filter(file => file.objectURL !== objectURLToRemove);
         setFiles(updatedFiles);
         onFilesChange(updatedFiles);
+        // Optional: Revoke URL to free memory immediately
+        URL.revokeObjectURL(objectURLToRemove);
     };
 
     const handleContainerClick = () => {
-        inputRef.current?.click();
+        if (!isProcessing) {
+            inputRef.current?.click();
+        }
     };
 
     const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault();
@@ -79,14 +85,18 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
         const droppedFiles = e.dataTransfer.files;
         if (droppedFiles) {
             setError(null);
+            setIsProcessing(true);
+
             if (files.length + droppedFiles.length > maxFiles) {
                 setError(`Bạn chỉ có thể tải lên tối đa ${maxFiles} ảnh.`);
+                setIsProcessing(false);
                 return;
             }
             const processed = await processFiles(droppedFiles);
             const updatedFiles = [...files, ...processed];
             setFiles(updatedFiles);
             onFilesChange(updatedFiles);
+            setIsProcessing(false);
         }
     }, [files, maxFiles, onFilesChange]);
 
@@ -111,10 +121,19 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                         onClick={handleContainerClick}
                         onDragOver={handleDragOver}
                         onDrop={handleDrop}
-                        className="group aspect-square bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-600 flex flex-col items-center justify-center text-center p-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 hover:border-accent transition-all"
+                        className={`group aspect-square bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-600 flex flex-col items-center justify-center text-center p-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 hover:border-accent transition-all ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
                     >
-                        <PlusIcon />
-                        <p className="text-xs text-text-secondary dark:text-gray-400 mt-1 group-hover:text-accent">Thêm ảnh</p>
+                        {isProcessing ? (
+                            <svg className="animate-spin h-6 w-6 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                            </svg>
+                        ) : (
+                            <>
+                                <PlusIcon />
+                                <p className="text-xs text-text-secondary dark:text-gray-400 mt-1 group-hover:text-accent">Thêm ảnh</p>
+                            </>
+                        )}
                     </div>
                 )}
             </div>
@@ -124,7 +143,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                 multiple
                 className="sr-only"
                 onChange={handleFileChange}
-                accept="image/png, image/jpeg, image/webp"
+                accept=".jpg, .jpeg, .png, .webp"
             />
             {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
         </div>

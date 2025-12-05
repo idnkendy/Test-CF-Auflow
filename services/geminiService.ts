@@ -70,16 +70,16 @@ const getAIClient = async () => {
 
 /**
  * Converts a Base64 string to a Blob URL to prevent Out-Of-Memory crashes in React.
+ * OPTIMIZED: Uses Uint8Array directly to avoid large intermediate arrays.
  */
 const base64ToBlobUrl = (base64: string, mimeType: string = 'image/png'): string => {
     try {
         const byteCharacters = atob(base64);
-        const byteNumbers = new Array(byteCharacters.length);
+        const byteNumbers = new Uint8Array(byteCharacters.length);
         for (let i = 0; i < byteCharacters.length; i++) {
             byteNumbers[i] = byteCharacters.charCodeAt(i);
         }
-        const byteArray = new Uint8Array(byteNumbers);
-        const blob = new Blob([byteArray], { type: mimeType });
+        const blob = new Blob([byteNumbers], { type: mimeType });
         return URL.createObjectURL(blob);
     } catch (e) {
         console.error("Failed to convert Base64 to Blob", e);
@@ -111,9 +111,10 @@ export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64data = reader.result as string;
+                // FileReader returns "data:image/png;base64,....."
                 const arr = base64data.split(',');
                 resolve({
-                    base64: arr[1],
+                    base64: arr[1], // Only the base64 part
                     mimeType: blob.type,
                     objectURL: url
                 });
@@ -122,6 +123,7 @@ export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
             reader.readAsDataURL(blob);
         });
     } catch (e) {
+        console.error("getFileDataFromUrl failed:", e);
         throw new Error("Không thể xử lý ảnh này. Vui lòng thử lại.");
     }
 };
@@ -163,6 +165,48 @@ const processContentResponse = (response: any): string[] => {
     return images;
 };
 
+// Helper for error handling
+const handleGeminiError = (e: any) => {
+    let msg = e.message || e.toString();
+    
+    // Attempt to parse JSON error message if present (e.g. from Google API raw response)
+    if (msg.startsWith('{') && msg.includes('"error"')) {
+        try {
+            const parsed = JSON.parse(msg);
+            if (parsed.error) {
+                if (parsed.error.message) msg = parsed.error.message;
+                // Prioritize code/status if available
+                if (parsed.error.code === 503 || parsed.error.status === 'UNAVAILABLE') {
+                    throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Vui lòng đợi 1-2 phút rồi thử lại.");
+                }
+            }
+        } catch (err) {
+            // Ignore parse error, use original string
+        }
+    }
+
+    // Specific Error Mapping
+    if (msg.includes('503') || msg.includes('overloaded') || msg.includes('UNAVAILABLE')) {
+        throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Vui lòng đợi 1-2 phút rồi thử lại.");
+    }
+    
+    // Changed Behavior: No longer dispatch global event for region block
+    if (msg.includes('403') || msg.includes('location') || msg.includes('User location is not supported')) {
+        throw new Error("IP hiện tại của bạn không khả dụng, vui lòng thử lại sau.");
+    }
+    
+    if (msg.includes('500') || msg.includes('Internal error')) {
+        throw new Error("Máy chủ Google gặp lỗi nội bộ. Vui lòng thử lại sau vài giây.");
+    }
+    
+    if (msg.includes('400') || msg.includes('INVALID_ARGUMENT')) {
+        throw new Error("Dữ liệu ảnh không hợp lệ hoặc quá lớn. Hệ thống đã tự động nén nhưng vẫn thất bại. Vui lòng thử ảnh khác.");
+    }
+    
+    // Return cleaned message as a new Error
+    throw new Error(msg);
+};
+
 // --- GENERATION FUNCTIONS ---
 
 export const generateStandardImage = async (
@@ -194,10 +238,7 @@ export const generateStandardImage = async (
             });
             return processContentResponse(response);
         } catch (e: any) {
-            if (e.message?.includes('403') || e.message?.includes('location') || e.message?.includes('User location is not supported')) {
-                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-            }
+            handleGeminiError(e);
             throw e;
         }
     });
@@ -252,10 +293,7 @@ export const generateHighQualityImage = async (
         });
         return processContentResponse(response);
     } catch (e: any) {
-        if (e.message?.includes('403') || e.message?.includes('location') || e.message?.includes('User location is not supported')) {
-            window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-            throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-        }
+        handleGeminiError(e);
         throw e;
     }
 };
@@ -265,6 +303,8 @@ export const editImage = async (
     image: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
+    // Re-use standard generation as it handles base64 passing logic
+    // But for clarity, editImage usually implies standard model for now
     const urls = await generateStandardImage(prompt, '4:3', numberOfImages, image);
     return urls.map(url => ({ imageUrl: url }));
 };
@@ -292,10 +332,7 @@ export const editImageWithMask = async (
             });
             return processContentResponse(response);
         } catch (e: any) {
-            if (e.message?.includes('403') || e.message?.includes('location')) {
-                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-            }
+            handleGeminiError(e);
             throw e;
         }
     });
@@ -325,10 +362,7 @@ export const editImageWithReference = async (
             });
             return processContentResponse(response);
         } catch (e: any) {
-            if (e.message?.includes('403') || e.message?.includes('location')) {
-                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-            }
+            handleGeminiError(e);
             throw e;
         }
     });
@@ -362,10 +396,7 @@ export const editImageWithMaskAndReference = async (
             });
             return processContentResponse(response);
         } catch (e: any) {
-            if (e.message?.includes('403') || e.message?.includes('location')) {
-                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-            }
+            handleGeminiError(e);
             throw e;
         }
     });
@@ -398,10 +429,7 @@ export const editImageWithMultipleReferences = async (
             });
             return processContentResponse(response);
         } catch (e: any) {
-            if (e.message?.includes('403') || e.message?.includes('location')) {
-                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-            }
+            handleGeminiError(e);
             throw e;
         }
     });
@@ -436,10 +464,7 @@ export const editImageWithMaskAndMultipleReferences = async (
             });
             return processContentResponse(response);
         } catch (e: any) {
-            if (e.message?.includes('403') || e.message?.includes('location')) {
-                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-            }
+            handleGeminiError(e);
             throw e;
         }
     });
@@ -461,10 +486,7 @@ export const generateText = async (prompt: string): Promise<string> => {
         });
         return response.text || "";
     } catch (e: any) {
-        if (e.message?.includes('403') || e.message?.includes('location') || e.message?.includes('User location is not supported')) {
-            window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-            throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-        }
+        handleGeminiError(e);
         throw e;
     }
 };
@@ -502,9 +524,7 @@ export const generatePromptSuggestions = async (
         return JSON.parse(text);
     } catch (e: any) {
         console.error("Failed to generate/parse suggestions", e);
-        if (e.message?.includes('403') || e.message?.includes('location')) {
-            window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-        }
+        // Dispatch only for other errors if really needed, but here we just return null.
         return null;
     }
 };
@@ -527,10 +547,7 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
         });
         return response.text || "";
     } catch (e: any) {
-        if (e.message?.includes('403') || e.message?.includes('location')) {
-            window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-            throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-        }
+        handleGeminiError(e);
         throw e;
     }
 };
@@ -559,10 +576,7 @@ export const generateStagingImage = async (prompt: string, sceneImage: FileData,
             });
             return processContentResponse(response);
         } catch (e: any) {
-            if (e.message?.includes('403') || e.message?.includes('location')) {
-                window.dispatchEvent(new CustomEvent('gemini-region-blocked'));
-                throw new Error("Khu vực của bạn bị chặn IP. Vui lòng bật VPN.");
-            }
+            handleGeminiError(e);
             throw e;
         }
     });
