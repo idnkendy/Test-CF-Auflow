@@ -84,10 +84,6 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                 setPhoneNumber(profile.phone);
                 setStep('creating_tx'); // Profile OK, proceed to create TX
             } else {
-                // Pre-fill full name from metadata if available
-                if (user.user_metadata?.full_name) {
-                    setFullName(user.user_metadata.full_name);
-                }
                 setStep('input_info'); // Profile incomplete, show form
             }
         };
@@ -280,7 +276,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                                                 value={fullName}
                                                 onChange={(e) => setFullName(e.target.value)}
                                                 className="w-full bg-surface dark:bg-gray-800 border border-border-color dark:border-gray-700 rounded-xl p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none"
-                                                placeholder="Nguyễn Văn A"
+                                                placeholder="Họ và tên"
                                             />
                                         </div>
                                         <div>
@@ -290,7 +286,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                                                 value={phoneNumber}
                                                 onChange={(e) => setPhoneNumber(e.target.value)}
                                                 className="w-full bg-surface dark:bg-gray-800 border border-border-color dark:border-gray-700 rounded-xl p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none"
-                                                placeholder="0912345678"
+                                                placeholder="Số điện thoại"
                                             />
                                         </div>
                                         {infoError && (
