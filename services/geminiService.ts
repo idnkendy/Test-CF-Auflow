@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from "./supabaseClient";
 import { AspectRatio, FileData, ImageResolution } from "../types";
@@ -562,6 +561,32 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
     } catch (e: any) {
         handleGeminiError(e);
         throw e;
+    }
+};
+
+// --- VIDEO PROMPT GENERATION ---
+export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
+    const ai = await getAIClient();
+    const model = 'gemini-2.5-flash'; // Or 'gemini-pro-vision' equivalent if using a specific model for vision
+    
+    const prompt = `Analyze this architectural or interior image. Write a highly descriptive and cinematic prompt for an AI video generator (like Google Veo) to create a short video based on this scene. 
+    Focus on describing camera movement (e.g., slow pan, drone fly-through, dolly zoom), lighting changes (e.g., day to night), and atmospheric elements (e.g., gentle wind moving trees, subtle reflections).
+    Keep the prompt under 50 words, concise, and focused on visual movement. Direct output only.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: model,
+            contents: {
+                parts: [
+                    { text: prompt },
+                    { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+                ]
+            }
+        });
+        return response.text?.trim() || "Cinematic architectural video with slow camera movement.";
+    } catch (e: any) {
+        console.error("Failed to generate video prompt from image", e);
+        return "Cinematic architectural video with slow camera movement.";
     }
 };
 

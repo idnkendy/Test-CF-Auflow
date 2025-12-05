@@ -72,12 +72,16 @@ const DiagramIcon = (props: React.SVGProps<SVGSVGElement>) => (
 const PosterIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
 );
+const HomeIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+);
 
 interface NavigationProps {
   activeTool: Tool;
   setActiveTool: (tool: Tool) => void;
   isMobileOpen?: boolean;
   onCloseMobile?: () => void;
+  onGoHome?: () => void;
 }
 
 export const mainNavItems = [
@@ -225,7 +229,7 @@ export const utilityToolsGroup = {
 
 const historyItem = { tool: Tool.History, label: 'Lịch sử', icon: <HistoryIcon /> };
 
-const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMobileOpen = false, onCloseMobile }) => {
+const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMobileOpen = false, onCloseMobile, onGoHome }) => {
     
     const isExtendedToolActive = utilityToolsGroup.tools.some(item => item.tool === activeTool) || activeTool === Tool.ExtendedFeaturesDashboard;
 
@@ -269,6 +273,18 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                 </div>
                 
                 <div className="space-y-1">
+                    {onGoHome && (
+                        <button
+                            onClick={() => { onGoHome(); onCloseMobile?.(); }}
+                            className="group flex items-center w-full gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 text-sm font-medium text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white"
+                        >
+                            <span className="text-gray-400 group-hover:text-[#7f13ec]">
+                                <HomeIcon />
+                            </span>
+                            <span className="truncate">Trang chủ</span>
+                        </button>
+                    )}
+
                     {mainNavItems.map(item => (
                         <button
                             key={item.tool}
@@ -324,6 +340,19 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
       <nav className="hidden md:flex w-full sticky top-0 z-30 bg-surface/90 dark:bg-[#121212]/90 backdrop-blur-xl border-b border-border-color dark:border-[#302839] shadow-sm justify-center h-[72px]">
         <div className="max-w-[1600px] w-full px-4 sm:px-6 lg:px-8 flex items-center justify-between">
             
+            {/* Home Button Left Aligned */}
+            {onGoHome && (
+                <div className="absolute left-6 flex items-center">
+                    <button
+                        onClick={onGoHome}
+                        className="group relative flex items-center justify-center p-2 rounded-full transition-all duration-300 outline-none text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5"
+                        title="Trang chủ"
+                    >
+                        <HomeIcon className="h-6 w-6" />
+                    </button>
+                </div>
+            )}
+
             {/* Centered Main Nav Pill */}
             <div className="flex-1 flex justify-center">
                 <div className="flex items-center p-1.5 rounded-full bg-gray-50/80 dark:bg-white/5 border border-gray-200 dark:border-white/5 shadow-inner">

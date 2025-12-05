@@ -61,14 +61,29 @@ export interface LandscapeRenderingState {
     resolution: ImageResolution;
 }
 
+// Interface cho một item trong danh sách bối cảnh video
+export interface VideoContextItem {
+    id: string;
+    file: FileData; // Used for display and generation (cropped)
+    originalFile: FileData; // Used for re-cropping when aspect ratio changes
+    prompt: string;
+    isGeneratingPrompt: boolean;
+    videoUrl?: string;          // URL video kết quả cho clip này
+    isGeneratingVideo?: boolean; // Trạng thái đang tạo video cho clip này
+    isUploaded?: boolean; // New flag to identify manually uploaded videos
+}
+
 export interface VideoGeneratorState {
     prompt: string;
     startImage: FileData | null;
+    contextItems: VideoContextItem[]; // Danh sách các bối cảnh đã tải lên và phân tích
+    selectedContextId: string | null; // ID của bối cảnh đang được chọn để tạo video
     isLoading: boolean;
     loadingMessage: string;
     error: string | null;
     generatedVideoUrl: string | null;
     mode: 'exterior' | 'interior';
+    aspectRatio: '16:9' | '9:16'; // New field for video aspect ratio
 }
 
 export interface ImageEditorState {
@@ -473,11 +488,14 @@ export const initialToolStates = {
     [Tool.VideoGeneration]: {
         prompt: 'Tạo video time-lapse cho thấy tòa nhà chuyển từ cảnh ban ngày nắng đẹp sang cảnh ban đêm được chiếu sáng đẹp mắt.',
         startImage: null,
+        contextItems: [],
+        selectedContextId: null,
         isLoading: false,
         loadingMessage: "Đang khởi tạo các photon ánh sáng...",
         error: null,
         generatedVideoUrl: null,
         mode: 'exterior',
+        aspectRatio: '16:9', // Default
     } as VideoGeneratorState,
     [Tool.ImageEditing]: {
         prompt: 'Thêm một ban công sắt nghệ thuật vào cửa sổ tầng hai.',

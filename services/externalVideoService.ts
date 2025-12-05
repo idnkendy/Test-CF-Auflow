@@ -10,41 +10,80 @@ const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-
 // Helper wait
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Compress image (Max width 1024px for speed)
-const resizeAndCompressImage = async (fileData: FileData, maxWidth: number = 1024): Promise<string> => {
+// Crop and Resize Image (Center Crop to Aspect Ratio, Max 1024px)
+export const resizeAndCropImage = async (
+    fileData: FileData, 
+    aspectRatio: '16:9' | '9:16' = '16:9'
+): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
+        // Allow re-cropping from an existing base64/DataURL if that's what we have
         img.src = fileData.objectURL || `data:${fileData.mimeType};base64,${fileData.base64}`;
         
         img.onload = () => {
-            let width = img.width;
-            let height = img.height;
-
-            if (width > maxWidth) {
-                const scaleFactor = maxWidth / width;
-                width = maxWidth;
-                height = Math.round(height * scaleFactor);
+            // Determine target dimensions based on max 1024px and aspect ratio
+            let targetWidth, targetHeight;
+            
+            if (aspectRatio === '16:9') {
+                targetWidth = 1024;
+                targetHeight = 576;
+            } else { // 9:16
+                targetWidth = 576;
+                targetHeight = 1024;
             }
 
             const canvas = document.createElement('canvas');
-            canvas.width = width;
-            canvas.height = height;
+            canvas.width = targetWidth;
+            canvas.height = targetHeight;
             const ctx = canvas.getContext('2d');
 
             if (!ctx) {
+                // Fallback to original if context fails
                 resolve(`data:${fileData.mimeType};base64,${fileData.base64}`);
                 return;
             }
 
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
+            // High quality scaling
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
 
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            // Draw white background (handles transparency)
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, targetWidth, targetHeight);
+
+            // Calculate "Cover" fit (Center Crop)
+            const imgRatio = img.width / img.height;
+            const targetRatio = targetWidth / targetHeight;
+            
+            let renderWidth, renderHeight, offsetX, offsetY;
+
+            if (imgRatio > targetRatio) {
+                // Image is wider than target: Scale by height, crop width
+                renderHeight = targetHeight;
+                renderWidth = img.width * (targetHeight / img.height);
+                offsetX = (targetWidth - renderWidth) / 2; // Center horizontally
+                offsetY = 0;
+            } else {
+                // Image is taller than target: Scale by width, crop height
+                renderWidth = targetWidth;
+                renderHeight = img.height * (targetWidth / img.width);
+                offsetX = 0;
+                offsetY = (targetHeight - renderHeight) / 2; // Center vertically
+            }
+
+            // Draw image
+            ctx.drawImage(img, offsetX, offsetY, renderWidth, renderHeight);
+
+            // Export as JPEG
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
             resolve(compressedDataUrl);
         };
 
-        img.onerror = () => resolve(`data:${fileData.mimeType};base64,${fileData.base64}`);
+        img.onerror = (e) => {
+            console.error("Image load failed for resize", e);
+            // Fallback to original
+            resolve(`data:${fileData.mimeType};base64,${fileData.base64}`);
+        };
     });
 };
 
@@ -120,21 +159,21 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     }
 };
 
-export const generateVideoExternal = async (prompt: string, backendUrl: string, startImage?: FileData): Promise<{ videoUrl: string, mediaId?: string }> => {
+export const generateVideoExternal = async (prompt: string, backendUrl: string, startImage?: FileData, aspectRatio: '16:9' | '9:16' = '16:9'): Promise<{ videoUrl: string, mediaId?: string }> => {
     console.log("==========================================================");
-    console.log(`[Video Service] STARTING VIDEO GENERATION (Fast Mode)`);
+    console.log(`[Video Service] STARTING VIDEO GENERATION (Fast Mode) - Ratio: ${aspectRatio}`);
     console.log("==========================================================");
     
-    // Step 0: Compress Image
+    // Step 0: Compress & Crop Image
     let imageBase64 = null;
     if (startImage) {
-        console.log(`[Client] Step 0: Compressing Image...`);
+        console.log(`[Client] Step 0: Processing Image (Crop ${aspectRatio} & Resize Max 1024px)...`);
         try {
-            const compressed = await resizeAndCompressImage(startImage, 1024);
+            const compressed = await resizeAndCropImage(startImage, aspectRatio);
             imageBase64 = compressed.split(',')[1];
             console.log(`[Client] Image Ready. Size: ${(imageBase64.length / 1024).toFixed(2)} KB`);
         } catch (e) {
-            console.warn("[Client] Compression failed, using original.");
+            console.warn("[Client] Processing failed, using original.");
             imageBase64 = startImage.base64;
         }
     }
@@ -169,7 +208,13 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
         const triggerData = await fetchJson('/create', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'create', token, prompt, mediaId })
+            body: JSON.stringify({ 
+                action: 'create', 
+                token, 
+                prompt, 
+                mediaId,
+                aspectRatio 
+            })
         });
         const { task_id, scene_id } = triggerData;
         console.log(`[Client] Task Created! Task ID: ${task_id}`);
@@ -220,12 +265,12 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
 };
 
 export const upscaleVideoExternal = async (mediaId: string): Promise<string> => {
+    // Existing upscale implementation...
     console.log("==========================================================");
     console.log(`[Video Service] STARTING VIDEO UPSCALE (1080p)`);
     console.log("==========================================================");
 
     try {
-        // Fetch token dynamically
         const authData = await fetchJson('/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -233,7 +278,6 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
         });
         const token = authData.token;
 
-        // Trigger Upscale
         const triggerData = await fetchJson('/upscale', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -242,13 +286,12 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
         const { task_id, scene_id } = triggerData;
         console.log(`[Client] Upscale Task Created! Task ID: ${task_id}`);
 
-        // Poll for completion
         const maxRetries = 120;
         let attempts = 0;
 
         while (attempts < maxRetries) {
             attempts++;
-            await wait(8000); // Increased from 5000ms to 8000ms
+            await wait(8000);
 
             const checkData = await fetchJson('/check', {
                 method: 'POST',

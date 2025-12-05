@@ -92,7 +92,6 @@ async function getAuthData(env) {
     const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
 
     try {
-        // Lấy tài khoản active và có token
         const response = await fetch(`${sbUrl}/rest/v1/video_accounts?select=access_token,auth_cookies,project_id&is_active=eq.true&access_token=not.is.null`, {
             method: 'GET',
             headers: {
@@ -110,10 +109,8 @@ async function getAuthData(env) {
             throw new Error("Hệ thống đang cập nhật tài khoản Video. Vui lòng thử lại sau.");
         }
 
-        // Chọn ngẫu nhiên một tài khoản (Load Balancing)
         const randomAccount = accounts[Math.floor(Math.random() * accounts.length)];
         
-        // Kiểm tra Project ID (Bắt buộc)
         if (!randomAccount.project_id) {
              const validAccounts = accounts.filter(acc => acc.project_id);
              if (validAccounts.length > 0) {
@@ -139,10 +136,8 @@ async function getAuthData(env) {
 // --- VIDEO GENERATION FUNCTIONS (Veo) ---
 async function uploadImage(authData, base64Data) {
     const { token, cookies } = authData;
-    // Clean base64
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-    
-    // UPDATED PAYLOAD: Fixed structure to match working AWS example
+
     const payload = {
         "imageInput": { 
             "aspectRatio": "IMAGE_ASPECT_RATIO_LANDSCAPE", 
@@ -153,166 +148,162 @@ async function uploadImage(authData, base64Data) {
         "clientContext": { "sessionId": ";" + Date.now(), "tool": "ASSET_MANAGER" }
     };
 
+    // Keep v1:uploadUserImage as it likely maps to a root verb
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1:uploadUserImage', {
         method: 'POST',
         headers: { 
             ...HEADERS, 
-            'authorization': `Bearer ${token}`, 
-            'cookie': cookies || '' 
+            'authorization': `Bearer ${token}`,
+            'cookie': cookies || ''
         },
         body: JSON.stringify(payload)
     });
-    
-    if (res.status !== 200) {
-        const text = await res.text();
-        throw new Error(`Google Upload Error (${res.status}): ${text}`);
-    }
 
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Upload Failed (${res.status}): ${errText}`);
+    }
     const data = await res.json();
-    
-    // Enhanced Media ID extraction
+
     let mediaId = data.mediaGenerationId?.mediaGenerationId || data.mediaGenerationId || data.imageOutput?.image?.id;
-    
-    if (!mediaId) throw new Error("Upload thành công nhưng không có Media ID: " + JSON.stringify(data));
+    if (!mediaId) throw new Error("No mediaId found in upload response");
     return mediaId;
 }
 
 async function triggerGeneration(authData, prompt, mediaId) {
     const { token, cookies, projectId } = authData;
     const sceneId = crypto.randomUUID();
-    const seed = Math.floor(Date.now() / 1000); // Updated seed logic
-    
-    if (!projectId) throw new Error("Thiếu Project ID.");
-
-    // STRICT I2V ENFORCEMENT
-    if (!mediaId) {
-        throw new Error("Internal Error: Image-to-Video requires a mediaId.");
-    }
 
     const payload = {
-        "clientContext": { 
-            "sessionId": ";" + Date.now(), 
-            "projectId": projectId, 
-            "tool": "PINHOLE", 
-            "userPaygateTier": "PAYGATE_TIER_TWO" 
+        "clientContext": {
+            "sessionId": ";" + Date.now(),
+            "projectId": projectId,
+            "tool": "PINHOLE",
+            "userPaygateTier": "PAYGATE_TIER_TWO"
         },
         "requests": [{
             "aspectRatio": "VIDEO_ASPECT_RATIO_LANDSCAPE",
-            "seed": seed, 
+            "seed": Math.floor(Date.now() / 1000), 
             "textInput": { "prompt": prompt },
-            "videoModelKey": "veo_3_1_i2v_s_fast_ultra", // Enforce I2V model
-            "startImage": { "mediaId": mediaId }, // Mandatory for I2V
+            "videoModelKey": "veo_3_1_i2v_s_fast_ultra",
+            "startImage": { "mediaId": mediaId },
             "metadata": { "sceneId": sceneId }
         }]
     };
-
+ 
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage', {
         method: 'POST',
         headers: { 
             ...HEADERS, 
-            'authorization': `Bearer ${token}`, 
-            'cookie': cookies || '' 
+            'authorization': `Bearer ${token}`,
+            'cookie': cookies || ''
         },
         body: JSON.stringify(payload)
     });
-    
-    if (res.status !== 200) {
-        const text = await res.text();
-        throw new Error(`Google Trigger Error (${res.status}): ${text}`);
-    }
 
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Trigger Failed (${res.status}): ${errText}`);
+    }
     const data = await res.json();
-    
-    // Updated operation name extraction
+
     const opItem = data.operations?.[0];
     const operationName = opItem?.operation?.name || opItem?.name;
-    
-    if (!operationName) throw new Error("Không lấy được Task ID từ phản hồi Google.");
-    
+    if (!operationName) throw new Error("No operation name returned in trigger response");
+
     return { task_id: operationName, scene_id: sceneId };
 }
 
 async function triggerUpscale(authData, mediaId) {
     const { token, cookies, projectId } = authData;
     const sceneId = crypto.randomUUID();
-    const seed = Math.floor(Math.random() * 90000) + 10000;
-
-    if (!projectId) throw new Error("Thiếu Project ID.");
-
+    
+    // Using the payload structure from the python snippet
     const payload = {
         "requests": [{
             "aspectRatio": "VIDEO_ASPECT_RATIO_LANDSCAPE",
-            "seed": seed,
+            "seed": Math.floor(Date.now() / 1000),
             "videoInput": { "mediaId": mediaId },
             "videoModelKey": "veo_2_1080p_upsampler_8s",
             "metadata": { "sceneId": sceneId }
         }],
-        "clientContext": { 
-            "sessionId": ";" + Date.now(), 
-            "projectId": projectId, 
-            "tool": "PINHOLE", 
-            "userPaygateTier": "PAYGATE_TIER_TWO" 
+        "clientContext": {
+            "sessionId": ";" + Date.now(),
+            "projectId": projectId,
+            "tool": "PINHOLE",
+            "userPaygateTier": "PAYGATE_TIER_TWO"
         }
     };
-    
+
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoUpsampleVideo', {
         method: 'POST',
         headers: { 
             ...HEADERS, 
-            'authorization': `Bearer ${token}`, 
-            'cookie': cookies || '' 
+            'authorization': `Bearer ${token}`,
+            'cookie': cookies || ''
         },
         body: JSON.stringify(payload)
     });
-    
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Upscale Trigger Failed (${res.status}): ${errText}`);
+    }
     const data = await res.json();
-    const operationName = data.operations?.[0]?.name;
     
-    if (!operationName) throw new Error("Upscale trigger failed");
+    const opItem = data.operations?.[0];
+    const operationName = opItem?.operation?.name || opItem?.name;
+    if (!operationName) throw new Error("No operation name returned in upscale trigger response");
+    
     return { task_id: operationName, scene_id: sceneId };
 }
 
 async function checkStatus(authData, task_id, scene_id) {
     const { token, cookies } = authData;
     const payload = {
-        "operations": [{ "operation": { "name": task_id }, "sceneId": scene_id, "status": "MEDIA_GENERATION_STATUS_ACTIVE" }]
+        "operations": [{
+            "operation": { "name": task_id },
+            "sceneId": scene_id,
+            "status": "MEDIA_GENERATION_STATUS_ACTIVE"
+        }]
     };
-    
+
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', {
         method: 'POST',
         headers: { 
             ...HEADERS, 
-            'authorization': `Bearer ${token}`, 
-            'cookie': cookies || '' 
+            'authorization': `Bearer ${token}`,
+            'cookie': cookies || ''
         },
         body: JSON.stringify(payload)
     });
-    
+
     if (!res.ok) throw new Error(`Check Status Failed (${res.status})`);
-    
+
     const data = await res.json();
     const opResult = data.operations?.[0];
-    
     if (!opResult) return { status: 'processing' };
-    
+
     const status = opResult.status;
+
     if (["MEDIA_GENERATION_STATUS_SUCCESSFUL", "MEDIA_GENERATION_STATUS_COMPLETED", "DONE"].includes(status)) {
         let vidUrl = opResult.operation?.metadata?.video?.fifeUrl || 
                      opResult.videoFiles?.[0]?.url || 
                      opResult.response?.videoUrl;
-        
-        // Extended mediaId extraction for upscaling later
+
+        // Extract Media ID for potential upscaling
         let mediaId = opResult.response?.id || 
                       opResult.operation?.response?.id ||
                       opResult.mediaGenerationId;
-        
+
         if (vidUrl) return { status: 'completed', video_url: vidUrl, mediaId: mediaId };
         return { status: 'failed', message: 'Video URL not found in response' };
     }
-    
+
     if (status === "MEDIA_GENERATION_STATUS_FAILED") {
-        return { status: 'failed', message: JSON.stringify(opResult.error || opResult) };
+        return { status: 'failed', message: JSON.stringify(opResult) };
     }
+
     return { status: 'processing' };
 }
 
@@ -348,21 +339,38 @@ export default {
             'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
         };
 
-        if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+        if (request.method === 'OPTIONS') {
+            return new Response(null, { headers: corsHeaders });
+        }
+
+        // Helper to send JSON response
+        const sendJson = (data, status = 200) => {
+            return new Response(JSON.stringify(data), {
+                status: status,
+                headers: {
+                    'Content-Type': 'application/json',
+                    ...corsHeaders
+                }
+            });
+        };
 
         const url = new URL(request.url);
         const path = url.pathname;
 
         if (path.includes('/sepay-webhook')) return handleSePayWebhook(request, env);
 
-        const sendJson = (data, status = 200) => new Response(JSON.stringify(data), { status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
-
         try {
             let body = {};
-            try { if (request.method !== 'GET') body = await request.json(); } catch (e) {}
+            try {
+                if (request.method !== 'GET' && request.method !== 'HEAD') {
+                    body = await request.json();
+                }
+            } catch (e) {
+                // Ignore if body is empty or not JSON
+            }
+
             let action = body.action || '';
 
-            // Map URL path to action
             if (!action) {
                 if (path.includes('/gemini-proxy')) action = 'gemini_proxy';
                 else if (path.includes('/auth')) action = 'auth';
@@ -373,58 +381,52 @@ export default {
                 else if (path.includes('/update-token')) action = 'update_token';
             }
 
-            // --- ROUTING ---
-            
-            // 1. Gemini Proxy (Text/Image Gen)
+            // --- ROUTER ---
             if (action === 'gemini_proxy') {
                 const { data, status } = await handleGeminiProxy(body, env, request);
                 return sendJson(data, status); 
             }
-            
-            // 2. Video Auth Check
             else if (action === 'auth') {
                 const authData = await getAuthData(env);
                 return sendJson({ status: "connected", token: authData.token ? "active" : null });
-            }
-            
-            // 3. Video Upload (Fix 400 Error Here)
+            } 
             else if (action === 'upload') {
                 const authData = await getAuthData(env);
                 const mediaId = await uploadImage(authData, body.image);
                 return sendJson({ mediaId });
             }
-            
-            // 4. Create Video (Strict I2V)
             else if (action === 'create') {
                 const authData = await getAuthData(env);
                 const result = await triggerGeneration(authData, body.prompt, body.mediaId);
                 return sendJson(result);
             }
-            
-            // 5. Upscale Video
             else if (action === 'upscale') {
                 const authData = await getAuthData(env);
                 const result = await triggerUpscale(authData, body.mediaId);
                 return sendJson(result);
             }
-            
-            // 6. Check Status
             else if (action === 'check') {
                 const authData = await getAuthData(env);
                 const result = await checkStatus(authData, body.task_id, body.scene_id);
                 return sendJson(result);
             }
-            
-            // 7. Deprecated Token Update (Bot should update DB directly now)
             else if (action === 'update_token') {
                 return sendJson({ status: "deprecated", message: "Bot should update Supabase video_accounts table directly." });
             }
             else {
-                return sendJson({ status: "ok", message: "Worker Active" });
+                return sendJson({ 
+                    status: "ok", 
+                    message: "Cloudflare Worker is running", 
+                    request_path: path,
+                    detected_action: action || "none"
+                }, 200);
             }
 
         } catch (error) {
-            return sendJson({ error: true, message: error.message }, 500);
+            return sendJson({ 
+                error: true, 
+                message: error.message || String(error)
+            }, 500);
         }
     }
 };

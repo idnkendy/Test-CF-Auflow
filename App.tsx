@@ -36,6 +36,7 @@ import AuthPage from './components/auth/AuthPage';
 import Spinner from './components/Spinner';
 import PublicPricing from './components/PublicPricing';
 import TermsOfServicePage from './components/TermsOfServicePage'; 
+import VideoPage from './components/VideoPage';
 import { getUserStatus, deductCredits } from './services/paymentService';
 import * as jobService from './services/jobService';
 import { plans } from './constants/plans';
@@ -59,7 +60,7 @@ const safeHistoryReplace = (path: string) => {
 };
 
 const App: React.FC = () => {
-  const [view, setView] = useState<'homepage' | 'auth' | 'app' | 'pricing' | 'payment'>('homepage');
+  const [view, setView] = useState<'homepage' | 'auth' | 'app' | 'pricing' | 'payment' | 'video'>('homepage');
   const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
@@ -127,6 +128,14 @@ const App: React.FC = () => {
                }
           } else if (path === '/pricing') {
               setView('pricing');
+          } else if (path === '/video') {
+              if (session) {
+                  setView('video');
+              } else {
+                  // If accessing /video directly while logged out, redirect to login then back to video
+                  setAuthMode('login');
+                  setView('auth');
+              }
           } else if (path === '/') {
               setView('homepage');
           } else if (path === '/feature') {
@@ -166,7 +175,7 @@ const App: React.FC = () => {
           setSession(null);
           setUserStatus(null);
           setSelectedPlan(null);
-          if (window.location.pathname === '/feature' || window.location.pathname === '/payment') {
+          if (window.location.pathname === '/feature' || window.location.pathname === '/payment' || window.location.pathname === '/video') {
               setView('homepage');
               safeHistoryReplace('/');
           }
@@ -195,14 +204,21 @@ const App: React.FC = () => {
               setView('payment');
           } else if (view === 'auth') {
               // Redirect to app if logging in from Auth page
-              setView('app');
-              safeHistoryReplace('/feature');
+              // Check if we came from /video
+              if (window.location.pathname === '/video') {
+                  setView('video');
+              } else {
+                  setView('app');
+                  safeHistoryReplace('/feature');
+              }
           } else if (window.location.pathname === '/feature') {
               setView('app');
+          } else if (window.location.pathname === '/video') {
+              setView('video');
           }
       } else {
           // No session
-          if (view === 'app' || view === 'payment') {
+          if (view === 'app' || view === 'payment' || view === 'video') {
               setView('homepage');
               safeHistoryPush('/');
           }
@@ -226,6 +242,7 @@ const App: React.FC = () => {
                     // Routing Logic for Initial Load
                     if (window.location.pathname === '/pricing') setView('pricing');
                     else if (window.location.pathname === '/feature') setView('app');
+                    else if (window.location.pathname === '/video') setView('video');
                     else if (window.location.pathname === '/payment') {
                          const params = new URLSearchParams(window.location.search);
                          const planId = params.get('plan');
@@ -237,7 +254,7 @@ const App: React.FC = () => {
                 } else {
                     // Not logged in routing
                     if (window.location.pathname === '/pricing') setView('pricing');
-                    else if (window.location.pathname === '/feature') {
+                    else if (window.location.pathname === '/feature' || window.location.pathname === '/video') {
                         setView('homepage');
                         safeHistoryReplace('/');
                     }
@@ -299,6 +316,19 @@ const App: React.FC = () => {
   };
 
   const handleNavigateToTool = (tool: Tool) => {
+      // If user selects VideoGeneration from homepage, go to /video
+      if (tool === Tool.VideoGeneration) {
+          if (session) {
+              setView('video');
+              safeHistoryPush('/video');
+          } else {
+              // Remember where we wanted to go? 
+              // Simplest is just redirect login, then default logic kicks in.
+              handleAuthNavigate('login');
+          }
+          return;
+      }
+
       setActiveTool(tool);
       if (session) {
           setView('app');
@@ -456,6 +486,24 @@ const App: React.FC = () => {
       );
   }
 
+  if (session && view === 'video') {
+      return (
+          <VideoPage 
+              session={session}
+              userStatus={userStatus}
+              onGoHome={handleGoHome}
+              onThemeToggle={handleThemeToggle}
+              theme={theme}
+              onSignOut={handleSignOut}
+              onOpenGallery={handleOpenGallery}
+              onUpgrade={handleNavigateToPricing}
+              onOpenProfile={handleOpenProfile}
+              onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
+              onDeductCredits={handleDeductCredits}
+          />
+      );
+  }
+
   if (session && view === 'app') {
       const isExtendedTool = utilityToolsGroup.tools.some(t => t.tool === activeTool);
 
@@ -478,11 +526,17 @@ const App: React.FC = () => {
               <Navigation 
                   activeTool={activeTool} 
                   setActiveTool={(tool) => {
-                      setActiveTool(tool);
+                      if (tool === Tool.VideoGeneration) {
+                          setView('video');
+                          safeHistoryPush('/video');
+                      } else {
+                          setActiveTool(tool);
+                      }
                       setIsMobileNavOpen(false);
                   }} 
                   isMobileOpen={isMobileNavOpen}
                   onCloseMobile={() => setIsMobileNavOpen(false)}
+                  onGoHome={handleGoHome}
               />
 
               <div className="relative flex flex-col flex-grow overflow-hidden">
