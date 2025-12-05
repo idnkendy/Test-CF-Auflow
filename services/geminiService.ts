@@ -69,21 +69,19 @@ const getAIClient = async () => {
 // --- HELPER: Memory Optimization (Base64 -> Blob URL) ---
 
 /**
- * Converts a Base64 string to a Blob URL to prevent Out-Of-Memory crashes in React.
- * OPTIMIZED: Uses Uint8Array directly to avoid large intermediate arrays.
+ * Converts a Base64 string to a Blob URL ASYNCHRONOUSLY to prevent UI freeze.
+ * Using fetch with data protocol allows the browser to handle the decoding 
+ * efficiently off the main thread.
  */
-const base64ToBlobUrl = (base64: string, mimeType: string = 'image/png'): string => {
+const base64ToBlobUrlAsync = async (base64: string, mimeType: string = 'image/png'): Promise<string> => {
     try {
-        const byteCharacters = atob(base64);
-        const byteNumbers = new Uint8Array(byteCharacters.length);
-        for (let i = 0; i < byteCharacters.length; i++) {
-            byteNumbers[i] = byteCharacters.charCodeAt(i);
-        }
-        const blob = new Blob([byteNumbers], { type: mimeType });
+        const res = await fetch(`data:${mimeType};base64,${base64}`);
+        const blob = await res.blob();
         return URL.createObjectURL(blob);
     } catch (e) {
-        console.error("Failed to convert Base64 to Blob", e);
-        return `data:${mimeType};base64,${base64}`; // Fallback
+        console.error("Failed to convert Base64 to Blob Async", e);
+        // Fallback to data URI if fetch fails (rare)
+        return `data:${mimeType};base64,${base64}`; 
     }
 };
 
@@ -130,7 +128,7 @@ export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
 
 // --- HELPER: Process Response ---
 
-const processContentResponse = (response: any): string[] => {
+const processContentResponseAsync = async (response: any): Promise<string[]> => {
     const images: string[] = [];
     
     if (response.candidates && response.candidates.length > 0) {
@@ -145,9 +143,9 @@ const processContentResponse = (response: any): string[] => {
         if (candidate.content?.parts) {
             for (const part of candidate.content.parts) {
                 if (part.inlineData) {
-                    // MEMORY FIX: Convert to Blob URL immediately
                     const mime = part.inlineData.mimeType || 'image/png';
-                    const blobUrl = base64ToBlobUrl(part.inlineData.data, mime);
+                    // Await the async conversion here to prevent locking UI
+                    const blobUrl = await base64ToBlobUrlAsync(part.inlineData.data, mime);
                     images.push(blobUrl);
                 }
             }
@@ -190,9 +188,15 @@ const handleGeminiError = (e: any) => {
         throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Vui lòng đợi 1-2 phút rồi thử lại.");
     }
     
-    // Changed Behavior: No longer dispatch global event for region block
+    // Region/IP Block
     if (msg.includes('403') || msg.includes('location') || msg.includes('User location is not supported')) {
-        throw new Error("IP hiện tại của bạn không khả dụng, vui lòng thử lại sau.");
+        // Chỉ throw error, không dispatch event để hiện modal nữa
+        throw new Error("Lỗi: IP không được hỗ trợ. Vui lòng bật VPN hoặc đổi vùng.");
+    }
+    
+    // Payload Size Limit
+    if (msg.includes('413') || msg.includes('Too Large') || msg.includes('too large') || msg.includes('limit')) {
+        throw new Error("Dữ liệu ảnh quá lớn so với giới hạn xử lý của AI. Vui lòng giảm kích thước ảnh hoặc nén ảnh trước khi tải lên.");
     }
     
     if (msg.includes('500') || msg.includes('Internal error')) {
@@ -200,7 +204,7 @@ const handleGeminiError = (e: any) => {
     }
     
     if (msg.includes('400') || msg.includes('INVALID_ARGUMENT')) {
-        throw new Error("Dữ liệu ảnh không hợp lệ hoặc quá lớn. Hệ thống đã tự động nén nhưng vẫn thất bại. Vui lòng thử ảnh khác.");
+        throw new Error("Dữ liệu ảnh không hợp lệ hoặc bị hỏng. Vui lòng thử lại với một ảnh khác.");
     }
     
     // Return cleaned message as a new Error
@@ -236,7 +240,8 @@ export const generateStandardImage = async (
                 contents: { parts },
                 config: {}
             });
-            return processContentResponse(response);
+            // Await the async processing
+            return await processContentResponseAsync(response);
         } catch (e: any) {
             handleGeminiError(e);
             throw e;
@@ -291,7 +296,8 @@ export const generateHighQualityImage = async (
                 }
             }
         });
-        return processContentResponse(response);
+        // Await the async processing
+        return await processContentResponseAsync(response);
     } catch (e: any) {
         handleGeminiError(e);
         throw e;
@@ -303,8 +309,6 @@ export const editImage = async (
     image: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    // Re-use standard generation as it handles base64 passing logic
-    // But for clarity, editImage usually implies standard model for now
     const urls = await generateStandardImage(prompt, '4:3', numberOfImages, image);
     return urls.map(url => ({ imageUrl: url }));
 };
@@ -330,7 +334,9 @@ export const editImageWithMask = async (
                 model: model,
                 contents: { parts }
             });
-            return processContentResponse(response);
+            // Await the async processing
+            const urls = await processContentResponseAsync(response);
+            return urls;
         } catch (e: any) {
             handleGeminiError(e);
             throw e;
@@ -360,7 +366,9 @@ export const editImageWithReference = async (
                 model: model,
                 contents: { parts }
             });
-            return processContentResponse(response);
+            // Await the async processing
+            const urls = await processContentResponseAsync(response);
+            return urls;
         } catch (e: any) {
             handleGeminiError(e);
             throw e;
@@ -394,7 +402,9 @@ export const editImageWithMaskAndReference = async (
                 model: model,
                 contents: { parts }
             });
-            return processContentResponse(response);
+            // Await the async processing
+            const urls = await processContentResponseAsync(response);
+            return urls;
         } catch (e: any) {
             handleGeminiError(e);
             throw e;
@@ -427,7 +437,9 @@ export const editImageWithMultipleReferences = async (
                 model: model,
                 contents: { parts }
             });
-            return processContentResponse(response);
+            // Await the async processing
+            const urls = await processContentResponseAsync(response);
+            return urls;
         } catch (e: any) {
             handleGeminiError(e);
             throw e;
@@ -462,7 +474,9 @@ export const editImageWithMaskAndMultipleReferences = async (
                 model: model,
                 contents: { parts }
             });
-            return processContentResponse(response);
+            // Await the async processing
+            const urls = await processContentResponseAsync(response);
+            return urls;
         } catch (e: any) {
             handleGeminiError(e);
             throw e;
@@ -524,7 +538,6 @@ export const generatePromptSuggestions = async (
         return JSON.parse(text);
     } catch (e: any) {
         console.error("Failed to generate/parse suggestions", e);
-        // Dispatch only for other errors if really needed, but here we just return null.
         return null;
     }
 };
@@ -574,7 +587,9 @@ export const generateStagingImage = async (prompt: string, sceneImage: FileData,
                 model: model,
                 contents: { parts }
             });
-            return processContentResponse(response);
+            // Await the async processing
+            const urls = await processContentResponseAsync(response);
+            return urls;
         } catch (e: any) {
             handleGeminiError(e);
             throw e;

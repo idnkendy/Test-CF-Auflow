@@ -19,9 +19,11 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
 
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            // Limit max dimension to 1536px to prevent API 500 Errors and Browser OOM
-            const MAX_WIDTH = 1536;
-            const MAX_HEIGHT = 1536;
+            // OPTIMIZATION: Limit max dimension to 1280px (Safe zone for Gemini/Vercel/Cloudflare limits)
+            // AI Vision models typically perform optimally around 512-1024px. 
+            // Sending 4K images is unnecessary payload overhead.
+            const MAX_WIDTH = 1280;
+            const MAX_HEIGHT = 1280;
             let width = img.width;
             let height = img.height;
 
@@ -51,8 +53,8 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Compress to JPEG 85% - Good balance for AI vision
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            // Compress to JPEG 80% - Significant size reduction, virtually no loss for AI vision
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
             
             // Create a new blob URL from the compressed data for efficient rendering
             canvas.toBlob((blob) => {
@@ -67,7 +69,7 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
                 } else {
                     reject(new Error("Compression failed"));
                 }
-            }, 'image/jpeg', 0.85);
+            }, 'image/jpeg', 0.8);
         };
 
         img.onerror = (e) => {
@@ -105,14 +107,14 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
     const handleFileChange = useCallback(async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (file) {
-            // Check for valid types, including explicit jpg check
+            // Check for valid types
             if (!['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(file.type)) {
                 setError('Chỉ chấp nhận các tệp JPG, PNG, hoặc WEBP.');
                 onFileSelect(null);
                 return;
             }
-             if (file.size > 50 * 1024 * 1024) { // 50MB hard limit (though we compress it)
-                setError('Kích thước tệp quá lớn.');
+             if (file.size > 50 * 1024 * 1024) { 
+                setError('Kích thước tệp quá lớn (Max 50MB).');
                 onFileSelect(null);
                 return;
             }
@@ -230,7 +232,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        <p className="text-sm text-gray-500">Đang tối ưu ảnh...</p>
+                        <p className="text-sm text-gray-500">Đang tối ưu & nén ảnh...</p>
                     </div>
                 ) : (
                     <>

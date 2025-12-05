@@ -82,7 +82,7 @@ const App: React.FC = () => {
   const [selectedPlan, setSelectedPlan] = useState<PricingPlan | null>(null);
   // State to remember plan if user selects it while logged out
   const [pendingPlan, setPendingPlan] = useState<PricingPlan | null>(null);
-
+  
   // Ref to the main content area for scroll resetting
   const mainContentRef = useRef<HTMLDivElement>(null);
 
@@ -461,6 +461,7 @@ const App: React.FC = () => {
 
       return (
           <div className="h-[100dvh] bg-main-bg dark:bg-[#121212] font-sans text-text-primary dark:text-[#EAEAEA] flex flex-col transition-colors duration-300 overflow-hidden relative">
+              
               <Header 
                   onGoHome={handleGoHome} 
                   onThemeToggle={handleThemeToggle} 
