@@ -5,7 +5,7 @@ import { FileData } from "../types";
 // Leave empty if serving from same domain path /api
 // Get API URL from env var if available (Set VITE_API_URL in Cloudflare Pages Settings)
 // @ts-ignore
-const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || ""; 
+const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev"; 
 
 // Helper wait
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -141,7 +141,7 @@ export const generateVideoExternal = async (prompt: string, backendUrl: string, 
 
     try {
         // Step 1: Auth (Always fetch from backend now to get KV token)
-        console.log(`[Client] Step 1: Fetching Dynamic Token from Backend (KV)...`);
+        console.log(`[Client] Step 1: Fetching Dynamic Token from Database...`);
         const authData = await fetchJson('/auth', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

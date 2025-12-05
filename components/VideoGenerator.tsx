@@ -12,12 +12,13 @@ import ImageUpload from './common/ImageUpload';
 import { supabase } from '../services/supabaseClient';
 
 const loadingMessages = [
-    "Đang gửi yêu cầu đến Vercel Serverless...",
-    "Đang xếp hàng chờ GPU xử lý...",
-    "AI đang vẽ từng khung hình...",
-    "Đang tổng hợp chuyển động...",
+    "Đang kết nối với máy chủ Veo...",
+    "Đang gửi yêu cầu đến Worker...",
+    "AI đang khởi tạo các photon ánh sáng...",
+    "Đang tổng hợp từng khung hình...",
     "Vui lòng không tắt tab này...",
-    "Sắp xong rồi, kiên nhẫn nhé...",
+    "Quá trình có thể mất 2-3 phút...",
+    "Sắp hoàn tất, vui lòng chờ...",
 ];
 
 const exteriorSuggestions = [
@@ -67,7 +68,7 @@ interface VideoGeneratorProps {
 
 const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     // --- MAINTENANCE MODE TOGGLE ---
-    const isMaintenanceMode = true;
+    const isMaintenanceMode = false;
 
     if (isMaintenanceMode) {
         return (
@@ -88,6 +89,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
     const { prompt, startImage, isLoading, loadingMessage, error, generatedVideoUrl, mode } = state;
     
     const [renderSource, setRenderSource] = useState<'google' | 'veo3_external'>('veo3_external');
+    // Using hardcoded fallback in service if ENV is missing
     const [backendUrl, setBackendUrl] = useState<string>(''); 
     
     // Store media ID for upscaling
@@ -136,6 +138,14 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
             onStateChange({ error: 'Vui lòng nhập một mô tả.' });
             return;
         }
+
+        // I2V ENFORCEMENT
+        if (!startImage) {
+            console.warn("[Video UI] Chưa tải ảnh lên (Bắt buộc cho I2V)");
+            onStateChange({ error: 'Vui lòng tải lên ảnh bắt đầu (Image-to-Video).' });
+            return;
+        }
+
         onStateChange({ 
             isLoading: true, 
             error: null, 
@@ -152,7 +162,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
             // 1. Deduct Credits
             if (onDeductCredits) {
                 console.log("[Video UI] Đang trừ credits...");
-                logId = await onDeductCredits(cost, `Tạo video AI (${renderSource})`);
+                logId = await onDeductCredits(cost, `Tạo video I2V (${renderSource})`);
             }
 
             // 2. Create Job
@@ -181,10 +191,11 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
             if (renderSource === 'google') {
                 console.log("[Video UI] Gọi Gemini Service...");
-                url = await geminiService.generateVideo(prompt, startImage || undefined, jobId || undefined);
+                url = await geminiService.generateVideo(prompt, startImage, jobId || undefined);
             } else {
-                console.log("[Video UI] Gọi External Service (Vercel)...");
-                const result = await externalVideoService.generateVideoExternal(prompt, backendUrl, startImage || undefined);
+                console.log("[Video UI] Gọi External Service (Worker)...");
+                // startImage is passed and enforced
+                const result = await externalVideoService.generateVideoExternal(prompt, backendUrl, startImage);
                 url = result.videoUrl;
                 mediaId = result.mediaId;
             }
@@ -300,8 +311,8 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
     return (
         <div>
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Video</h2>
-            <p className="text-text-secondary dark:text-gray-300 mb-6">Tạo các video chuyển động, fly-through, hoặc diễn hoạt kiến trúc từ mô tả hoặc hình ảnh ban đầu.</p>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Video (I2V)</h2>
+            <p className="text-text-secondary dark:text-gray-300 mb-6">Biến hình ảnh tĩnh thành video chuyển động sống động (Image-to-Video).</p>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-6">
                 {/* --- LEFT COLUMN: INPUTS --- */}
@@ -327,7 +338,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                     </div>
 
                      <div>
-                        <label htmlFor="prompt-video" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Mô tả (Prompt)</label>
+                        <label htmlFor="prompt-video" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Mô tả chuyển động</label>
                         <textarea
                             id="prompt-video"
                             rows={4}
@@ -378,7 +389,9 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                     </div>
                     
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Ảnh Bắt Đầu (Tùy chọn)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">
+                            3. Ảnh Bắt Đầu <span className="text-red-500 font-bold">(Bắt buộc)</span>
+                        </label>
                         <div className="max-w-md">
                              <ImageUpload onFileSelect={(file) => onStateChange({ startImage: file })} previewUrl={startImage?.objectURL}/>
                         </div>
@@ -401,7 +414,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                     </div>
                     <button
                         onClick={handleGenerate}
-                        disabled={isLoading || userCredits < cost}
+                        disabled={isLoading || userCredits < cost || !startImage}
                         className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
                        {isLoading ? <><Spinner /> Đang xử lý...</> : 'Tạo Video'}
