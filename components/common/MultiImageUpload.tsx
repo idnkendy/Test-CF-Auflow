@@ -6,11 +6,18 @@ import { resizeImage } from './ImageUpload';
 interface MultiImageUploadProps {
   onFilesChange: (files: FileData[]) => void;
   maxFiles?: number;
+  className?: string;
 }
 
 const PlusIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-text-secondary dark:text-gray-400 group-hover:text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8 text-text-secondary dark:text-gray-400 group-hover:text-accent transition-colors duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
+    </svg>
+);
+
+const LargeCloudIcon = () => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 text-text-secondary/50 dark:text-gray-500 group-hover:text-accent transition-colors duration-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
     </svg>
 );
 
@@ -20,16 +27,16 @@ const XIcon = () => (
     </svg>
 );
 
-const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxFiles = 12 }) => {
+const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxFiles = 12, className = "" }) => {
     const [files, setFiles] = useState<FileData[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [isDragging, setIsDragging] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
 
     const processFiles = async (fileList: FileList): Promise<FileData[]> => {
         const processed: FileData[] = [];
         for (const file of Array.from(fileList)) {
-            // Updated validation to include 'image/jpg' just in case
             if (!['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(file.type)) {
                 setError(`Loại tệp không được hỗ trợ: ${file.name}`);
                 continue;
@@ -68,22 +75,37 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
         const updatedFiles = files.filter(file => file.objectURL !== objectURLToRemove);
         setFiles(updatedFiles);
         onFilesChange(updatedFiles);
-        // Optional: Revoke URL to free memory immediately
         URL.revokeObjectURL(objectURLToRemove);
     };
 
-    const handleContainerClick = () => {
+    const handleContainerClick = (e: React.MouseEvent) => {
+        // Prevent click if clicking on a remove button
+        if ((e.target as HTMLElement).closest('button')) return;
+        
         if (!isProcessing) {
             inputRef.current?.click();
         }
     };
 
-    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => e.preventDefault();
+    const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e: React.DragEvent<HTMLDivElement>) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+    };
     
     const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>) => {
         e.preventDefault();
+        e.stopPropagation();
+        setIsDragging(false);
+
         const droppedFiles = e.dataTransfer.files;
-        if (droppedFiles) {
+        if (droppedFiles && droppedFiles.length > 0) {
             setError(null);
             setIsProcessing(true);
 
@@ -102,41 +124,74 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
 
 
     return (
-        <div>
-            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                {files.map(file => (
-                    <div key={file.objectURL} className="relative group aspect-square bg-main-bg dark:bg-gray-800 rounded-md overflow-hidden border border-border-color dark:border-gray-700">
-                        <img src={file.objectURL} alt="Preview" className="w-full h-full object-cover" />
-                        <button
-                            onClick={() => handleRemove(file.objectURL)}
-                            className="absolute top-1 right-1 p-1 bg-black/50 hover:bg-red-600 text-white rounded-full transition-colors opacity-0 group-hover:opacity-100"
-                            title="Xóa ảnh"
-                        >
-                            <XIcon />
-                        </button>
-                    </div>
-                ))}
-                {files.length < maxFiles && (
-                    <div
-                        onClick={handleContainerClick}
-                        onDragOver={handleDragOver}
-                        onDrop={handleDrop}
-                        className={`group aspect-square bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-600 flex flex-col items-center justify-center text-center p-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 hover:border-accent transition-all ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
-                    >
+        <div 
+            className={`relative flex flex-col h-full ${className}`}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+        >
+            {files.length === 0 ? (
+                // EMPTY STATE: Large Drop Zone - Now takes full height
+                <div 
+                    onClick={handleContainerClick}
+                    className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-xl transition-all duration-300 cursor-pointer min-h-[160px] h-full group ${
+                        isDragging 
+                            ? 'border-accent bg-accent/10' 
+                            : 'border-[#302839] bg-[#121212]/50 hover:border-[#7f13ec]/50 hover:bg-[#121212]/70'
+                    }`}
+                >
+                    <div className="mb-4 p-4 rounded-full bg-[#191919] group-hover:scale-110 transition-transform duration-300 shadow-md">
                         {isProcessing ? (
-                            <svg className="animate-spin h-6 w-6 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg className="animate-spin h-10 w-10 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
                         ) : (
-                            <>
-                                <PlusIcon />
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mt-1 group-hover:text-accent">Thêm ảnh</p>
-                            </>
+                            <LargeCloudIcon />
                         )}
                     </div>
-                )}
-            </div>
+                    <p className="text-sm font-semibold text-gray-300 group-hover:text-white transition-colors">
+                        Kéo thả ảnh vào đây
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">hoặc click để chọn tệp</p>
+                </div>
+            ) : (
+                // POPULATED STATE: Grid + Small Add Button
+                <div className={`grid grid-cols-3 sm:grid-cols-4 gap-2 transition-all duration-300 p-2 border-2 border-dashed rounded-xl h-full content-start overflow-y-auto ${isDragging ? 'border-accent bg-accent/5' : 'border-transparent'}`}>
+                    {files.map(file => (
+                        <div key={file.objectURL} className="relative group aspect-square bg-main-bg dark:bg-gray-800 rounded-lg overflow-hidden border border-border-color dark:border-gray-700 shadow-sm hover:shadow-md transition-all">
+                            <img src={file.objectURL} alt="Preview" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                            <button
+                                onClick={() => handleRemove(file.objectURL)}
+                                className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full transition-all opacity-0 group-hover:opacity-100 hover:bg-red-700 transform hover:scale-110"
+                                title="Xóa ảnh"
+                            >
+                                <XIcon />
+                            </button>
+                        </div>
+                    ))}
+                    {files.length < maxFiles && (
+                        <div
+                            onClick={handleContainerClick}
+                            className={`group aspect-square bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center text-center p-2 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 hover:border-accent transition-all ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
+                        >
+                            {isProcessing ? (
+                                <svg className="animate-spin h-6 w-6 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                            ) : (
+                                <>
+                                    <PlusIcon />
+                                    <p className="text-[10px] text-text-secondary dark:text-gray-400 mt-1 group-hover:text-accent font-medium">Thêm</p>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
+            )}
+            
             <input
                 ref={inputRef}
                 type="file"
@@ -145,7 +200,16 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                 onChange={handleFileChange}
                 accept=".jpg, .jpeg, .png, .webp"
             />
-            {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+            {error && <p className="text-red-500 text-xs mt-2 text-center bg-red-500/10 p-1 rounded">{error}</p>}
+            
+            {/* Overlay hint when dragging over populated list */}
+            {isDragging && files.length > 0 && (
+                <div className="absolute inset-0 bg-accent/20 border-2 border-accent border-dashed rounded-xl flex items-center justify-center pointer-events-none z-10 backdrop-blur-[1px]">
+                    <div className="bg-surface dark:bg-[#191919] px-4 py-2 rounded-lg shadow-xl text-accent font-bold animate-bounce">
+                        Thả để thêm ảnh
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

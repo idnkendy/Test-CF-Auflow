@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from "./supabaseClient";
 import { AspectRatio, FileData, ImageResolution } from "../types";
@@ -567,11 +568,12 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 // --- VIDEO PROMPT GENERATION ---
 export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
     const ai = await getAIClient();
-    const model = 'gemini-2.5-flash'; // Or 'gemini-pro-vision' equivalent if using a specific model for vision
+    const model = 'gemini-2.5-flash';
     
-    const prompt = `Analyze this architectural or interior image. Write a highly descriptive and cinematic prompt for an AI video generator (like Google Veo) to create a short video based on this scene. 
-    Focus on describing camera movement (e.g., slow pan, drone fly-through, dolly zoom), lighting changes (e.g., day to night), and atmospheric elements (e.g., gentle wind moving trees, subtle reflections).
-    Keep the prompt under 50 words, concise, and focused on visual movement. Direct output only.`;
+    const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI (như Google Veo). 
+    Tập trung mô tả chuyển động camera (ví dụ: quay chậm, flycam, dolly zoom), thay đổi ánh sáng (ví dụ: ngày sang đêm), và các yếu tố khí quyển (ví dụ: gió nhẹ lay động cây, phản chiếu).
+    Giữ prompt dưới 60 từ, súc tích và tập trung vào chuyển động hình ảnh. 
+    QUAN TRỌNG: TUYỆT ĐỐI CHỈ TRẢ VỀ NỘI DUNG PROMPT BẰNG TIẾNG VIỆT. KHÔNG TRẢ LỜI BẰNG TIẾNG ANH. KHÔNG THÊM CÁC CÂU DẪN NHƯ "Dưới đây là prompt...". CHỈ TRẢ VỀ NỘI DUNG PROMPT.`;
 
     try {
         const response = await ai.models.generateContent({
@@ -583,10 +585,10 @@ export const generateVideoPromptFromImage = async (image: FileData): Promise<str
                 ]
             }
         });
-        return response.text?.trim() || "Cinematic architectural video with slow camera movement.";
+        return response.text?.trim() || "Video kiến trúc điện ảnh với chuyển động camera chậm.";
     } catch (e: any) {
         console.error("Failed to generate video prompt from image", e);
-        return "Cinematic architectural video with slow camera movement.";
+        return "Video kiến trúc điện ảnh với chuyển động camera chậm.";
     }
 };
 
