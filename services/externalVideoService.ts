@@ -18,7 +18,7 @@ const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL); // ~23 at
 // Crop and Resize Image (Center Crop to Aspect Ratio, Max 1024px)
 export const resizeAndCropImage = async (
     fileData: FileData, 
-    aspectRatio: '16:9' | '9:16' = '16:9'
+    aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
 ): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -26,15 +26,58 @@ export const resizeAndCropImage = async (
         img.src = fileData.objectURL || `data:${fileData.mimeType};base64,${fileData.base64}`;
         
         img.onload = () => {
-            // Determine target dimensions based on max 1024px and aspect ratio
+            // Determine target dimensions
             let targetWidth, targetHeight;
+            let renderWidth, renderHeight, offsetX, offsetY;
             
-            if (aspectRatio === '16:9') {
-                targetWidth = 1024;
-                targetHeight = 576;
-            } else { // 9:16
-                targetWidth = 576;
-                targetHeight = 1024;
+            if (aspectRatio === 'default') {
+                // Keep original aspect ratio, limit max dimension to 1024px
+                const MAX_DIM = 1024;
+                if (img.width > img.height) {
+                    targetWidth = Math.min(img.width, MAX_DIM);
+                    targetHeight = Math.round(targetWidth * (img.height / img.width));
+                } else {
+                    targetHeight = Math.min(img.height, MAX_DIM);
+                    targetWidth = Math.round(targetHeight * (img.width / img.height));
+                }
+                
+                // Ensure dimensions are even numbers (video encoders prefer this)
+                targetWidth = Math.round(targetWidth / 2) * 2;
+                targetHeight = Math.round(targetHeight / 2) * 2;
+                
+                // For default, we draw full image into canvas of same size
+                renderWidth = targetWidth;
+                renderHeight = targetHeight;
+                offsetX = 0;
+                offsetY = 0;
+
+            } else {
+                // Standard Fixed Ratios
+                if (aspectRatio === '16:9') {
+                    targetWidth = 1024;
+                    targetHeight = 576;
+                } else { // 9:16
+                    targetWidth = 576;
+                    targetHeight = 1024;
+                }
+
+                // Calculate "Cover" fit (Center Crop)
+                const imgRatio = img.width / img.height;
+                const targetRatio = targetWidth / targetHeight;
+                
+                if (imgRatio > targetRatio) {
+                    // Image is wider than target: Scale by height, crop width
+                    renderHeight = targetHeight;
+                    renderWidth = img.width * (targetHeight / img.height);
+                    offsetX = (targetWidth - renderWidth) / 2; // Center horizontally
+                    offsetY = 0;
+                } else {
+                    // Image is taller than target: Scale by width, crop height
+                    renderWidth = targetWidth;
+                    renderHeight = img.height * (targetWidth / img.width);
+                    offsetX = 0;
+                    offsetY = (targetHeight - renderHeight) / 2; // Center vertically
+                }
             }
 
             const canvas = document.createElement('canvas');
@@ -55,26 +98,6 @@ export const resizeAndCropImage = async (
             // Draw white background (handles transparency)
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, targetWidth, targetHeight);
-
-            // Calculate "Cover" fit (Center Crop)
-            const imgRatio = img.width / img.height;
-            const targetRatio = targetWidth / targetHeight;
-            
-            let renderWidth, renderHeight, offsetX, offsetY;
-
-            if (imgRatio > targetRatio) {
-                // Image is wider than target: Scale by height, crop width
-                renderHeight = targetHeight;
-                renderWidth = img.width * (targetHeight / img.height);
-                offsetX = (targetWidth - renderWidth) / 2; // Center horizontally
-                offsetY = 0;
-            } else {
-                // Image is taller than target: Scale by width, crop height
-                renderWidth = targetWidth;
-                renderHeight = img.height * (targetWidth / img.width);
-                offsetX = 0;
-                offsetY = (targetHeight - renderHeight) / 2; // Center vertically
-            }
 
             // Draw image
             ctx.drawImage(img, offsetX, offsetY, renderWidth, renderHeight);
@@ -186,7 +209,7 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
 async function _executeVideoGeneration(
     prompt: string, 
     startImage?: FileData, 
-    aspectRatio: '16:9' | '9:16' = '16:9'
+    aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
 ): Promise<{ videoUrl: string, mediaId?: string }> {
     console.log("==========================================================");
     console.log(`[Video Service] EXECUTING VIDEO GENERATION - Ratio: ${aspectRatio}`);
@@ -227,10 +250,16 @@ async function _executeVideoGeneration(
 
     // Step 3: Trigger
     console.log(`[Client] Step 3: Triggering Generation...`);
+    // NOTE: Cloudflare Worker expects '16:9' or '9:16'. If 'default', we likely pass the closest one
+    // or rely on the crop we just did. Veo API usually demands 'VIDEO_ASPECT_RATIO_LANDSCAPE' or 'PORTRAIT'.
+    // We map 'default' to '16:9' for the trigger API purely for the ratio flag, 
+    // BUT the startImage itself (which is authoritative) preserves original ratio (max 1024).
+    const apiRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
+
     const triggerData = await fetchJson('/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', token, prompt, mediaId, aspectRatio })
+        body: JSON.stringify({ action: 'create', token, prompt, mediaId, aspectRatio: apiRatio })
     });
     const { task_id, scene_id } = triggerData;
 
@@ -273,7 +302,7 @@ export const generateVideoExternal = async (
     prompt: string, 
     backendUrl: string, 
     startImage?: FileData, 
-    aspectRatio: '16:9' | '9:16' = '16:9'
+    aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
 ): Promise<{ videoUrl: string, mediaId?: string }> => {
     try {
         return await _executeVideoGeneration(prompt, startImage, aspectRatio);

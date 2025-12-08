@@ -373,7 +373,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     };
 
     // --- ASPECT RATIO CHANGE HANDLER ---
-    const handleAspectRatioChange = async (newRatio: '16:9' | '9:16') => {
+    const handleAspectRatioChange = async (newRatio: '16:9' | '9:16' | 'default') => {
         if (videoState.aspectRatio === newRatio) return;
 
         // 1. Update ratio state
@@ -832,7 +832,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const activeMainVideoUrl = isPlayingAll ? timelineItems[currentPlayingIndex]?.videoUrl : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl);
 
     // --- HELPER COMPONENT FOR ASPECT RATIO ---
-    const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16', onChange: (val: '16:9' | '9:16') => void }) => {
+    const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'default', onChange: (val: '16:9' | '9:16' | 'default') => void }) => {
         const [isOpen, setIsOpen] = useState(false);
         const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -846,18 +846,36 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             return () => document.removeEventListener('mousedown', handleClickOutside);
         }, []);
 
+        const getIcon = (val: string) => {
+            switch(val) {
+                case '16:9': return 'crop_landscape';
+                case '9:16': return 'crop_portrait';
+                case 'default': return 'crop_free';
+                default: return 'aspect_ratio';
+            }
+        }
+
+        const getLabel = (val: string) => {
+             switch(val) {
+                case '16:9': return '16:9';
+                case '9:16': return '9:16';
+                case 'default': return 'Mặc định';
+                default: return val;
+            }
+        }
+
         return (
             <div className="relative" ref={dropdownRef}>
                 <button
                     onClick={() => setIsOpen(!isOpen)}
-                    className="h-full px-3 bg-[#2A2A2A] hover:bg-[#353535] border border-[#302839] rounded-xl flex items-center gap-2 text-white font-medium transition-all shadow-sm whitespace-nowrap min-w-[110px] justify-between"
+                    className="h-full px-3 bg-[#2A2A2A] hover:bg-[#353535] border border-[#302839] rounded-xl flex items-center gap-2 text-white font-medium transition-all shadow-sm whitespace-nowrap min-w-[120px] justify-between"
                     title="Chọn tỷ lệ khung hình"
                 >
                     <div className="flex items-center gap-2">
                         <span className="material-symbols-outlined text-xl text-[#7f13ec]">
-                            {value === '16:9' ? 'crop_landscape' : 'crop_portrait'}
+                            {getIcon(value)}
                         </span>
-                        <span>{value}</span>
+                        <span>{getLabel(value)}</span>
                     </div>
                     <span className={`material-symbols-outlined text-gray-400 text-sm transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
                         expand_less
@@ -866,6 +884,22 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
                 {isOpen && (
                     <div className="absolute bottom-full left-0 mb-2 w-full min-w-[140px] bg-[#1E1E1E] border border-[#302839] rounded-xl shadow-xl overflow-hidden z-50 p-1 animate-fade-in">
+                        {/* Option: Default (First) */}
+                        <button
+                            onClick={() => { onChange('default'); setIsOpen(false); }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                                value === 'default' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-300 hover:bg-[#2A2A2A]'
+                            }`}
+                        >
+                            <span className="material-symbols-outlined text-lg">crop_free</span>
+                            <div className="flex flex-col items-start">
+                                <span className="font-bold">Mặc định</span>
+                                <span className="text-[10px] opacity-70">Gốc</span>
+                            </div>
+                            {value === 'default' && <span className="material-symbols-outlined text-sm ml-auto">check</span>}
+                        </button>
+                        
+                        {/* Option: 16:9 */}
                         <button
                             onClick={() => { onChange('16:9'); setIsOpen(false); }}
                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
@@ -879,6 +913,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                             </div>
                             {value === '16:9' && <span className="material-symbols-outlined text-sm ml-auto">check</span>}
                         </button>
+
+                        {/* Option: 9:16 */}
                         <button
                             onClick={() => { onChange('9:16'); setIsOpen(false); }}
                             className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
@@ -914,7 +950,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                             <MultiImageUpload onFilesChange={handleFilesChange} maxFiles={10} className="h-full" />
                         </div>
                         <div className="flex gap-3">
-                            <div className="w-[120px]">
+                            <div className="w-[130px]">
                                 <AspectRatioSelector value={videoState.aspectRatio} onChange={handleAspectRatioChange} />
                             </div>
                             <button
@@ -953,7 +989,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                             </div>
                         </div>
                         <div className="flex gap-3 mt-auto">
-                            <AspectRatioSelector value={videoState.aspectRatio} onChange={handleAspectRatioChange} />
+                            <div className="w-[130px]">
+                                <AspectRatioSelector value={videoState.aspectRatio} onChange={handleAspectRatioChange} />
+                            </div>
                             <button
                                 onClick={handleSingleGeneration}
                                 disabled={!singleSourceImage || !singlePrompt || isSingleGenerating}

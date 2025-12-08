@@ -84,7 +84,7 @@ export interface VideoGeneratorState {
     error: string | null;
     generatedVideoUrl: string | null;
     mode: 'exterior' | 'interior';
-    aspectRatio: '16:9' | '9:16'; // New field for video aspect ratio
+    aspectRatio: '16:9' | '9:16' | 'default'; // Updated to include 'default'
 }
 
 export interface ImageEditorState {
@@ -496,7 +496,7 @@ export const initialToolStates = {
         error: null,
         generatedVideoUrl: null,
         mode: 'exterior',
-        aspectRatio: '16:9', // Default
+        aspectRatio: 'default', 
     } as VideoGeneratorState,
     [Tool.ImageEditing]: {
         prompt: 'Thêm một ban công sắt nghệ thuật vào cửa sổ tầng hai.',
