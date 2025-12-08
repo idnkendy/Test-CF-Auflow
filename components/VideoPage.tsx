@@ -68,6 +68,45 @@ const DUMMY_FILE: FileData = {
     objectURL: 'https://placehold.co/600x400/1a1a1a/FFF?text=Text+To+Video'
 };
 
+const loadingMessages = [
+    "Đang kết nối với máy chủ Veo...",
+    "Đang gửi yêu cầu đến Worker...",
+    "AI đang khởi tạo các photon ánh sáng...",
+    "Đang tổng hợp từng khung hình...",
+    "Vui lòng không tắt tab này...",
+    "Quá trình có thể mất 3-6 phút...",
+    "Nếu quá lâu, hệ thống sẽ tự động thử lại...",
+];
+
+const mapFriendlyErrorMessage = (errorMsg: string): string => {
+    if (!errorMsg) return "Lỗi Kỹ Thuật: Đã xảy ra sự cố. Vui lòng thử lại sau.";
+    
+    const msg = errorMsg.toUpperCase();
+    const suffix = " Vui lòng thử lại sau.";
+
+    if (msg.includes("SAFETY_ERROR") || msg.includes("SAFETY") || msg.includes("BLOCK") || msg.includes("PROHIBITED")) {
+        return "Lỗi Nội Dung: Vi phạm chính sách an toàn." + suffix;
+    }
+    if (msg.includes("QUOTA_ERROR") || msg.includes("429") || msg.includes("RESOURCE") || msg.includes("OVERLOAD")) {
+        return "Lỗi Quá Tải: Hệ thống đang bận." + suffix;
+    }
+    if (msg.includes("TIMEOUT_ERROR") || msg.includes("HẾT THỜI GIAN") || msg.includes("TIMEOUT")) {
+        return "Lỗi Timeout: Quá trình xử lý quá lâu." + suffix;
+    }
+    if (msg.includes("AUTH_ERROR") || msg.includes("401") || msg.includes("403") || msg.includes("TOKEN")) {
+        return "Lỗi Xác Thực: Phiên kết nối lỗi." + suffix;
+    }
+    if (msg.includes("SYSTEM_ERROR") || msg.includes("500") || msg.includes("502") || msg.includes("NETWORK")) {
+        return "Lỗi Hệ Thống: Máy chủ gặp sự cố." + suffix;
+    }
+    if (msg.includes("KHÔNG ĐỦ CREDITS")) {
+        return "Lỗi Thanh Toán: Bạn không đủ credits." + suffix;
+    }
+
+    // Default for unknown errors with truncated message
+    return `Lỗi Kỹ Thuật: ${errorMsg.substring(0, 40)}...` + suffix;
+};
+
 const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [activeItem, setActiveItem] = useState('arch-film');
     const [videoState, setVideoState] = useState<VideoGeneratorState>(initialToolStates[Tool.VideoGeneration]);
@@ -138,12 +177,26 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     }, [currentPlayingIndex]);
 
+    useEffect(() => {
+        let interval: ReturnType<typeof setInterval>;
+        if (videoState.isLoading || isSingleGenerating || videoState.contextItems.some(i => i.isGeneratingVideo)) {
+            interval = setInterval(() => {
+                const currentIndex = loadingMessages.indexOf(videoState.loadingMessage);
+                const nextIndex = (currentIndex + 1) % loadingMessages.length;
+                setVideoState(prev => ({ ...prev, loadingMessage: loadingMessages[nextIndex] }));
+            }, 5000); 
+        }
+        return () => {
+            if (interval) clearInterval(interval);
+        };
+    }, [videoState.isLoading, isSingleGenerating, videoState.contextItems, videoState.loadingMessage]);
+
     // --- TIMELINE CONTROLS ---
     const handleTimeUpdate = () => {
         if (!mainVideoRef.current) return;
         const currentClipTime = mainVideoRef.current.currentTime;
         const currentClipDuration = mainVideoRef.current.duration || 1; 
-        const playableItems = videoState.contextItems.filter(i => i.videoUrl);
+        const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         const totalClips = playableItems.length;
 
         if (totalClips === 0) { setProgress(0); return; }
@@ -160,7 +213,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     };
 
     const seekToPercent = (percent: number) => {
-        const playableItems = videoState.contextItems.filter(i => i.videoUrl);
+        const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         const totalClips = playableItems.length;
         if (totalClips === 0) return;
 
@@ -203,7 +256,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
     const togglePlayPause = () => {
         setIsPlaying(!isPlaying);
-        if (!isPlaying && videoState.contextItems.length > 1 && !isPlayingAll) {
+        const timelineCount = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline).length;
+        if (!isPlaying && timelineCount > 1 && !isPlayingAll) {
             setIsPlayingAll(true);
         }
     };
@@ -213,7 +267,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             setIsPlaying(false);
             return;
         }
-        const playableItems = videoState.contextItems.filter(i => i.videoUrl);
+        const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         if (currentPlayingIndex < playableItems.length - 1) {
             setCurrentPlayingIndex(prev => prev + 1);
         } else {
@@ -241,6 +295,34 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     };
 
+    // --- ASPECT RATIO CHANGE HANDLER ---
+    const handleAspectRatioChange = async (newRatio: '16:9' | '9:16') => {
+        if (videoState.aspectRatio === newRatio) return;
+
+        // 1. Update ratio state
+        setVideoState(prev => ({ ...prev, aspectRatio: newRatio }));
+
+        // 2. If there are existing image items, re-crop them to match the new ratio
+        if (videoState.contextItems.length > 0) {
+            const updatedItems = await Promise.all(videoState.contextItems.map(async (item) => {
+                if (item.isUploaded) return item; // Skip uploaded videos
+
+                // Re-crop using originalFile
+                const croppedBase64 = await externalVideoService.resizeAndCropImage(item.originalFile, newRatio);
+                const croppedFile: FileData = { 
+                    base64: croppedBase64.split(',')[1], 
+                    mimeType: 'image/jpeg', 
+                    objectURL: croppedBase64 
+                };
+                
+                // Return updated item
+                return { ...item, file: croppedFile };
+            }));
+
+            setVideoState(prev => ({ ...prev, contextItems: updatedItems }));
+        }
+    };
+
     // --- ARCH FILM (BATCH) LOGIC ---
     const handleFilesChange = async (files: FileData[]) => {
         const newItemsPromises = files
@@ -250,7 +332,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 const croppedFile: FileData = { base64: croppedBase64.split(',')[1], mimeType: 'image/jpeg', objectURL: croppedBase64 };
                 return {
                     id: Math.random().toString(36).substr(2, 9),
-                    file: croppedFile, originalFile: f, prompt: '', isGeneratingPrompt: false, isUploaded: false
+                    file: croppedFile, originalFile: f, prompt: '', isGeneratingPrompt: false, isUploaded: false, isInTimeline: false
                 } as VideoContextItem;
             });
         
@@ -291,7 +373,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const handleGenerateClip = async (item: VideoContextItem) => {
         const cost = 5;
         if (props.onDeductCredits && (props.userStatus?.credits || 0) < cost) {
-             setVideoState(prev => ({ ...prev, error: `Bạn không đủ credits. Cần ${cost} credits.` }));
+             setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
              return;
         }
         if (!item.prompt) {
@@ -302,7 +384,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setVideoState(prev => ({
             ...prev,
             contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, isGeneratingVideo: true } : i),
-            error: null
+            error: null,
+            loadingMessage: loadingMessages[0]
         }));
 
         let jobId: string | null = null;
@@ -318,30 +401,39 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
             const result = await externalVideoService.generateVideoExternal(item.prompt, "", item.file, videoState.aspectRatio);
             
-            // Keep the same ID for the item but update its URL
+            // Keep the same ID for the item but update its URL. Important: Do not automatically add to timeline.
             setVideoState(prev => ({
                 ...prev,
                 contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, videoUrl: result.videoUrl, isGeneratingVideo: false } : i),
-                generatedVideoUrl: result.videoUrl
+                // removed generatedVideoUrl update to prevent auto-preview
             }));
 
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', result.videoUrl);
             await historyService.addToHistory({ tool: Tool.VideoGeneration, prompt: item.prompt, sourceImageURL: item.file.objectURL, resultVideoURL: result.videoUrl });
 
         } catch (err: any) {
-            const msg = err.message || "Lỗi tạo video clip.";
-            setVideoState(prev => ({ ...prev, error: msg, contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, isGeneratingVideo: false } : i) }));
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
+            const rawMsg = err.message || "";
+            const friendlyMsg = mapFriendlyErrorMessage(rawMsg);
+            
+            setVideoState(prev => ({ ...prev, error: friendlyMsg, contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, isGeneratingVideo: false } : i) }));
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${msg})`);
+            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video`);
         }
+    };
+
+    const handleAddToTimeline = (id: string) => {
+        setVideoState(prev => ({
+            ...prev,
+            contextItems: prev.contextItems.map(i => i.id === id ? { ...i, isInTimeline: true } : i)
+        }));
     };
 
     // --- SINGLE GENERATION LOGIC (Img2Vid, Text2Vid, Transition) ---
     const handleSingleGeneration = async () => {
         const cost = 5;
         if (props.onDeductCredits && (props.userStatus?.credits || 0) < cost) {
-             setVideoState(prev => ({ ...prev, error: `Bạn không đủ credits. Cần ${cost} credits.` }));
+             setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
              return;
         }
         if (!singlePrompt) {
@@ -359,7 +451,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
 
         setIsSingleGenerating(true);
-        setVideoState(prev => ({ ...prev, error: null, generatedVideoUrl: null }));
+        setVideoState(prev => ({ ...prev, error: null, generatedVideoUrl: null, loadingMessage: loadingMessages[0] }));
 
         let jobId: string | null = null;
         let logId: string | null = null;
@@ -375,8 +467,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             // Handle Image Processing if needed
             let startImageToUse = singleSourceImage;
             if (activeItem === 'text-to-video') {
-                // Backend might require an image or handle pure text. 
-                // Passing undefined to externalVideoService should trigger text-only mode if supported, or skip image processing.
                 startImageToUse = undefined; 
             } else if (singleSourceImage) {
                 // Crop
@@ -401,11 +491,13 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             });
 
         } catch (err: any) {
-            const msg = err.message || "Lỗi tạo video.";
-            setVideoState(prev => ({ ...prev, error: msg }));
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
+            const rawMsg = err.message || "";
+            const friendlyMsg = mapFriendlyErrorMessage(rawMsg);
+            
+            setVideoState(prev => ({ ...prev, error: friendlyMsg }));
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${msg})`);
+            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video`);
         } finally {
             setIsSingleGenerating(false);
         }
@@ -413,7 +505,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
     // --- MERGE AND EXPORT ---
     const handleMergeAndExport = async () => {
-        const playableItems = videoState.contextItems.filter(i => i.videoUrl);
+        const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         if (playableItems.length === 0) {
             setVideoState(prev => ({ ...prev, error: "Cần ít nhất một clip video để xuất." }));
             return;
@@ -511,17 +603,36 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     };
 
     // --- COMMON DOWNLOAD/UPLOAD ---
-    const handleDownloadSingle = (url: string, index: number) => {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `Canh_${index + 1}.mp4`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+    const handleDownloadSingle = async (url: string, index: number) => {
+        const filename = `Canh_${index + 1}.mp4`;
+        try {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Clean up
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
+        } catch (e) {
+            console.error("Blob download failed, fallback to direct link", e);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.target = "_blank"; // Force new tab as fallback
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
     };
 
     const handleDownloadAll = async () => {
-        const playableItems = videoState.contextItems.filter(i => i.videoUrl);
+        const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         if (playableItems.length === 0) return;
 
         // Simple sequential download trigger
@@ -530,19 +641,35 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 // Short delay to prevent browser blocking excessive downloads
                 setTimeout(() => {
                     handleDownloadSingle(playableItems[i].videoUrl!, i);
-                }, i * 500); 
+                }, i * 1000); 
             }
         }
     };
     
-    const handleSimpleDownload = () => {
+    const handleSimpleDownload = async () => {
         if (videoState.generatedVideoUrl) {
-            const link = document.createElement('a');
-            link.href = videoState.generatedVideoUrl;
-            link.download = `opzen-video-${Date.now()}.mp4`;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
+            const filename = `opzen-video-${Date.now()}.mp4`;
+            try {
+                const response = await fetch(videoState.generatedVideoUrl);
+                const blob = await response.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(blobUrl);
+            } catch (e) {
+                const link = document.createElement('a');
+                link.href = videoState.generatedVideoUrl;
+                link.download = filename;
+                link.target = "_blank";
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
         }
     };
 
@@ -553,7 +680,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         const newItem: VideoContextItem = {
             id: `vid_${Math.random().toString(36).substr(2, 9)}`,
             file: DUMMY_FILE, originalFile: DUMMY_FILE, prompt: `Uploaded Video: ${file.name}`,
-            isGeneratingPrompt: false, videoUrl: objectURL, isGeneratingVideo: false, isUploaded: true
+            isGeneratingPrompt: false, videoUrl: objectURL, isGeneratingVideo: false, isUploaded: true, isInTimeline: true
         };
         setVideoState(prev => ({ ...prev, contextItems: [...prev.contextItems, newItem] }));
         if (videoInputRef.current) videoInputRef.current.value = '';
@@ -582,18 +709,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         e.preventDefault();
         if (draggedItemIndex === null || draggedItemIndex === index) return;
 
-        const newItems = [...videoState.contextItems];
-        // Move dragging item only within timelineItems logic is tricky if contextItems mixes processed and non-processed
-        // Assuming we are reordering the entire contextItems list for simplicity or just the part shown in timeline
-        // But for consistency, let's reorder the whole list.
-        
-        // However, timeline displays only `timelineItems` (videoUrl present).
-        // Let's find the actual indices in the main array.
-        const timelineItems = videoState.contextItems.filter(item => item.videoUrl);
+        // Find actual indices in contextItems list
+        const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
         const draggedItem = timelineItems[draggedItemIndex];
         const targetItem = timelineItems[index];
 
-        // Find index in main list
         const mainDraggedIdx = videoState.contextItems.findIndex(i => i.id === draggedItem.id);
         const mainTargetIdx = videoState.contextItems.findIndex(i => i.id === targetItem.id);
 
@@ -608,9 +728,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     };
 
 
-    const creationItems = videoState.contextItems.filter(item => !item.isUploaded && !item.videoUrl); 
-    const timelineItems = videoState.contextItems.filter(item => item.videoUrl);
-    const activeMainVideoUrl = isPlayingAll ? videoState.contextItems[currentPlayingIndex]?.videoUrl : (videoState.generatedVideoUrl || videoState.contextItems.find(i => i.videoUrl)?.videoUrl);
+    const creationItems = videoState.contextItems.filter(item => !item.isUploaded); 
+    const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
+    const activeMainVideoUrl = isPlayingAll ? timelineItems[currentPlayingIndex]?.videoUrl : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl);
 
     // --- RENDER CONTENT SECTIONS ---
     const renderContentInput = () => {
@@ -794,8 +914,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 <span className="font-semibold text-sm hidden md:block">Trang chủ</span>
                             </button>
                             <div className="hidden md:flex bg-[#302839] rounded-lg p-0.5">
-                                <button onClick={() => videoState.contextItems.length === 0 && setVideoState(p => ({...p, aspectRatio: '16:9'}))} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${videoState.aspectRatio === '16:9' ? 'bg-[#7f13ec] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>16:9</button>
-                                <button onClick={() => videoState.contextItems.length === 0 && setVideoState(p => ({...p, aspectRatio: '9:16'}))} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${videoState.aspectRatio === '9:16' ? 'bg-[#7f13ec] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>9:16</button>
+                                <button onClick={() => handleAspectRatioChange('16:9')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${videoState.aspectRatio === '16:9' ? 'bg-[#7f13ec] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>16:9</button>
+                                <button onClick={() => handleAspectRatioChange('9:16')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${videoState.aspectRatio === '9:16' ? 'bg-[#7f13ec] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>9:16</button>
                             </div>
                         </div>
                         <div className="space-y-1">
@@ -837,27 +957,87 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 {creationItems.map((item, idx) => (
                                                     <div key={item.id} className="bg-[#1E1E1E] border border-[#302839] rounded-xl overflow-hidden shadow-lg flex flex-col h-full">
-                                                        <div className={`bg-black relative group ${videoState.aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'}`}>
-                                                            <img src={item.file.objectURL} alt="Source" className="w-full h-full object-cover opacity-80" />
-                                                            {item.isGeneratingVideo && (
-                                                                <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20 backdrop-blur-sm">
-                                                                    <Spinner />
-                                                                    <span className="text-xs text-gray-300 mt-2 animate-pulse">Đang tạo clip...</span>
+                                                        {item.videoUrl ? (
+                                                            // DISPLAY VIDEO + OPTIONS
+                                                            <div className="flex flex-col h-full">
+                                                                <div className={`bg-black relative group ${videoState.aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'}`}>
+                                                                    <video src={item.videoUrl} className="w-full h-full object-cover" controls />
+                                                                    {item.isGeneratingVideo && (
+                                                                        <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20 backdrop-blur-sm">
+                                                                            <Spinner />
+                                                                            <span className="text-xs text-gray-300 mt-2 animate-pulse">Đang tạo lại...</span>
+                                                                        </div>
+                                                                    )}
                                                                 </div>
-                                                            )}
-                                                        </div>
-                                                        <div className="p-3 flex flex-col gap-2 flex-grow">
-                                                            <textarea 
-                                                                value={item.prompt}
-                                                                onChange={(e) => setVideoState(prev => ({ ...prev, contextItems: prev.contextItems.map(x => x.id === item.id ? { ...x, prompt: e.target.value } : x) }))}
-                                                                className="w-full bg-[#121212] border border-[#302839] rounded-lg p-3 text-sm text-gray-200 focus:border-[#7f13ec] focus:outline-none resize-none h-20 mb-3"
-                                                                placeholder="Prompt..."
-                                                                disabled={item.isGeneratingVideo}
-                                                            />
-                                                            <div className="mt-auto">
-                                                                <button onClick={() => handleGenerateClip(item)} disabled={item.isGeneratingVideo} className="w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] text-white rounded-lg text-sm font-bold transition-all shadow-md">{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</button>
+                                                                <div className="p-3 bg-[#191919] flex-1 flex flex-col gap-2">
+                                                                    {/* Prompt Input for editing before regenerate */}
+                                                                    <textarea 
+                                                                        value={item.prompt}
+                                                                        onChange={(e) => setVideoState(prev => ({ ...prev, contextItems: prev.contextItems.map(x => x.id === item.id ? { ...x, prompt: e.target.value } : x) }))}
+                                                                        className="w-full bg-[#121212] border border-[#302839] rounded-lg p-2 text-xs text-gray-300 focus:border-[#7f13ec] focus:outline-none resize-none h-16 mb-2"
+                                                                        placeholder="Prompt..."
+                                                                        disabled={item.isGeneratingVideo}
+                                                                    />
+                                                                    <div className="grid grid-cols-2 gap-2 mt-auto">
+                                                                        <button 
+                                                                            onClick={() => handleAddToTimeline(item.id)} 
+                                                                            disabled={item.isInTimeline}
+                                                                            className="flex items-center justify-center gap-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-700 disabled:text-gray-500 text-white rounded-lg text-xs font-bold transition-all"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">add_to_queue</span>
+                                                                            {item.isInTimeline ? 'Đã thêm' : 'Thêm Timeline'}
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => handleExtendClip(item)} 
+                                                                            className="flex items-center justify-center gap-1 py-2 bg-[#2A2A2A] hover:bg-[#353535] text-white rounded-lg text-xs font-bold transition-all border border-[#302839]"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">playlist_add</span>
+                                                                            Nối tiếp
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => handleGenerateClip(item)} 
+                                                                            disabled={item.isGeneratingVideo}
+                                                                            className="flex items-center justify-center gap-1 py-2 bg-[#2A2A2A] hover:bg-[#353535] text-white rounded-lg text-xs font-bold transition-all border border-[#302839]"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">refresh</span>
+                                                                            Tạo lại
+                                                                        </button>
+                                                                        <button 
+                                                                            onClick={() => handleDownloadSingle(item.videoUrl!, idx)}
+                                                                            className="flex items-center justify-center gap-1 py-2 bg-[#2A2A2A] hover:bg-[#353535] text-white rounded-lg text-xs font-bold transition-all border border-[#302839]"
+                                                                        >
+                                                                            <span className="material-symbols-outlined text-sm">download</span>
+                                                                            Tải về
+                                                                        </button>
+                                                                    </div>
+                                                                </div>
                                                             </div>
-                                                        </div>
+                                                        ) : (
+                                                            // DISPLAY IMAGE + GENERATE FORM
+                                                            <>
+                                                                <div className={`bg-black relative group ${videoState.aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'}`}>
+                                                                    <img src={item.file.objectURL} alt="Source" className="w-full h-full object-cover opacity-80" />
+                                                                    {item.isGeneratingVideo && (
+                                                                        <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20 backdrop-blur-sm">
+                                                                            <Spinner />
+                                                                            <span className="text-xs text-gray-300 mt-2 animate-pulse">Đang tạo clip...</span>
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="p-3 flex flex-col gap-2 flex-grow">
+                                                                    <textarea 
+                                                                        value={item.prompt}
+                                                                        onChange={(e) => setVideoState(prev => ({ ...prev, contextItems: prev.contextItems.map(x => x.id === item.id ? { ...x, prompt: e.target.value } : x) }))}
+                                                                        className="w-full bg-[#121212] border border-[#302839] rounded-lg p-3 text-sm text-gray-200 focus:border-[#7f13ec] focus:outline-none resize-none h-20 mb-3"
+                                                                        placeholder="Prompt..."
+                                                                        disabled={item.isGeneratingVideo}
+                                                                    />
+                                                                    <div className="mt-auto">
+                                                                        <button onClick={() => handleGenerateClip(item)} disabled={item.isGeneratingVideo} className="w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] text-white rounded-lg text-sm font-bold transition-all shadow-md">{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</button>
+                                                                    </div>
+                                                                </div>
+                                                            </>
+                                                        )}
                                                     </div>
                                                 ))}
                                                 {creationItems.length === 0 && (
@@ -949,7 +1129,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                                 <button onClick={(e) => {e.stopPropagation(); handleExtendClip(item)}} className="p-1 bg-black/50 text-white rounded hover:bg-black"><span className="material-symbols-outlined text-[10px]">playlist_add</span></button>
                                                             </div>
                                                         </div>
-                                                    )) : <div className="w-full text-gray-600 text-xs italic pl-2">Các clip đã tạo sẽ xuất hiện ở đây...</div>}
+                                                    )) : <div className="w-full text-gray-600 text-xs italic pl-2">Các clip đã thêm vào timeline sẽ xuất hiện ở đây...</div>}
                                                 </div>
 
                                                 {/* Audio Track */}
@@ -984,7 +1164,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                         {isSingleGenerating ? (
                                             <div className="flex flex-col items-center justify-center text-gray-400 gap-3">
                                                 <Spinner />
-                                                <span className="animate-pulse text-sm">Đang khởi tạo video...</span>
+                                                <span className="animate-pulse text-sm">{videoState.loadingMessage || 'Đang khởi tạo video...'}</span>
                                             </div>
                                         ) : videoState.generatedVideoUrl ? (
                                             <video 
@@ -1028,7 +1208,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                     </div>
                 </main>
             </div>
-            {videoState.error && <div className="fixed bottom-4 right-4 bg-red-900/90 border border-red-500/50 text-red-200 p-4 rounded-xl backdrop-blur-md text-sm z-50 shadow-xl max-w-sm animate-bounce">Lỗi: {videoState.error} <button onClick={() => setVideoState(p => ({...p, error: null}))} className="ml-2 underline">Đóng</button></div>}
+            {videoState.error && <div className="fixed bottom-4 right-4 bg-red-900/90 border border-red-500/50 text-red-200 p-4 rounded-xl backdrop-blur-md text-sm z-50 shadow-xl max-w-sm animate-bounce font-medium">{videoState.error} <button onClick={() => setVideoState(p => ({...p, error: null}))} className="ml-2 underline text-white/80 hover:text-white">Đóng</button></div>}
         </div>
     );
 };

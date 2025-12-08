@@ -10,6 +10,11 @@ const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-
 // Helper wait
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Constants for Timeout logic
+const POLL_INTERVAL = 8000; // 8 seconds
+const TIMEOUT_DURATION = 180000; // 3 minutes in ms
+const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL); // ~23 attempts
+
 // Crop and Resize Image (Center Crop to Aspect Ratio, Max 1024px)
 export const resizeAndCropImage = async (
     fileData: FileData, 
@@ -89,9 +94,9 @@ export const resizeAndCropImage = async (
 
 // Safe JSON fetch helper with Timeout support
 const fetchJson = async (endpoint: string, options?: RequestInit) => {
-    // 30s Default Timeout for fetch if not specified
+    // 45s Default Timeout for fetch if not specified (Workers can be slow)
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    const timeoutId = setTimeout(() => controller.abort(), 45000);
     
     // Construct Full URL logic:
     let url = endpoint;
@@ -124,148 +129,170 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
         // Handle HTML responses (Cloudflare/Vercel errors) gracefully
         if (text.trim().startsWith("<") || text.includes("<!DOCTYPE") || text.includes("<html")) {
              if (res.status === 404) {
-                 throw new Error(`Không tìm thấy dịch vụ API (404). Kiểm tra biến môi trường VITE_API_URL.`);
+                 throw new Error(`SYSTEM_ERROR: Không tìm thấy dịch vụ API.`);
              }
-             if (res.status === 405) {
-                 throw new Error(`Phương thức không hợp lệ (405)`);
+             if (res.status === 500 || res.status === 502) {
+                 throw new Error(`SYSTEM_ERROR: Máy chủ đang bảo trì.`);
              }
-             if (res.status === 500) {
-                 throw new Error(`Lỗi máy chủ nội bộ (500)`);
-             }
-             throw new Error(`Lỗi kết nối máy chủ (${res.status})`);
+             throw new Error(`NETWORK_ERROR: Lỗi kết nối máy chủ (${res.status})`);
         }
 
         let data;
         try {
             data = JSON.parse(text);
         } catch (e) {
-            throw new Error(`Phản hồi máy chủ không hợp lệ`);
+            throw new Error(`SYSTEM_ERROR: Phản hồi không hợp lệ từ máy chủ.`);
         }
         
         if (!res.ok) {
-            // Prefer short message
-            const msg = data.error?.message || data.message || `Lỗi (${res.status})`;
+            // Prefer detailed message
+            let msg = data.error?.message || data.message || `Lỗi (${res.status})`;
+            
+            // Standardize Error Codes for UI Mapping
+            if (JSON.stringify(data).includes("SAFETY") || msg.includes("SAFETY")) {
+                throw new Error("SAFETY_ERROR");
+            }
+            if (res.status === 429 || msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
+                throw new Error("QUOTA_ERROR");
+            }
+            if (res.status === 401 || res.status === 403 || msg.includes("UNAUTHENTICATED")) {
+                throw new Error("AUTH_ERROR");
+            }
+            
+            // Pass through original message if not categorized
             throw new Error(msg);
         }
+        
+        // Check for specific error flags in 200 OK responses (common in proxy wrappers)
+        if (data.status === 'failed') {
+             const failMsg = data.message || "Unknown error";
+             if (failMsg.includes("SAFETY")) throw new Error("SAFETY_ERROR");
+             throw new Error(failMsg);
+        }
+
         return data;
     } catch (err: any) {
         clearTimeout(timeoutId);
         // Normalize error message
         let msg = err.message || "Lỗi kết nối";
-        if (msg.includes("aborted") || msg.includes("signal")) msg = "Hết thời gian chờ kết nối";
-        if (msg.includes("Failed to fetch")) msg = "Không thể kết nối tới máy chủ";
+        if (msg.includes("aborted") || msg.includes("signal") || msg.includes("timeout")) msg = "TIMEOUT_ERROR";
+        if (msg.includes("Failed to fetch")) msg = "NETWORK_ERROR";
         
         throw new Error(msg);
     }
 };
 
-export const generateVideoExternal = async (prompt: string, backendUrl: string, startImage?: FileData, aspectRatio: '16:9' | '9:16' = '16:9'): Promise<{ videoUrl: string, mediaId?: string }> => {
+// Internal function performing the actual generation logic
+async function _executeVideoGeneration(
+    prompt: string, 
+    startImage?: FileData, 
+    aspectRatio: '16:9' | '9:16' = '16:9'
+): Promise<{ videoUrl: string, mediaId?: string }> {
     console.log("==========================================================");
-    console.log(`[Video Service] STARTING VIDEO GENERATION (Fast Mode) - Ratio: ${aspectRatio}`);
-    console.log("==========================================================");
+    console.log(`[Video Service] EXECUTING VIDEO GENERATION - Ratio: ${aspectRatio}`);
     
     // Step 0: Compress & Crop Image
     let imageBase64 = null;
     if (startImage) {
-        console.log(`[Client] Step 0: Processing Image (Crop ${aspectRatio} & Resize Max 1024px)...`);
+        console.log(`[Client] Step 0: Processing Image...`);
         try {
             const compressed = await resizeAndCropImage(startImage, aspectRatio);
             imageBase64 = compressed.split(',')[1];
-            console.log(`[Client] Image Ready. Size: ${(imageBase64.length / 1024).toFixed(2)} KB`);
         } catch (e) {
             console.warn("[Client] Processing failed, using original.");
             imageBase64 = startImage.base64;
         }
     }
 
-    try {
-        // Step 1: Auth (Always fetch from backend now to get KV token)
-        console.log(`[Client] Step 1: Fetching Dynamic Token from Database...`);
-        const authData = await fetchJson('/auth', {
+    // Step 1: Auth
+    const authData = await fetchJson('/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'auth' })
+    });
+    const token = authData.token;
+    if (!token) throw new Error("AUTH_ERROR");
+
+    // Step 2: Upload
+    let mediaId = null;
+    if (imageBase64) {
+        console.log(`[Client] Step 2: Uploading Image...`);
+        const uploadData = await fetchJson('/upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'auth' })
+            body: JSON.stringify({ action: 'upload', token, image: imageBase64 })
         });
-        const token = authData.token;
-        if (!token) throw new Error("Hệ thống chưa được cấu hình Token. Vui lòng liên hệ Admin.");
-        console.log(`[Client] Token Received.`);
+        mediaId = uploadData.mediaId;
+    }
 
-        // Step 2: Upload (If needed)
-        let mediaId = null;
-        if (imageBase64) {
-            console.log(`[Client] Step 2: Uploading Image to Google...`);
-            const uploadData = await fetchJson('/upload', {
+    // Step 3: Trigger
+    console.log(`[Client] Step 3: Triggering Generation...`);
+    const triggerData = await fetchJson('/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'create', token, prompt, mediaId, aspectRatio })
+    });
+    const { task_id, scene_id } = triggerData;
+
+    // Step 4: Polling
+    console.log(`[Client] Step 4: Polling Status...`);
+    let attempts = 0;
+    while (attempts < MAX_POLL_ATTEMPTS) {
+        attempts++;
+        await wait(POLL_INTERVAL);
+
+        try {
+            const checkData = await fetchJson('/check', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'upload', token, image: imageBase64 })
+                body: JSON.stringify({ action: 'check', task_id, scene_id, token }) 
             });
-            mediaId = uploadData.mediaId;
-            console.log(`[Client] Image Uploaded. Media ID: ${mediaId}`);
+
+            if (checkData.status === 'completed' && checkData.video_url) {
+                console.log(`[Client] SUCCESS! Video URL: ${checkData.video_url}`);
+                return { videoUrl: checkData.video_url, mediaId: checkData.mediaId };
+            }
+            
+            if (checkData.status === 'failed') {
+                const failReason = checkData.message || "Unknown error";
+                if (failReason.includes("SAFETY")) throw new Error("SAFETY_ERROR");
+                throw new Error(`GENERATION_FAILED: ${failReason}`);
+            }
+        } catch (e: any) {
+            // Immediately throw critical errors to stop retrying the same task
+            if (e.message.includes("SAFETY_ERROR") || e.message.includes("AUTH_ERROR")) throw e;
+            // For other transient errors (Network, 500), continue loop until timeout
+            console.warn(`[Client] Poll Error (Will retry):`, e.message);
         }
+    }
 
-        // Step 3: Trigger
-        console.log(`[Client] Step 3: Triggering Video Generation...`);
-        const triggerData = await fetchJson('/create', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                action: 'create', 
-                token, 
-                prompt, 
-                mediaId,
-                aspectRatio 
-            })
-        });
-        const { task_id, scene_id } = triggerData;
-        console.log(`[Client] Task Created! Task ID: ${task_id}`);
+    throw new Error("TIMEOUT_ERROR");
+}
 
-        // Step 4: Polling
-        console.log(`[Client] Step 4: Polling Status...`);
-        const maxRetries = 120; 
-        let attempts = 0;
-        
-        while (attempts < maxRetries) {
-            attempts++;
-            // Optimization: Increased wait time to 8s to reduce server load
-            await wait(8000); 
-
+export const generateVideoExternal = async (
+    prompt: string, 
+    backendUrl: string, 
+    startImage?: FileData, 
+    aspectRatio: '16:9' | '9:16' = '16:9'
+): Promise<{ videoUrl: string, mediaId?: string }> => {
+    try {
+        return await _executeVideoGeneration(prompt, startImage, aspectRatio);
+    } catch (error: any) {
+        // Retry logic for Timeout
+        if (error.message === 'TIMEOUT_ERROR') {
+            console.warn("[Video Service] Timeout encountered (3 min). Retrying generation once...");
             try {
-                const checkData = await fetchJson('/check', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ action: 'check', task_id, scene_id, token }) 
-                });
-
-                console.log(`[Client] Poll #${attempts}: Status = ${checkData.status}`);
-                
-                if (checkData.status === 'completed' && checkData.video_url) {
-                    console.log("==========================================================");
-                    console.log(`[Client] SUCCESS! Video URL: ${checkData.video_url}`);
-                    return { 
-                        videoUrl: checkData.video_url,
-                        mediaId: checkData.mediaId // Optional ID for upscaling
-                    };
-                }
-                
-                if (checkData.status === 'failed') {
-                    throw new Error("Quá trình tạo video thất bại.");
-                }
-            } catch (e: any) {
-                console.warn(`[Client] Poll Error (Will retry):`, e.message);
-                if (attempts > 10 && (e.message.includes('Server Error') || e.message.includes('500'))) throw new Error("Lỗi máy chủ khi kiểm tra trạng thái.");
+                return await _executeVideoGeneration(prompt, startImage, aspectRatio);
+            } catch (retryError: any) {
+                console.error("[Video Service] Retry attempt also failed.");
+                throw retryError; // Throw final error (likely TIMEOUT_ERROR again)
             }
         }
-
-        throw new Error("Hết thời gian chờ tạo video.");
-
-    } catch (err: any) {
-        console.error("[Video Service Error]", err);
-        throw err;
+        throw error;
     }
 };
 
 export const upscaleVideoExternal = async (mediaId: string): Promise<string> => {
-    // Existing upscale implementation...
     console.log("==========================================================");
     console.log(`[Video Service] STARTING VIDEO UPSCALE (1080p)`);
     console.log("==========================================================");
@@ -299,18 +326,16 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
                 body: JSON.stringify({ action: 'check', task_id, scene_id, token })
             });
 
-            console.log(`[Client] Upscale Poll #${attempts}: Status = ${checkData.status}`);
-
             if (checkData.status === 'completed' && checkData.video_url) {
                 return checkData.video_url;
             }
 
             if (checkData.status === 'failed') {
-                throw new Error("Quá trình nâng cấp video thất bại.");
+                throw new Error("GENERATION_FAILED");
             }
         }
         
-        throw new Error("Hết thời gian chờ nâng cấp video.");
+        throw new Error("TIMEOUT_ERROR");
 
     } catch (err: any) {
         console.error("[Upscale Error]", err);

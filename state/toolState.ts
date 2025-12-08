@@ -71,6 +71,7 @@ export interface VideoContextItem {
     videoUrl?: string;          // URL video kết quả cho clip này
     isGeneratingVideo?: boolean; // Trạng thái đang tạo video cho clip này
     isUploaded?: boolean; // New flag to identify manually uploaded videos
+    isInTimeline?: boolean; // Determines if this clip is currently on the editing timeline
 }
 
 export interface VideoGeneratorState {
