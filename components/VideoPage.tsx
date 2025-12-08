@@ -33,31 +33,36 @@ const sidebarItems = [
         id: 'arch-film', 
         label: 'Phim kiến trúc', 
         icon: <span className="material-symbols-outlined">movie_filter</span>,
-        prompt: 'Cinematic architectural film, establishing shot, photorealistic, 4k, slow camera movement capturing the building details and atmosphere.' 
+        prompt: 'Cinematic architectural film, establishing shot, photorealistic, 4k, slow camera movement capturing the building details and atmosphere.',
+        isMaintenance: false
     },
     { 
         id: 'img-to-video', 
         label: 'Tạo video từ ảnh', 
         icon: <span className="material-symbols-outlined">image</span>,
-        prompt: 'High quality video generated from image, smooth motion, 4k, cinematic lighting.'
+        prompt: 'High quality video generated from image, smooth motion, 4k, cinematic lighting.',
+        isMaintenance: false
     },
     { 
         id: 'text-to-video', 
         label: 'Tạo video từ text', 
         icon: <span className="material-symbols-outlined">description</span>,
-        prompt: 'A high quality video of modern architecture, cinematic view, 4k.'
+        prompt: 'A high quality video of modern architecture, cinematic view, 4k.',
+        isMaintenance: true
     },
     { 
         id: 'transition', 
         label: 'Video chuyển cảnh', 
         icon: <span className="material-symbols-outlined">transition_push</span>,
-        prompt: 'Smooth morphing transition, changing lighting from day to night, timelapse effect.'
+        prompt: 'Smooth morphing transition, changing lighting from day to night, timelapse effect.',
+        isMaintenance: true
     },
     {
         id: 'extend-video',
         label: 'Mở rộng video',
         icon: <span className="material-symbols-outlined">playlist_add</span>,
-        prompt: 'Nối tiếp cảnh quay hiện tại, giữ nguyên phong cách và ánh sáng, camera di chuyển mượt mà.'
+        prompt: 'Nối tiếp cảnh quay hiện tại, giữ nguyên phong cách và ánh sáng, camera di chuyển mượt mà.',
+        isMaintenance: true
     }
 ];
 
@@ -106,6 +111,27 @@ const mapFriendlyErrorMessage = (errorMsg: string): string => {
     // Default for unknown errors with truncated message
     return `Lỗi Kỹ Thuật: ${errorMsg.substring(0, 40)}...` + suffix;
 };
+
+// --- MAINTENANCE COMPONENT ---
+const MaintenanceView = ({ title }: { title: string }) => (
+    <div className="bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-[#302839] p-5 shadow-lg flex flex-col gap-6 h-full overflow-hidden items-center justify-center text-center animate-fade-in">
+        <div className="w-20 h-20 bg-yellow-500/10 rounded-full flex items-center justify-center mb-2 shadow-inner border border-yellow-500/20">
+            <span className="material-symbols-outlined text-yellow-500 text-4xl">engineering</span>
+        </div>
+        <div>
+            <h3 className="text-white font-bold text-2xl mb-3">{title}</h3>
+            <div className="w-16 h-1 bg-yellow-500/50 mx-auto rounded-full mb-4"></div>
+            <p className="text-gray-400 text-sm max-w-sm leading-relaxed mx-auto">
+                Tính năng đang được tạm dừng để nâng cấp hệ thống máy chủ nhằm đảm bảo chất lượng render tốt nhất.
+                <br/>
+                Vui lòng quay lại sau!
+            </p>
+        </div>
+        <div className="bg-yellow-900/20 border border-yellow-500/30 px-4 py-2 rounded-lg mt-2">
+            <span className="text-yellow-500 text-xs font-bold uppercase tracking-wider">Đang bảo trì</span>
+        </div>
+    </div>
+);
 
 const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [activeItem, setActiveItem] = useState('arch-film');
@@ -788,109 +814,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                     </div>
                 );
             case 'text-to-video':
-                return (
-                    <div className="bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-[#302839] p-5 shadow-lg flex flex-col gap-4 h-full overflow-hidden">
-                        <h3 className="text-white font-bold text-base flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[#7f13ec]">description</span>
-                            Tạo video từ text
-                        </h3>
-                        <div className="flex-1 flex flex-col justify-center gap-4">
-                            <label className="block text-xs font-medium text-gray-400 uppercase tracking-widest">Kịch bản / Prompt</label>
-                            <textarea 
-                                value={singlePrompt}
-                                onChange={(e) => setSinglePrompt(e.target.value)}
-                                className="w-full bg-[#121212] border border-[#302839] rounded-xl p-4 text-base text-gray-200 focus:border-[#7f13ec] focus:ring-1 focus:ring-[#7f13ec] focus:outline-none resize-none h-64"
-                                placeholder="Mô tả chi tiết video bạn muốn tạo..."
-                            />
-                        </div>
-                        <button
-                            onClick={handleSingleGeneration}
-                            disabled={!singlePrompt || isSingleGenerating}
-                            className="w-full py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                            {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined">movie_creation</span>}
-                            {isSingleGenerating ? 'Đang tạo...' : 'Tạo Video'}
-                        </button>
-                    </div>
-                );
+                return <MaintenanceView title="Tạo video từ text" />;
             case 'transition':
-                return (
-                    <div className="bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-[#302839] p-5 shadow-lg flex flex-col gap-4 h-full overflow-hidden">
-                        <h3 className="text-white font-bold text-base flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[#7f13ec]">transition_push</span>
-                            Video chuyển cảnh
-                        </h3>
-                        <div className="flex-1 overflow-y-auto pr-2 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-400 mb-2">Ảnh đầu</label>
-                                    <ImageUpload onFileSelect={setSingleSourceImage} previewUrl={singleSourceImage?.objectURL} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-medium text-gray-400 mb-2">Ảnh cuối (Tham khảo)</label>
-                                    <ImageUpload onFileSelect={setSingleEndImage} previewUrl={singleEndImage?.objectURL} />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-xs font-medium text-gray-400 mb-2">Mô tả chuyển đổi</label>
-                                <textarea 
-                                    value={singlePrompt}
-                                    onChange={(e) => setSinglePrompt(e.target.value)}
-                                    className="w-full bg-[#121212] border border-[#302839] rounded-lg p-3 text-sm text-gray-200 focus:border-[#7f13ec] focus:outline-none resize-none h-24"
-                                    placeholder="Mô tả sự thay đổi từ ảnh đầu sang ảnh cuối..."
-                                />
-                            </div>
-                        </div>
-                        <button
-                            onClick={handleSingleGeneration}
-                            disabled={!singleSourceImage || !singlePrompt || isSingleGenerating}
-                            className="w-full py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                            {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined">movie_creation</span>}
-                            {isSingleGenerating ? 'Tạo Chuyển Cảnh' : 'Tạo Video'}
-                        </button>
-                    </div>
-                );
+                return <MaintenanceView title="Video chuyển cảnh" />;
             case 'extend-video':
-                return (
-                    <div className="bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-[#302839] p-5 shadow-lg flex flex-col gap-4 h-full overflow-hidden">
-                        <h3 className="text-white font-bold text-base flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[#7f13ec]">playlist_add</span>
-                            Mở rộng video
-                        </h3>
-                        <div className="flex-1 flex flex-col gap-4">
-                            {videoToExtend ? (
-                                <div className="bg-black rounded-xl overflow-hidden border border-[#302839] relative group aspect-video">
-                                    <video src={videoToExtend.videoUrl} className="w-full h-full object-contain" controls />
-                                    <div className="absolute top-2 left-2 bg-black/60 px-2 py-1 rounded text-[10px] text-white backdrop-blur-sm">Nguồn</div>
-                                </div>
-                            ) : (
-                                <div className="flex-1 bg-[#121212] rounded-xl border-2 border-dashed border-[#302839] flex flex-col items-center justify-center text-gray-500 p-6 text-center">
-                                    <span className="material-symbols-outlined text-4xl mb-2">movie_edit</span>
-                                    <p className="text-sm">Chọn một video từ timeline (nút Nối dài) để bắt đầu</p>
-                                </div>
-                            )}
-                            <div className="space-y-2">
-                                <label className="text-xs font-bold text-gray-400 uppercase">Prompt mở rộng</label>
-                                <textarea 
-                                    value={singlePrompt}
-                                    onChange={(e) => setSinglePrompt(e.target.value)}
-                                    className="w-full bg-[#121212] border border-[#302839] rounded-lg p-3 text-sm text-gray-200 focus:border-[#7f13ec] focus:outline-none resize-none h-32"
-                                    placeholder="Mô tả cảnh tiếp theo..."
-                                    disabled={!videoToExtend}
-                                />
-                            </div>
-                            <button
-                                onClick={() => alert("Tính năng đang phát triển")}
-                                disabled={!videoToExtend}
-                                className="w-full py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 mt-auto flex items-center justify-center gap-2"
-                            >
-                                <span className="material-symbols-outlined">auto_awesome_motion</span>
-                                Tạo phần mở rộng
-                            </button>
-                        </div>
-                    </div>
-                );
+                return <MaintenanceView title="Mở rộng video" />;
             default: return null;
         }
     };
@@ -927,6 +855,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 >
                                     <span className={`material-symbols-outlined ${activeItem === item.id ? 'text-white' : 'text-gray-500 group-hover:text-[#7f13ec]'}`}>{item.icon}</span>
                                     <span className="text-sm font-medium hidden md:block">{item.label}</span>
+                                    {item.isMaintenance && (
+                                        <span className="absolute top-2 right-2 w-2 h-2 bg-yellow-500 rounded-full animate-pulse" title="Bảo trì"></span>
+                                    )}
                                 </button>
                             ))}
                         </div>
@@ -1153,54 +1084,65 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                     </div>
                                 </>
                             ) : (
-                                // --- SINGLE MODE: SIMPLE RESULT VIEW ---
+                                // --- SINGLE MODE: SIMPLE RESULT VIEW OR MAINTENANCE ---
                                 <div className="bg-[#191919] rounded-2xl border border-[#302839] p-6 shadow-lg h-full flex flex-col">
-                                    <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
-                                        <span className="material-symbols-outlined text-[#7f13ec]">movie</span>
-                                        Kết quả
-                                    </h3>
-
-                                    <div className="flex-1 bg-black rounded-xl border border-[#302839] relative flex items-center justify-center overflow-hidden min-h-[400px]">
-                                        {isSingleGenerating ? (
-                                            <div className="flex flex-col items-center justify-center text-gray-400 gap-3">
-                                                <Spinner />
-                                                <span className="animate-pulse text-sm">{videoState.loadingMessage || 'Đang khởi tạo video...'}</span>
+                                    {(['text-to-video', 'transition', 'extend-video'].includes(activeItem)) ? (
+                                        <div className="flex-1 flex items-center justify-center">
+                                            <div className="text-center text-gray-500">
+                                                <span className="material-symbols-outlined text-6xl mb-4 text-yellow-500/20">engineering</span>
+                                                <p>Tính năng đang được nâng cấp.</p>
                                             </div>
-                                        ) : videoState.generatedVideoUrl ? (
-                                            <video 
-                                                src={videoState.generatedVideoUrl} 
-                                                controls 
-                                                autoPlay 
-                                                loop 
-                                                className="w-full h-full object-contain max-h-[70vh]"
-                                            />
-                                        ) : (
-                                            <div className="flex flex-col items-center opacity-30">
-                                                <span className="material-symbols-outlined text-6xl mb-2">video_file</span>
-                                                <p className="text-gray-500 text-sm">Kết quả sẽ hiển thị ở đây</p>
-                                            </div>
-                                        )}
-                                    </div>
+                                        </div>
+                                    ) : (
+                                        <>
+                                            <h3 className="text-white font-bold text-lg mb-4 flex items-center gap-2">
+                                                <span className="material-symbols-outlined text-[#7f13ec]">movie</span>
+                                                Kết quả
+                                            </h3>
 
-                                    {/* GENERATE & DOWNLOAD BUTTONS (Matching Template) */}
-                                    <div className="mt-6 flex flex-col sm:flex-row gap-4">
-                                        <button 
-                                            onClick={handleSingleGeneration}
-                                            disabled={isSingleGenerating}
-                                            className="flex-1 py-3 px-6 rounded-xl font-bold transition-all border border-[#302839] text-gray-300 hover:text-white hover:bg-[#2A2A2A] hover:border-gray-500 flex items-center justify-center gap-2 disabled:opacity-50"
-                                        >
-                                            <span className="material-symbols-outlined">refresh</span>
-                                            Tạo lại
-                                        </button>
-                                        <button 
-                                            onClick={handleSimpleDownload}
-                                            disabled={!videoState.generatedVideoUrl || isSingleGenerating}
-                                            className="flex-[2] py-3 px-6 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                                        >
-                                            <span className="material-symbols-outlined">download</span>
-                                            Tải xuống
-                                        </button>
-                                    </div>
+                                            <div className="flex-1 bg-black rounded-xl border border-[#302839] relative flex items-center justify-center overflow-hidden min-h-[400px]">
+                                                {isSingleGenerating ? (
+                                                    <div className="flex flex-col items-center justify-center text-gray-400 gap-3">
+                                                        <Spinner />
+                                                        <span className="animate-pulse text-sm">{videoState.loadingMessage || 'Đang khởi tạo video...'}</span>
+                                                    </div>
+                                                ) : videoState.generatedVideoUrl ? (
+                                                    <video 
+                                                        src={videoState.generatedVideoUrl} 
+                                                        controls 
+                                                        autoPlay 
+                                                        loop 
+                                                        className="w-full h-full object-contain max-h-[70vh]"
+                                                    />
+                                                ) : (
+                                                    <div className="flex flex-col items-center opacity-30">
+                                                        <span className="material-symbols-outlined text-6xl mb-2">video_file</span>
+                                                        <p className="text-gray-500 text-sm">Kết quả sẽ hiển thị ở đây</p>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* GENERATE & DOWNLOAD BUTTONS (Matching Template) */}
+                                            <div className="mt-6 flex flex-col sm:flex-row gap-4">
+                                                <button 
+                                                    onClick={handleSingleGeneration}
+                                                    disabled={isSingleGenerating}
+                                                    className="flex-1 py-3 px-6 rounded-xl font-bold transition-all border border-[#302839] text-gray-300 hover:text-white hover:bg-[#2A2A2A] hover:border-gray-500 flex items-center justify-center gap-2 disabled:opacity-50"
+                                                >
+                                                    <span className="material-symbols-outlined">refresh</span>
+                                                    Tạo lại
+                                                </button>
+                                                <button 
+                                                    onClick={handleSimpleDownload}
+                                                    disabled={!videoState.generatedVideoUrl || isSingleGenerating}
+                                                    className="flex-[2] py-3 px-6 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                                >
+                                                    <span className="material-symbols-outlined">download</span>
+                                                    Tải xuống
+                                                </button>
+                                            </div>
+                                        </>
+                                    )}
                                 </div>
                             )}
 
