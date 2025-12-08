@@ -455,6 +455,23 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }));
     };
 
+    // --- NEW: DELETE HANDLERS ---
+    const handleDeleteItem = (id: string) => {
+        if (window.confirm("Bạn có chắc chắn muốn xóa mục này khỏi danh sách?")) {
+            setVideoState(prev => {
+                const newItems = prev.contextItems.filter(i => i.id !== id);
+                return { ...prev, contextItems: newItems };
+            });
+        }
+    };
+
+    const handleRemoveFromTimeline = (id: string) => {
+        setVideoState(prev => ({
+            ...prev,
+            contextItems: prev.contextItems.map(i => i.id === id ? { ...i, isInTimeline: false } : i)
+        }));
+    };
+
     // --- SINGLE GENERATION LOGIC (Img2Vid, Text2Vid, Transition) ---
     const handleSingleGeneration = async () => {
         const cost = 5;
@@ -887,7 +904,21 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                         <div className="flex-1 overflow-y-auto p-4 bg-[#121212] scrollbar-thin scrollbar-thumb-gray-700 scrollbar-track-transparent">
                                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                                 {creationItems.map((item, idx) => (
-                                                    <div key={item.id} className="bg-[#1E1E1E] border border-[#302839] rounded-xl overflow-hidden shadow-lg flex flex-col h-full">
+                                                    <div key={item.id} className="bg-[#1E1E1E] border border-[#302839] rounded-xl overflow-hidden shadow-lg flex flex-col h-full relative group">
+                                                        {/* DELETE BUTTON FOR CONTEXT ITEM */}
+                                                        <button 
+                                                            onClick={(e) => { 
+                                                                e.stopPropagation(); 
+                                                                e.preventDefault();
+                                                                handleDeleteItem(item.id); 
+                                                            }}
+                                                            className="absolute top-2 right-2 z-50 p-2 bg-black/60 hover:bg-red-600 text-white rounded-full transition-all opacity-60 hover:opacity-100 hover:scale-110 shadow-md cursor-pointer"
+                                                            title="Xóa mục này"
+                                                            type="button"
+                                                        >
+                                                            <span className="material-symbols-outlined text-base">close</span>
+                                                        </button>
+
                                                         {item.videoUrl ? (
                                                             // DISPLAY VIDEO + OPTIONS
                                                             <div className="flex flex-col h-full">
@@ -1055,9 +1086,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                         >
                                                             <div className="absolute top-1 left-1 z-10 bg-black/60 px-1.5 py-0.5 rounded text-[8px] text-white">Cảnh {index + 1}</div>
                                                             <video src={item.videoUrl} className="w-full h-full object-cover pointer-events-none" />
-                                                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1">
-                                                                <button onClick={(e) => {e.stopPropagation(); handleDownloadSingle(item.videoUrl!, index)}} className="p-1 bg-black/50 text-white rounded hover:bg-black"><span className="material-symbols-outlined text-[10px]">download</span></button>
-                                                                <button onClick={(e) => {e.stopPropagation(); handleExtendClip(item)}} className="p-1 bg-black/50 text-white rounded hover:bg-black"><span className="material-symbols-outlined text-[10px]">playlist_add</span></button>
+                                                            <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-black/40 rounded p-0.5">
+                                                                <button onClick={(e) => {e.stopPropagation(); handleDownloadSingle(item.videoUrl!, index)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Tải xuống"><span className="material-symbols-outlined text-[10px]">download</span></button>
+                                                                <button onClick={(e) => {e.stopPropagation(); handleExtendClip(item)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Mở rộng"><span className="material-symbols-outlined text-[10px]">playlist_add</span></button>
+                                                                {/* REMOVE FROM TIMELINE BUTTON */}
+                                                                <button onClick={(e) => {e.stopPropagation(); handleRemoveFromTimeline(item.id)}} className="p-1 bg-black/50 text-white rounded hover:bg-red-600" title="Xóa khỏi Timeline"><span className="material-symbols-outlined text-[10px]">close</span></button>
                                                             </div>
                                                         </div>
                                                     )) : <div className="w-full text-gray-600 text-xs italic pl-2">Các clip đã thêm vào timeline sẽ xuất hiện ở đây...</div>}
