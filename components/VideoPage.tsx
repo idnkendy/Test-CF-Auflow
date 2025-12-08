@@ -28,6 +28,51 @@ interface VideoPageProps {
     onDeductCredits: (amount: number, description: string) => Promise<string>;
 }
 
+// --- CONFIRMATION MODAL COMPONENT ---
+interface ConfirmationModalProps {
+    isOpen: boolean;
+    onClose: () => void;
+    onConfirm: () => void;
+    title: string;
+    message: string;
+}
+
+const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, onConfirm, title, message }) => {
+    if (!isOpen) return null;
+
+    return (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in">
+            <div 
+                className="bg-[#1E1E1E] border border-[#302839] rounded-2xl p-6 shadow-2xl max-w-sm w-full transform transition-all scale-100 origin-center"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex flex-col items-center text-center gap-4">
+                    <div className="w-12 h-12 rounded-full bg-red-900/30 flex items-center justify-center text-red-500 mb-2">
+                        <span className="material-symbols-outlined text-2xl">delete</span>
+                    </div>
+                    <h3 className="text-xl font-bold text-white">{title}</h3>
+                    <p className="text-gray-400 text-sm leading-relaxed">{message}</p>
+                    
+                    <div className="flex gap-3 w-full mt-4">
+                        <button 
+                            onClick={onClose}
+                            className="flex-1 py-2.5 px-4 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium transition-colors border border-gray-700"
+                        >
+                            Hủy bỏ
+                        </button>
+                        <button 
+                            onClick={onConfirm}
+                            className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-lg shadow-red-900/20"
+                        >
+                            Xóa ngay
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const sidebarItems = [
     { 
         id: 'arch-film', 
@@ -58,7 +103,7 @@ const sidebarItems = [
         isMaintenance: true
     },
     {
-        id: 'extend-video',
+        id: 'extend-video', 
         label: 'Mở rộng video',
         icon: <span className="material-symbols-outlined">playlist_add</span>,
         prompt: 'Nối tiếp cảnh quay hiện tại, giữ nguyên phong cách và ánh sáng, camera di chuyển mượt mà.',
@@ -160,6 +205,12 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [isExporting, setIsExporting] = useState(false);
     const [exportProgress, setExportProgress] = useState(0); 
     const [audioDuration, setAudioDuration] = useState(0);
+
+    // --- DELETE MODAL STATE ---
+    const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({
+        isOpen: false,
+        itemId: null
+    });
 
     const mainVideoRef = useRef<HTMLVideoElement>(null);
     const audioRef = useRef<HTMLAudioElement>(null);
@@ -457,12 +508,17 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
     // --- NEW: DELETE HANDLERS ---
     const handleDeleteItem = (id: string) => {
-        if (window.confirm("Bạn có chắc chắn muốn xóa mục này khỏi danh sách?")) {
-            setVideoState(prev => {
-                const newItems = prev.contextItems.filter(i => i.id !== id);
-                return { ...prev, contextItems: newItems };
-            });
+        setDeleteModalState({ isOpen: true, itemId: id });
+    };
+
+    const executeDelete = () => {
+        if (deleteModalState.itemId) {
+            setVideoState(prev => ({
+                ...prev,
+                contextItems: prev.contextItems.filter(i => i.id !== deleteModalState.itemId)
+            }));
         }
+        setDeleteModalState({ isOpen: false, itemId: null });
     };
 
     const handleRemoveFromTimeline = (id: string) => {
@@ -775,36 +831,112 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
     const activeMainVideoUrl = isPlayingAll ? timelineItems[currentPlayingIndex]?.videoUrl : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl);
 
+    // --- HELPER COMPONENT FOR ASPECT RATIO ---
+    const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16', onChange: (val: '16:9' | '9:16') => void }) => {
+        const [isOpen, setIsOpen] = useState(false);
+        const dropdownRef = useRef<HTMLDivElement>(null);
+
+        useEffect(() => {
+            const handleClickOutside = (event: MouseEvent) => {
+                if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                    setIsOpen(false);
+                }
+            };
+            document.addEventListener('mousedown', handleClickOutside);
+            return () => document.removeEventListener('mousedown', handleClickOutside);
+        }, []);
+
+        return (
+            <div className="relative" ref={dropdownRef}>
+                <button
+                    onClick={() => setIsOpen(!isOpen)}
+                    className="h-full px-3 bg-[#2A2A2A] hover:bg-[#353535] border border-[#302839] rounded-xl flex items-center gap-2 text-white font-medium transition-all shadow-sm whitespace-nowrap min-w-[110px] justify-between"
+                    title="Chọn tỷ lệ khung hình"
+                >
+                    <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-xl text-[#7f13ec]">
+                            {value === '16:9' ? 'crop_landscape' : 'crop_portrait'}
+                        </span>
+                        <span>{value}</span>
+                    </div>
+                    <span className={`material-symbols-outlined text-gray-400 text-sm transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
+                        expand_less
+                    </span>
+                </button>
+
+                {isOpen && (
+                    <div className="absolute bottom-full left-0 mb-2 w-full min-w-[140px] bg-[#1E1E1E] border border-[#302839] rounded-xl shadow-xl overflow-hidden z-50 p-1 animate-fade-in">
+                        <button
+                            onClick={() => { onChange('16:9'); setIsOpen(false); }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                                value === '16:9' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-300 hover:bg-[#2A2A2A]'
+                            }`}
+                        >
+                            <span className="material-symbols-outlined text-lg">crop_landscape</span>
+                            <div className="flex flex-col items-start">
+                                <span className="font-bold">16:9</span>
+                                <span className="text-[10px] opacity-70">Ngang</span>
+                            </div>
+                            {value === '16:9' && <span className="material-symbols-outlined text-sm ml-auto">check</span>}
+                        </button>
+                        <button
+                            onClick={() => { onChange('9:16'); setIsOpen(false); }}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                                value === '9:16' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-300 hover:bg-[#2A2A2A]'
+                            }`}
+                        >
+                            <span className="material-symbols-outlined text-lg">crop_portrait</span>
+                            <div className="flex flex-col items-start">
+                                <span className="font-bold">9:16</span>
+                                <span className="text-[10px] opacity-70">Dọc</span>
+                            </div>
+                            {value === '9:16' && <span className="material-symbols-outlined text-sm ml-auto">check</span>}
+                        </button>
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     // --- RENDER CONTENT SECTIONS ---
     const renderContentInput = () => {
         switch (activeItem) {
             case 'arch-film': // BATCH MODE
                 return (
-                    <div className="bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-[#302839] p-5 shadow-lg flex flex-col gap-4 h-full overflow-hidden">
-                        <h3 className="text-white font-bold text-base flex items-center gap-2">
-                            <span className="w-6 h-6 rounded-full bg-[#7f13ec]/20 text-[#7f13ec] flex items-center justify-center text-xs">1</span>
-                            Tải ảnh bối cảnh (Batch)
-                        </h3>
-                        <div className="rounded-xl bg-[#121212]/50 hover:border-[#7f13ec]/50 transition-colors h-[400px] flex flex-col">
+                    <div className="bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-[#302839] p-5 shadow-lg flex flex-col h-full overflow-hidden">
+                        <div className="flex justify-between items-center mb-3">
+                            <h3 className="text-white font-bold text-base flex items-center gap-2">
+                                <span className="w-6 h-6 rounded-full bg-[#7f13ec]/20 text-[#7f13ec] flex items-center justify-center text-xs">1</span>
+                                Tải ảnh bối cảnh
+                            </h3>
+                        </div>
+                        <div className="rounded-xl bg-[#121212]/50 hover:border-[#7f13ec]/50 transition-colors h-[380px] flex flex-col mb-2">
                             <MultiImageUpload onFilesChange={handleFilesChange} maxFiles={10} className="h-full" />
                         </div>
-                        <button
-                            onClick={handleGenerateContextPrompts}
-                            disabled={creationItems.length === 0 || isGeneratingPrompts}
-                            className="w-full py-2.5 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                        >
-                            {isGeneratingPrompts ? <Spinner /> : <span className="material-symbols-outlined">auto_fix_high</span>}
-                            {isGeneratingPrompts ? 'Đang phân tích...' : 'Tạo Bối Cảnh (Magic Generate)'}
-                        </button>
+                        <div className="flex gap-3">
+                            <div className="w-[120px]">
+                                <AspectRatioSelector value={videoState.aspectRatio} onChange={handleAspectRatioChange} />
+                            </div>
+                            <button
+                                onClick={handleGenerateContextPrompts}
+                                disabled={creationItems.length === 0 || isGeneratingPrompts}
+                                className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 h-full"
+                            >
+                                {isGeneratingPrompts ? <Spinner /> : <span className="material-symbols-outlined">auto_fix_high</span>}
+                                {isGeneratingPrompts ? 'Đang phân tích...' : 'Tạo Bối Cảnh'}
+                            </button>
+                        </div>
                     </div>
                 );
             case 'img-to-video':
                 return (
                     <div className="bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-[#302839] p-5 shadow-lg flex flex-col gap-4 h-full overflow-hidden">
-                        <h3 className="text-white font-bold text-base flex items-center gap-2">
-                            <span className="material-symbols-outlined text-[#7f13ec]">image</span>
-                            Tạo video từ ảnh
-                        </h3>
+                        <div className="flex justify-between items-center">
+                            <h3 className="text-white font-bold text-base flex items-center gap-2">
+                                <span className="material-symbols-outlined text-[#7f13ec]">image</span>
+                                Tạo video từ ảnh
+                            </h3>
+                        </div>
                         <div className="flex-1 overflow-y-auto pr-2 space-y-4">
                             <div>
                                 <label className="block text-xs font-medium text-gray-400 mb-2">Ảnh bắt đầu</label>
@@ -820,14 +952,17 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 />
                             </div>
                         </div>
-                        <button
-                            onClick={handleSingleGeneration}
-                            disabled={!singleSourceImage || !singlePrompt || isSingleGenerating}
-                            className="w-full py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
-                        >
-                            {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined">movie_creation</span>}
-                            {isSingleGenerating ? 'Đang tạo...' : 'Tạo Video'}
-                        </button>
+                        <div className="flex gap-3 mt-auto">
+                            <AspectRatioSelector value={videoState.aspectRatio} onChange={handleAspectRatioChange} />
+                            <button
+                                onClick={handleSingleGeneration}
+                                disabled={!singleSourceImage || !singlePrompt || isSingleGenerating}
+                                className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                            >
+                                {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined">movie_creation</span>}
+                                {isSingleGenerating ? 'Đang tạo...' : 'Tạo Video'}
+                            </button>
+                        </div>
                     </div>
                 );
             case 'text-to-video':
@@ -858,10 +993,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 <span className="material-symbols-outlined">arrow_back</span>
                                 <span className="font-semibold text-sm hidden md:block">Trang chủ</span>
                             </button>
-                            <div className="hidden md:flex bg-[#302839] rounded-lg p-0.5">
-                                <button onClick={() => handleAspectRatioChange('16:9')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${videoState.aspectRatio === '16:9' ? 'bg-[#7f13ec] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>16:9</button>
-                                <button onClick={() => handleAspectRatioChange('9:16')} className={`px-2 py-1 text-[10px] font-bold rounded-md transition-all ${videoState.aspectRatio === '9:16' ? 'bg-[#7f13ec] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}>9:16</button>
-                            </div>
                         </div>
                         <div className="space-y-1">
                             {sidebarItems.map((item) => (
@@ -912,11 +1043,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                                 e.preventDefault();
                                                                 handleDeleteItem(item.id); 
                                                             }}
-                                                            className="absolute top-2 right-2 z-50 p-2 bg-black/60 hover:bg-red-600 text-white rounded-full transition-all opacity-60 hover:opacity-100 hover:scale-110 shadow-md cursor-pointer"
+                                                            className="absolute top-2 right-2 z-[100] p-2 bg-red-600/80 hover:bg-red-700 text-white rounded-full transition-all hover:scale-110 shadow-lg cursor-pointer flex items-center justify-center w-8 h-8"
                                                             title="Xóa mục này"
                                                             type="button"
                                                         >
-                                                            <span className="material-symbols-outlined text-base">close</span>
+                                                            <span className="material-symbols-outlined text-sm font-bold">close</span>
                                                         </button>
 
                                                         {item.videoUrl ? (
@@ -1183,6 +1314,16 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                     </div>
                 </main>
             </div>
+            
+            {/* DELETE MODAL */}
+            <ConfirmationModal 
+                isOpen={deleteModalState.isOpen}
+                onClose={() => setDeleteModalState({ isOpen: false, itemId: null })}
+                onConfirm={executeDelete}
+                title="Xác nhận xóa"
+                message="Bạn có chắc chắn muốn xóa clip này khỏi danh sách không? Hành động này không thể hoàn tác."
+            />
+
             {videoState.error && <div className="fixed bottom-4 right-4 bg-red-900/90 border border-red-500/50 text-red-200 p-4 rounded-xl backdrop-blur-md text-sm z-50 shadow-xl max-w-sm animate-bounce font-medium">{videoState.error} <button onClick={() => setVideoState(p => ({...p, error: null}))} className="ml-2 underline text-white/80 hover:text-white">Đóng</button></div>}
         </div>
     );
