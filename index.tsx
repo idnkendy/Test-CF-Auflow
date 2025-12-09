@@ -3,30 +3,41 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// --- Fix for Google Translate causing React crashes ---
+// --- Fix for Google Translate causing React crashes (Robust Version) ---
 if (typeof Node === 'function' && Node.prototype) {
   const originalRemoveChild = Node.prototype.removeChild;
   // @ts-ignore
   Node.prototype.removeChild = function <T extends Node>(child: T): T {
-    if (child.parentNode !== this) {
-      if (console) {
-        // console.warn('Cannot remove a child from a different parent. This often happens due to Google Translate interference. Ignoring.');
+    try {
+      if (child.parentNode !== this) {
+        if (console && console.debug) {
+          console.debug('Google Translate Fix: Cannot remove a child from a different parent. Ignoring.');
+        }
+        return child;
       }
+      return originalRemoveChild.call(this, child) as T;
+    } catch (error) {
+      // If it fails (e.g. node not found), we ignore it to prevent app crash
+      console.warn('Google Translate Fix: removeChild threw an error, ignoring.', error);
       return child;
     }
-    return originalRemoveChild.call(this, child) as T;
   };
 
   const originalInsertBefore = Node.prototype.insertBefore;
   // @ts-ignore
   Node.prototype.insertBefore = function <T extends Node>(newNode: T, referenceNode: Node | null): T {
-    if (referenceNode && referenceNode.parentNode !== this) {
-      if (console) {
-        // console.warn('Cannot insert before a reference node from a different parent. Appending to end instead.');
+    try {
+      if (referenceNode && referenceNode.parentNode !== this) {
+        if (console && console.debug) {
+          console.debug('Google Translate Fix: Cannot insert before a reference node from a different parent. Appending instead.');
+        }
+        return this.appendChild(newNode) as T;
       }
-      return this.appendChild(newNode) as T;
+      return originalInsertBefore.call(this, newNode, referenceNode) as T;
+    } catch (error) {
+      console.warn('Google Translate Fix: insertBefore threw an error, ignoring.', error);
+      return newNode;
     }
-    return originalInsertBefore.call(this, newNode, referenceNode) as T;
   };
 }
 // -----------------------------------------------------
