@@ -26,6 +26,7 @@ interface VideoPageProps {
     onOpenProfile: () => void;
     onToggleNav: () => void;
     onDeductCredits: (amount: number, description: string) => Promise<string>;
+    onRefreshCredits: () => Promise<void>;
 }
 
 // --- HELPER COMPONENT FOR ASPECT RATIO (Moved outside for stability) ---
@@ -593,12 +594,18 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
         } catch (err: any) {
             const rawMsg = err.message || "";
-            const friendlyMsg = mapFriendlyErrorMessage(rawMsg);
+            let friendlyMsg = mapFriendlyErrorMessage(rawMsg);
             
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
+                await props.onRefreshCredits(); // Refresh UI
+                friendlyMsg += " (Credits đã được hoàn trả)";
+            }
+
             setVideoState(prev => ({ ...prev, error: friendlyMsg, contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, isGeneratingVideo: false } : i) }));
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video`);
         }
     };
 
@@ -694,12 +701,18 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
         } catch (err: any) {
             const rawMsg = err.message || "";
-            const friendlyMsg = mapFriendlyErrorMessage(rawMsg);
+            let friendlyMsg = mapFriendlyErrorMessage(rawMsg);
             
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
+                await props.onRefreshCredits(); // Refresh UI
+                friendlyMsg += " (Credits đã được hoàn trả)";
+            }
+
             setVideoState(prev => ({ ...prev, error: friendlyMsg }));
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video`);
         } finally {
             setIsSingleGenerating(false);
         }
@@ -943,7 +956,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                         <div className="flex justify-between items-center mb-3">
                             <h3 className="text-gray-900 dark:text-white font-bold text-base flex items-center gap-2">
                                 <span className="w-6 h-6 rounded-full bg-[#7f13ec]/20 text-[#7f13ec] flex items-center justify-center text-xs">1</span>
-                                <span>Tải ảnh bối cảnh</span>
+                                Tải ảnh bối cảnh
                             </h3>
                         </div>
                         <div className="rounded-xl bg-gray-50 dark:bg-[#121212]/50 hover:border-[#7f13ec]/50 transition-colors h-[380px] flex flex-col mb-2">
@@ -970,7 +983,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                         <div className="flex justify-between items-center">
                             <h3 className="text-gray-900 dark:text-white font-bold text-base flex items-center gap-2">
                                 <span className="material-symbols-outlined text-[#7f13ec] notranslate">image</span>
-                                <span>Tạo video từ ảnh</span>
+                                Tạo video từ ảnh
                             </h3>
                         </div>
                         <div className="flex-1 overflow-y-auto pr-2 space-y-4">
@@ -988,17 +1001,24 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 />
                             </div>
                         </div>
+                        
+                        <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400 px-1 mb-1">
+                            <span>Chi phí: <b className="text-text-primary dark:text-white">5 Credits</b></span>
+                            <span>Ví: <b className={`${(props.userStatus?.credits || 0) < 5 ? 'text-red-500' : 'text-[#7f13ec]'}`}>{props.userStatus?.credits || 0}</b></span>
+                        </div>
+
                         <div className="flex gap-3 mt-auto h-12">
                             <div className="w-[130px] h-full">
                                 <AspectRatioSelector value={videoState.aspectRatio} onChange={handleAspectRatioChange} />
                             </div>
                             <button
                                 onClick={handleSingleGeneration}
-                                disabled={!singleSourceImage || !singlePrompt || isSingleGenerating}
-                                className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 h-full"
+                                disabled={true} /* Disabled as requested */
+                                className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 h-full cursor-not-allowed"
+                                title="Tính năng đang bảo trì"
                             >
                                 {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined notranslate">movie_creation</span>}
-                                <span className="whitespace-nowrap">{isSingleGenerating ? 'Đang tạo...' : 'Tạo Video'}</span>
+                                <span className="whitespace-nowrap">{isSingleGenerating ? 'Đang tạo...' : 'Tạo Video (Bảo trì)'}</span>
                             </button>
                         </div>
                     </div>
@@ -1131,7 +1151,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                                             className="flex items-center justify-center gap-1 py-2 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] text-text-primary dark:text-white rounded-lg text-xs font-bold transition-all border border-border-color dark:border-[#302839]"
                                                                         >
                                                                             <span className="material-symbols-outlined text-sm notranslate">refresh</span>
-                                                                            <span>Tạo lại</span>
+                                                                            <span>Tạo lại (5)</span>
                                                                         </button>
                                                                         <button 
                                                                             onClick={() => handleDownloadSingle(item.videoUrl!, idx)}
@@ -1165,7 +1185,10 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                                     />
                                                                     <div className="mt-auto">
                                                                         <button onClick={() => handleGenerateClip(item)} disabled={item.isGeneratingVideo} className="w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] text-white rounded-lg text-sm font-bold transition-all shadow-md flex items-center justify-center">
-                                                                            <span>{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</span>
+                                                                            <div className="flex items-center gap-1">
+                                                                                <span>{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</span>
+                                                                                {!item.isGeneratingVideo && <span className="text-[10px] opacity-80 font-normal bg-black/20 px-1.5 py-0.5 rounded">(5 Credits)</span>}
+                                                                            </div>
                                                                         </button>
                                                                     </div>
                                                                 </div>

@@ -500,6 +500,7 @@ const App: React.FC = () => {
               onOpenProfile={handleOpenProfile}
               onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
               onDeductCredits={handleDeductCredits}
+              onRefreshCredits={fetchUserStatus}
           />
       );
   }
