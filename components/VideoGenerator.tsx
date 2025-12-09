@@ -457,16 +457,16 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                                         Tải xuống Video
                                     </button>
                                     
-                                    {/* Upscale Button - Temporarily Disabled */}
+                                    {/* Upscale Button */}
                                     {currentMediaId && !upscaledVideoUrl && (
                                         <button 
-                                            onClick={() => {}} // Disabled action
-                                            disabled={true} // Hard disabled as requested
-                                            className="flex-1 bg-gray-400 dark:bg-gray-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
+                                            onClick={handleUpscale} 
+                                            disabled={true}
+                                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-semibold py-3 px-4 rounded-lg transition-colors flex items-center justify-center gap-2 opacity-50 cursor-not-allowed"
                                             title="Tính năng đang bảo trì"
                                         >
-                                            <span className="material-symbols-outlined">engineering</span>
-                                            Đang bảo trì
+                                            {isUpscaling ? <Spinner /> : <span className="material-symbols-outlined">hd</span>}
+                                            {isUpscaling ? 'Đang Upscale...' : 'Tăng độ phân giải (Bảo trì)'}
                                         </button>
                                     )}
                                  </div>

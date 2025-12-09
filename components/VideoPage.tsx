@@ -159,7 +159,7 @@ const mapFriendlyErrorMessage = (errorMsg: string): string => {
 
 // --- MAINTENANCE COMPONENT ---
 const MaintenanceView = ({ title }: { title: string }) => (
-    <div className="bg-surface dark:bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#302839] p-5 shadow-lg flex flex-col gap-6 h-full overflow-hidden items-center justify-center text-center animate-fade-in">
+    <div className="bg-white/80 dark:bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#302839] p-5 shadow-lg flex flex-col gap-6 h-full overflow-hidden items-center justify-center text-center animate-fade-in">
         <div className="w-20 h-20 bg-yellow-500/10 rounded-full flex items-center justify-center mb-2 shadow-inner border border-yellow-500/20">
             <span className="material-symbols-outlined text-yellow-500 text-4xl">engineering</span>
         </div>
@@ -1092,7 +1092,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                             // DISPLAY VIDEO + OPTIONS
                                                             <div className="flex flex-col h-full">
                                                                 <div className={`bg-black relative group ${videoState.aspectRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video'}`}>
-                                                                    {/* FIX: Ensure proper object-fit for videos in list */}
                                                                     <video src={item.videoUrl} className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'}`} controls />
                                                                     {item.isGeneratingVideo && (
                                                                         <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20 backdrop-blur-sm">
@@ -1148,7 +1147,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                             // DISPLAY IMAGE + GENERATE FORM
                                                             <>
                                                                 <div className={`bg-black relative group ${videoState.aspectRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video'}`}>
-                                                                    {/* FIX: Ensure proper object-fit for source images in list */}
                                                                     <img src={item.file.objectURL} alt="Source" className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'} opacity-80`} />
                                                                     {item.isGeneratingVideo && (
                                                                         <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20 backdrop-blur-sm">
@@ -1256,7 +1254,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                             className={`relative h-14 bg-black rounded cursor-grab active:cursor-grabbing overflow-hidden border-2 transition-all group flex-shrink-0 ${currentPlayingIndex === index && isPlayingAll ? 'border-green-500' : 'border-gray-300 dark:border-[#302839] hover:border-gray-500'}`}
                                                         >
                                                             <div className="absolute top-1 left-1 z-10 bg-black/60 px-1.5 py-0.5 rounded text-[8px] text-white">Cảnh {index + 1}</div>
-                                                            {/* FIX: Ensure proper object-fit for timeline thumbnails */}
                                                             <video src={item.videoUrl} className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'} pointer-events-none`} />
                                                             <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-black/40 rounded p-0.5">
                                                                 <button onClick={(e) => {e.stopPropagation(); handleDownloadSingle(item.videoUrl!, index)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Tải xuống"><span className="material-symbols-outlined text-[10px]">download</span></button>
