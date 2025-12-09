@@ -457,7 +457,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                                         Tải xuống Video
                                     </button>
                                     
-                                    {/* Upscale Button */}
+                                    {/* Upscale Button - DISABLED AS REQUESTED */}
                                     {currentMediaId && !upscaledVideoUrl && (
                                         <button 
                                             onClick={handleUpscale} 

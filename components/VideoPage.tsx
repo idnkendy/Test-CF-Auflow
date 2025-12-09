@@ -28,6 +28,109 @@ interface VideoPageProps {
     onDeductCredits: (amount: number, description: string) => Promise<string>;
 }
 
+// --- HELPER COMPONENT FOR ASPECT RATIO (Moved outside for stability) ---
+const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'default', onChange: (val: '16:9' | '9:16' | 'default') => void }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const dropdownRef = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const getIcon = (val: string) => {
+        switch(val) {
+            case '16:9': return 'crop_landscape';
+            case '9:16': return 'crop_portrait';
+            case 'default': return 'crop_free';
+            default: return 'aspect_ratio';
+        }
+    }
+
+    const getLabel = (val: string) => {
+            switch(val) {
+            case '16:9': return '16:9';
+            case '9:16': return '9:16';
+            case 'default': return 'Mặc định';
+            default: return val;
+        }
+    }
+
+    return (
+        <div className="relative h-full" ref={dropdownRef}>
+            <button
+                onClick={() => setIsOpen(!isOpen)}
+                className="h-full w-full px-3 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] border border-gray-300 dark:border-[#302839] rounded-xl flex items-center gap-2 text-gray-800 dark:text-white font-medium transition-all shadow-sm whitespace-nowrap justify-between"
+                title="Chọn tỷ lệ khung hình"
+            >
+                <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-xl text-[#7f13ec] notranslate">
+                        {getIcon(value)}
+                    </span>
+                    <span>{getLabel(value)}</span>
+                </div>
+                <span className={`material-symbols-outlined text-gray-500 dark:text-gray-400 text-sm transition-transform duration-200 notranslate ${isOpen ? 'rotate-180' : ''}`}>
+                    expand_less
+                </span>
+            </button>
+
+            {isOpen && (
+                <div className="absolute bottom-full left-0 mb-2 w-full min-w-[140px] bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#302839] rounded-xl shadow-xl overflow-hidden z-50 p-1 animate-fade-in">
+                    {/* Option: Default (First) */}
+                    <button
+                        onClick={() => { onChange('default'); setIsOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                            value === 'default' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2A2A2A]'
+                        }`}
+                    >
+                        <span className="material-symbols-outlined text-lg notranslate">crop_free</span>
+                        <div className="flex flex-col items-start text-left">
+                            <span className="font-bold">Mặc định</span>
+                            <span className="text-[10px] opacity-70">Gốc</span>
+                        </div>
+                        {value === 'default' && <span className="material-symbols-outlined text-sm ml-auto notranslate">check</span>}
+                    </button>
+                    
+                    {/* Option: 16:9 */}
+                    <button
+                        onClick={() => { onChange('16:9'); setIsOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                            value === '16:9' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2A2A2A]'
+                        }`}
+                    >
+                        <span className="material-symbols-outlined text-lg notranslate">crop_landscape</span>
+                        <div className="flex flex-col items-start text-left">
+                            <span className="font-bold">16:9</span>
+                            <span className="text-[10px] opacity-70">Ngang</span>
+                        </div>
+                        {value === '16:9' && <span className="material-symbols-outlined text-sm ml-auto notranslate">check</span>}
+                    </button>
+
+                    {/* Option: 9:16 */}
+                    <button
+                        onClick={() => { onChange('9:16'); setIsOpen(false); }}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
+                            value === '9:16' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2A2A2A]'
+                        }`}
+                    >
+                        <span className="material-symbols-outlined text-lg notranslate">crop_portrait</span>
+                        <div className="flex flex-col items-start text-left">
+                            <span className="font-bold">9:16</span>
+                            <span className="text-[10px] opacity-70">Dọc</span>
+                        </div>
+                        {value === '9:16' && <span className="material-symbols-outlined text-sm ml-auto notranslate">check</span>}
+                    </button>
+                </div>
+            )}
+        </div>
+    );
+};
+
 // --- CONFIRMATION MODAL COMPONENT ---
 interface ConfirmationModalProps {
     isOpen: boolean;
@@ -48,7 +151,7 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
             >
                 <div className="flex flex-col items-center text-center gap-4">
                     <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/30 flex items-center justify-center text-red-600 dark:text-red-500 mb-2">
-                        <span className="material-symbols-outlined text-2xl">delete</span>
+                        <span className="material-symbols-outlined notranslate text-2xl">delete</span>
                     </div>
                     <h3 className="text-xl font-bold text-gray-900 dark:text-white">{title}</h3>
                     <p className="text-gray-600 dark:text-gray-400 text-sm leading-relaxed">{message}</p>
@@ -58,13 +161,13 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
                             onClick={onClose}
                             className="flex-1 py-2.5 px-4 rounded-xl bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-300 font-medium transition-colors border border-gray-300 dark:border-gray-700"
                         >
-                            Hủy bỏ
+                            <span>Hủy bỏ</span>
                         </button>
                         <button 
                             onClick={onConfirm}
                             className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-lg shadow-red-900/20"
                         >
-                            Xóa ngay
+                            <span>Xóa ngay</span>
                         </button>
                     </div>
                 </div>
@@ -77,35 +180,35 @@ const sidebarItems = [
     { 
         id: 'arch-film', 
         label: 'Phim kiến trúc', 
-        icon: <span className="material-symbols-outlined">movie_filter</span>,
+        icon: <span className="material-symbols-outlined notranslate">movie_filter</span>,
         prompt: 'Cinematic architectural film, establishing shot, photorealistic, 4k, slow camera movement capturing the building details and atmosphere.',
         isMaintenance: false
     },
     { 
         id: 'img-to-video', 
         label: 'Tạo video từ ảnh', 
-        icon: <span className="material-symbols-outlined">image</span>,
+        icon: <span className="material-symbols-outlined notranslate">image</span>,
         prompt: 'High quality video generated from image, smooth motion, 4k, cinematic lighting.',
         isMaintenance: false
     },
     { 
         id: 'text-to-video', 
         label: 'Tạo video từ text', 
-        icon: <span className="material-symbols-outlined">description</span>,
+        icon: <span className="material-symbols-outlined notranslate">description</span>,
         prompt: 'A high quality video of modern architecture, cinematic view, 4k.',
         isMaintenance: true
     },
     { 
         id: 'transition', 
         label: 'Video chuyển cảnh', 
-        icon: <span className="material-symbols-outlined">transition_push</span>,
+        icon: <span className="material-symbols-outlined notranslate">transition_push</span>,
         prompt: 'Smooth morphing transition, changing lighting from day to night, timelapse effect.',
         isMaintenance: true
     },
     {
         id: 'extend-video', 
         label: 'Mở rộng video',
-        icon: <span className="material-symbols-outlined">playlist_add</span>,
+        icon: <span className="material-symbols-outlined notranslate">playlist_add</span>,
         prompt: 'Nối tiếp cảnh quay hiện tại, giữ nguyên phong cách và ánh sáng, camera di chuyển mượt mà.',
         isMaintenance: true
     }
@@ -161,7 +264,7 @@ const mapFriendlyErrorMessage = (errorMsg: string): string => {
 const MaintenanceView = ({ title }: { title: string }) => (
     <div className="bg-white/80 dark:bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#302839] p-5 shadow-lg flex flex-col gap-6 h-full overflow-hidden items-center justify-center text-center animate-fade-in">
         <div className="w-20 h-20 bg-yellow-500/10 rounded-full flex items-center justify-center mb-2 shadow-inner border border-yellow-500/20">
-            <span className="material-symbols-outlined text-yellow-500 text-4xl">engineering</span>
+            <span className="material-symbols-outlined notranslate text-yellow-500 text-4xl">engineering</span>
         </div>
         <div>
             <h3 className="text-gray-900 dark:text-white font-bold text-2xl mb-3">{title}</h3>
@@ -831,109 +934,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
     const activeMainVideoUrl = isPlayingAll ? timelineItems[currentPlayingIndex]?.videoUrl : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl);
 
-    // --- HELPER COMPONENT FOR ASPECT RATIO ---
-    const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'default', onChange: (val: '16:9' | '9:16' | 'default') => void }) => {
-        const [isOpen, setIsOpen] = useState(false);
-        const dropdownRef = useRef<HTMLDivElement>(null);
-
-        useEffect(() => {
-            const handleClickOutside = (event: MouseEvent) => {
-                if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-                    setIsOpen(false);
-                }
-            };
-            document.addEventListener('mousedown', handleClickOutside);
-            return () => document.removeEventListener('mousedown', handleClickOutside);
-        }, []);
-
-        const getIcon = (val: string) => {
-            switch(val) {
-                case '16:9': return 'crop_landscape';
-                case '9:16': return 'crop_portrait';
-                case 'default': return 'crop_free';
-                default: return 'aspect_ratio';
-            }
-        }
-
-        const getLabel = (val: string) => {
-             switch(val) {
-                case '16:9': return '16:9';
-                case '9:16': return '9:16';
-                case 'default': return 'Mặc định';
-                default: return val;
-            }
-        }
-
-        return (
-            <div className="relative" ref={dropdownRef}>
-                <button
-                    onClick={() => setIsOpen(!isOpen)}
-                    className="h-full px-3 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] border border-gray-300 dark:border-[#302839] rounded-xl flex items-center gap-2 text-gray-800 dark:text-white font-medium transition-all shadow-sm whitespace-nowrap min-w-[120px] justify-between"
-                    title="Chọn tỷ lệ khung hình"
-                >
-                    <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-xl text-[#7f13ec]">
-                            {getIcon(value)}
-                        </span>
-                        <span>{getLabel(value)}</span>
-                    </div>
-                    <span className={`material-symbols-outlined text-gray-500 dark:text-gray-400 text-sm transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>
-                        expand_less
-                    </span>
-                </button>
-
-                {isOpen && (
-                    <div className="absolute bottom-full left-0 mb-2 w-full min-w-[140px] bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#302839] rounded-xl shadow-xl overflow-hidden z-50 p-1 animate-fade-in">
-                        {/* Option: Default (First) */}
-                        <button
-                            onClick={() => { onChange('default'); setIsOpen(false); }}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                                value === 'default' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2A2A2A]'
-                            }`}
-                        >
-                            <span className="material-symbols-outlined text-lg">crop_free</span>
-                            <div className="flex flex-col items-start">
-                                <span className="font-bold">Mặc định</span>
-                                <span className="text-[10px] opacity-70">Gốc</span>
-                            </div>
-                            {value === 'default' && <span className="material-symbols-outlined text-sm ml-auto">check</span>}
-                        </button>
-                        
-                        {/* Option: 16:9 */}
-                        <button
-                            onClick={() => { onChange('16:9'); setIsOpen(false); }}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                                value === '16:9' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2A2A2A]'
-                            }`}
-                        >
-                            <span className="material-symbols-outlined text-lg">crop_landscape</span>
-                            <div className="flex flex-col items-start">
-                                <span className="font-bold">16:9</span>
-                                <span className="text-[10px] opacity-70">Ngang</span>
-                            </div>
-                            {value === '16:9' && <span className="material-symbols-outlined text-sm ml-auto">check</span>}
-                        </button>
-
-                        {/* Option: 9:16 */}
-                        <button
-                            onClick={() => { onChange('9:16'); setIsOpen(false); }}
-                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                                value === '9:16' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2A2A2A]'
-                            }`}
-                        >
-                            <span className="material-symbols-outlined text-lg">crop_portrait</span>
-                            <div className="flex flex-col items-start">
-                                <span className="font-bold">9:16</span>
-                                <span className="text-[10px] opacity-70">Dọc</span>
-                            </div>
-                            {value === '9:16' && <span className="material-symbols-outlined text-sm ml-auto">check</span>}
-                        </button>
-                    </div>
-                )}
-            </div>
-        );
-    };
-
     // --- RENDER CONTENT SECTIONS ---
     const renderContentInput = () => {
         switch (activeItem) {
@@ -943,14 +943,14 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                         <div className="flex justify-between items-center mb-3">
                             <h3 className="text-gray-900 dark:text-white font-bold text-base flex items-center gap-2">
                                 <span className="w-6 h-6 rounded-full bg-[#7f13ec]/20 text-[#7f13ec] flex items-center justify-center text-xs">1</span>
-                                Tải ảnh bối cảnh
+                                <span>Tải ảnh bối cảnh</span>
                             </h3>
                         </div>
                         <div className="rounded-xl bg-gray-50 dark:bg-[#121212]/50 hover:border-[#7f13ec]/50 transition-colors h-[380px] flex flex-col mb-2">
                             <MultiImageUpload onFilesChange={handleFilesChange} maxFiles={10} className="h-full" />
                         </div>
-                        <div className="flex gap-3">
-                            <div className="w-[130px]">
+                        <div className="flex gap-3 h-12">
+                            <div className="w-[130px] h-full">
                                 <AspectRatioSelector value={videoState.aspectRatio} onChange={handleAspectRatioChange} />
                             </div>
                             <button
@@ -958,8 +958,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 disabled={creationItems.length === 0 || isGeneratingPrompts}
                                 className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 h-full"
                             >
-                                {isGeneratingPrompts ? <Spinner /> : <span className="material-symbols-outlined">auto_fix_high</span>}
-                                {isGeneratingPrompts ? 'Đang phân tích...' : 'Tạo Bối Cảnh'}
+                                {isGeneratingPrompts ? <Spinner /> : <span className="material-symbols-outlined notranslate">auto_fix_high</span>}
+                                <span className="whitespace-nowrap">{isGeneratingPrompts ? 'Đang phân tích...' : 'Tạo Bối Cảnh'}</span>
                             </button>
                         </div>
                     </div>
@@ -969,8 +969,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                     <div className="bg-white/80 dark:bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#302839] p-5 shadow-lg flex flex-col gap-4 h-full overflow-hidden">
                         <div className="flex justify-between items-center">
                             <h3 className="text-gray-900 dark:text-white font-bold text-base flex items-center gap-2">
-                                <span className="material-symbols-outlined text-[#7f13ec]">image</span>
-                                Tạo video từ ảnh
+                                <span className="material-symbols-outlined text-[#7f13ec] notranslate">image</span>
+                                <span>Tạo video từ ảnh</span>
                             </h3>
                         </div>
                         <div className="flex-1 overflow-y-auto pr-2 space-y-4">
@@ -988,17 +988,17 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 />
                             </div>
                         </div>
-                        <div className="flex gap-3 mt-auto">
-                            <div className="w-[130px]">
+                        <div className="flex gap-3 mt-auto h-12">
+                            <div className="w-[130px] h-full">
                                 <AspectRatioSelector value={videoState.aspectRatio} onChange={handleAspectRatioChange} />
                             </div>
                             <button
                                 onClick={handleSingleGeneration}
                                 disabled={!singleSourceImage || !singlePrompt || isSingleGenerating}
-                                className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2"
+                                className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 h-full"
                             >
-                                {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined">movie_creation</span>}
-                                {isSingleGenerating ? 'Đang tạo...' : 'Tạo Video'}
+                                {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined notranslate">movie_creation</span>}
+                                <span className="whitespace-nowrap">{isSingleGenerating ? 'Đang tạo...' : 'Tạo Video'}</span>
                             </button>
                         </div>
                     </div>
@@ -1028,7 +1028,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                     <div className="p-2 md:p-4 flex flex-col gap-2">
                         <div className="flex items-center gap-1 mb-6 px-2">
                             <button onClick={props.onGoHome} className="text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white flex items-center gap-2 transition-colors flex-1" title="Trang chủ">
-                                <span className="material-symbols-outlined">arrow_back</span>
+                                <span className="material-symbols-outlined notranslate">arrow_back</span>
                                 <span className="font-semibold text-sm hidden md:block">Trang chủ</span>
                             </button>
                         </div>
@@ -1039,7 +1039,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                     onClick={() => handleSidebarClick(item)}
                                     className={`w-full flex items-center gap-3 px-2 md:px-4 py-3 rounded-xl transition-all duration-200 group relative ${activeItem === item.id ? 'bg-[#7f13ec] text-white shadow-lg shadow-purple-900/20' : 'text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#2A2A2A] hover:text-text-primary dark:hover:text-white'}`}
                                 >
-                                    <span className={`material-symbols-outlined ${activeItem === item.id ? 'text-white' : 'text-gray-500 group-hover:text-[#7f13ec]'}`}>{item.icon}</span>
+                                    <span className={`material-symbols-outlined notranslate ${activeItem === item.id ? 'text-white' : 'text-gray-500 group-hover:text-[#7f13ec]'}`}>{item.icon}</span>
                                     <span className="text-sm font-medium hidden md:block">{item.label}</span>
                                     {item.isMaintenance && (
                                         <span className="absolute top-2 right-2 w-2 h-2 bg-yellow-500 rounded-full animate-pulse" title="Bảo trì"></span>
@@ -1085,7 +1085,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                             title="Xóa mục này"
                                                             type="button"
                                                         >
-                                                            <span className="material-symbols-outlined text-sm font-bold">close</span>
+                                                            <span className="material-symbols-outlined text-sm font-bold notranslate">close</span>
                                                         </button>
 
                                                         {item.videoUrl ? (
@@ -1115,30 +1115,30 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                                             disabled={item.isInTimeline}
                                                                             className="flex items-center justify-center gap-1 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 dark:disabled:bg-gray-700 disabled:text-white text-white rounded-lg text-xs font-bold transition-all"
                                                                         >
-                                                                            <span className="material-symbols-outlined text-sm">add_to_queue</span>
-                                                                            {item.isInTimeline ? 'Đã thêm' : 'Thêm Timeline'}
+                                                                            <span className="material-symbols-outlined text-sm notranslate">add_to_queue</span>
+                                                                            <span>{item.isInTimeline ? 'Đã thêm' : 'Thêm Timeline'}</span>
                                                                         </button>
                                                                         <button 
                                                                             onClick={() => handleExtendClip(item)} 
                                                                             className="flex items-center justify-center gap-1 py-2 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] text-text-primary dark:text-white rounded-lg text-xs font-bold transition-all border border-border-color dark:border-[#302839]"
                                                                         >
-                                                                            <span className="material-symbols-outlined text-sm">playlist_add</span>
-                                                                            Nối tiếp
+                                                                            <span className="material-symbols-outlined text-sm notranslate">playlist_add</span>
+                                                                            <span>Nối tiếp</span>
                                                                         </button>
                                                                         <button 
                                                                             onClick={() => handleGenerateClip(item)} 
                                                                             disabled={item.isGeneratingVideo}
                                                                             className="flex items-center justify-center gap-1 py-2 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] text-text-primary dark:text-white rounded-lg text-xs font-bold transition-all border border-border-color dark:border-[#302839]"
                                                                         >
-                                                                            <span className="material-symbols-outlined text-sm">refresh</span>
-                                                                            Tạo lại
+                                                                            <span className="material-symbols-outlined text-sm notranslate">refresh</span>
+                                                                            <span>Tạo lại</span>
                                                                         </button>
                                                                         <button 
                                                                             onClick={() => handleDownloadSingle(item.videoUrl!, idx)}
                                                                             className="flex items-center justify-center gap-1 py-2 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] text-text-primary dark:text-white rounded-lg text-xs font-bold transition-all border border-border-color dark:border-[#302839]"
                                                                         >
-                                                                            <span className="material-symbols-outlined text-sm">download</span>
-                                                                            Tải về
+                                                                            <span className="material-symbols-outlined text-sm notranslate">download</span>
+                                                                            <span>Tải về</span>
                                                                         </button>
                                                                     </div>
                                                                 </div>
@@ -1164,7 +1164,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                                         disabled={item.isGeneratingVideo}
                                                                     />
                                                                     <div className="mt-auto">
-                                                                        <button onClick={() => handleGenerateClip(item)} disabled={item.isGeneratingVideo} className="w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] text-white rounded-lg text-sm font-bold transition-all shadow-md">{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</button>
+                                                                        <button onClick={() => handleGenerateClip(item)} disabled={item.isGeneratingVideo} className="w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] text-white rounded-lg text-sm font-bold transition-all shadow-md flex items-center justify-center">
+                                                                            <span>{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</span>
+                                                                        </button>
                                                                     </div>
                                                                 </div>
                                                             </>
@@ -1173,7 +1175,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                 ))}
                                                 {creationItems.length === 0 && (
                                                     <div className="col-span-full h-full flex flex-col items-center justify-center opacity-30 text-center p-8">
-                                                        <span className="material-symbols-outlined text-6xl mb-2 text-text-secondary dark:text-gray-500">video_library</span>
+                                                        <span className="material-symbols-outlined text-6xl mb-2 text-text-secondary dark:text-gray-500 notranslate">video_library</span>
                                                         <p className="text-sm text-text-secondary dark:text-gray-400">Thêm ảnh bối cảnh ở cột bên trái để bắt đầu tạo clip.</p>
                                                     </div>
                                                 )}
@@ -1185,26 +1187,26 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                     <div className="bg-surface dark:bg-[#191919] rounded-2xl border border-border-color dark:border-[#302839] p-0 shadow-lg flex flex-col flex-shrink-0 min-h-[600px] overflow-hidden">
                                         <div className="px-4 py-3 border-b border-border-color dark:border-[#302839] flex items-center justify-between bg-surface dark:bg-[#1E1E1E]">
                                             <h3 className="text-text-primary dark:text-white font-bold text-base flex items-center gap-2">
-                                                <span className="material-symbols-outlined text-[#7f13ec]">view_timeline</span>
+                                                <span className="material-symbols-outlined text-[#7f13ec] notranslate">view_timeline</span>
                                                 Timeline & Kết quả
                                             </h3>
                                             <div className="flex gap-2 items-center">
                                                 <input type="file" ref={videoInputRef} className="hidden" accept="video/mp4,video/quicktime" onChange={(e) => handleVideoUpload(e)} />
-                                                <button onClick={() => videoInputRef.current?.click()} className="flex items-center gap-1 bg-gray-200 dark:bg-[#2A2A2A] hover:bg-gray-300 dark:hover:bg-[#353535] text-text-primary dark:text-gray-300 text-xs px-3 py-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors"><span className="material-symbols-outlined text-sm">upload</span> Nhập</button>
-                                                <button onClick={() => handleDownloadAll()} className="flex items-center gap-1 bg-gray-200 dark:bg-[#2A2A2A] hover:bg-gray-300 dark:hover:bg-[#353535] text-text-primary dark:text-gray-300 text-xs px-3 py-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors"><span className="material-symbols-outlined text-sm">download_for_offline</span> Tải tất cả</button>
+                                                <button onClick={() => videoInputRef.current?.click()} className="flex items-center gap-1 bg-gray-200 dark:bg-[#2A2A2A] hover:bg-gray-300 dark:hover:bg-[#353535] text-text-primary dark:text-gray-300 text-xs px-3 py-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors"><span className="material-symbols-outlined text-sm notranslate">upload</span> <span>Nhập</span></button>
+                                                <button onClick={() => handleDownloadAll()} className="flex items-center gap-1 bg-gray-200 dark:bg-[#2A2A2A] hover:bg-gray-300 dark:hover:bg-[#353535] text-text-primary dark:text-gray-300 text-xs px-3 py-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors"><span className="material-symbols-outlined text-sm notranslate">download_for_offline</span> <span>Tải tất cả</span></button>
                                                 
                                                 <div className="w-[1px] h-6 bg-gray-300 dark:bg-[#302839] mx-1"></div>
                                                 
                                                 {/* Audio Controls */}
                                                 <button onClick={() => setIsVideoMuted(!isVideoMuted)} className={`p-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors ${isVideoMuted ? 'bg-red-100 dark:bg-red-500/20 text-red-500 dark:text-red-400' : 'bg-gray-200 dark:bg-[#2A2A2A] text-text-secondary dark:text-gray-300'}`} title={isVideoMuted ? "Bật âm thanh video" : "Tắt âm thanh video"}>
-                                                    <span className="material-symbols-outlined text-sm">{isVideoMuted ? 'videocam_off' : 'videocam'}</span>
+                                                    <span className="material-symbols-outlined text-sm notranslate">{isVideoMuted ? 'videocam_off' : 'videocam'}</span>
                                                 </button>
                                                 <button onClick={() => setIsMusicMuted(!isMusicMuted)} className={`p-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors ${isMusicMuted ? 'bg-red-100 dark:bg-red-500/20 text-red-500 dark:text-red-400' : 'bg-gray-200 dark:bg-[#2A2A2A] text-text-secondary dark:text-gray-300'}`} title={isMusicMuted ? "Bật nhạc nền" : "Tắt nhạc nền"}>
-                                                    <span className="material-symbols-outlined text-sm">{isMusicMuted ? 'music_off' : 'music_note'}</span>
+                                                    <span className="material-symbols-outlined text-sm notranslate">{isMusicMuted ? 'music_off' : 'music_note'}</span>
                                                 </button>
 
-                                                <button onClick={() => setIsPlayingAll(!isPlayingAll)} className={`flex items-center gap-1 text-white text-xs px-3 py-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors ml-2 ${isPlayingAll ? 'bg-green-600' : 'bg-gray-400 dark:bg-[#2A2A2A] text-white dark:text-gray-300'}`}><span className="material-symbols-outlined text-sm">{isPlayingAll ? 'stop' : 'play_arrow'}</span> {isPlayingAll ? 'Dừng' : 'Phát tất cả'}</button>
-                                                <button onClick={handleMergeAndExport} disabled={isExporting} className="flex items-center gap-1 bg-[#7f13ec] hover:bg-[#690fca] text-white text-xs px-3 py-1.5 rounded-lg transition-colors ml-2 shadow-lg disabled:opacity-50">{isExporting ? `Đang xuất ${Math.round(exportProgress)}%` : 'Ghép & Xuất Video'}</button>
+                                                <button onClick={() => setIsPlayingAll(!isPlayingAll)} className={`flex items-center gap-1 text-white text-xs px-3 py-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors ml-2 ${isPlayingAll ? 'bg-green-600' : 'bg-gray-400 dark:bg-[#2A2A2A] text-white dark:text-gray-300'}`}><span className="material-symbols-outlined text-sm notranslate">{isPlayingAll ? 'stop' : 'play_arrow'}</span> <span>{isPlayingAll ? 'Dừng' : 'Phát tất cả'}</span></button>
+                                                <button onClick={handleMergeAndExport} disabled={isExporting} className="flex items-center gap-1 bg-[#7f13ec] hover:bg-[#690fca] text-white text-xs px-3 py-1.5 rounded-lg transition-colors ml-2 shadow-lg disabled:opacity-50"><span>{isExporting ? `Đang xuất ${Math.round(exportProgress)}%` : 'Ghép & Xuất Video'}</span></button>
                                             </div>
                                         </div>
 
@@ -1222,14 +1224,14 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                     />
                                                 ) : (
                                                     <div className="flex flex-col items-center opacity-30">
-                                                        <span className="material-symbols-outlined text-5xl mb-2 text-white">movie</span>
+                                                        <span className="material-symbols-outlined text-5xl mb-2 text-white notranslate">movie</span>
                                                         <span className="text-gray-300 text-xs">Chưa có video nào.</span>
                                                     </div>
                                                 )}
                                                 {audioUrl && <audio ref={audioRef} src={audioUrl} className="hidden" />}
                                             </div>
                                             <div className="w-full bg-white dark:bg-[#1A1A1A] p-3 flex items-center gap-4 border-t border-border-color dark:border-[#302839]">
-                                                <button onClick={togglePlayPause} className="text-text-primary dark:text-white hover:text-[#7f13ec]"><span className="material-symbols-outlined">{isPlaying ? 'pause' : 'play_arrow'}</span></button>
+                                                <button onClick={togglePlayPause} className="text-text-primary dark:text-white hover:text-[#7f13ec]"><span className="material-symbols-outlined notranslate">{isPlaying ? 'pause' : 'play_arrow'}</span></button>
                                                 <input type="range" min="0" max="100" value={progress} onChange={handleSeek} className="w-full h-1.5 bg-gray-300 dark:bg-gray-600 rounded-lg appearance-none cursor-pointer accent-[#7f13ec]" />
                                             </div>
                                         </div>
@@ -1241,7 +1243,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                 
                                                 {/* Video Track */}
                                                 <div className="flex items-center gap-1 min-w-max h-16 bg-white dark:bg-[#1A1A1A] rounded-lg px-2 border border-border-color dark:border-[#302839]/50 transition-colors duration-300">
-                                                    <div className="w-8 flex justify-center"><span className="material-symbols-outlined text-gray-400 dark:text-gray-500 text-xs">videocam</span></div>
+                                                    <div className="w-8 flex justify-center"><span className="material-symbols-outlined text-gray-400 dark:text-gray-500 text-xs notranslate">videocam</span></div>
                                                     {timelineItems.length > 0 ? timelineItems.map((item, index) => (
                                                         <div 
                                                             key={item.id}
@@ -1256,10 +1258,10 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                             <div className="absolute top-1 left-1 z-10 bg-black/60 px-1.5 py-0.5 rounded text-[8px] text-white">Cảnh {index + 1}</div>
                                                             <video src={item.videoUrl} className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'} pointer-events-none`} />
                                                             <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-black/40 rounded p-0.5">
-                                                                <button onClick={(e) => {e.stopPropagation(); handleDownloadSingle(item.videoUrl!, index)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Tải xuống"><span className="material-symbols-outlined text-[10px]">download</span></button>
-                                                                <button onClick={(e) => {e.stopPropagation(); handleExtendClip(item)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Mở rộng"><span className="material-symbols-outlined text-[10px]">playlist_add</span></button>
+                                                                <button onClick={(e) => {e.stopPropagation(); handleDownloadSingle(item.videoUrl!, index)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Tải xuống"><span className="material-symbols-outlined text-[10px] notranslate">download</span></button>
+                                                                <button onClick={(e) => {e.stopPropagation(); handleExtendClip(item)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Mở rộng"><span className="material-symbols-outlined text-[10px] notranslate">playlist_add</span></button>
                                                                 {/* REMOVE FROM TIMELINE BUTTON */}
-                                                                <button onClick={(e) => {e.stopPropagation(); handleRemoveFromTimeline(item.id)}} className="p-1 bg-black/50 text-white rounded hover:bg-red-600" title="Xóa khỏi Timeline"><span className="material-symbols-outlined text-[10px]">close</span></button>
+                                                                <button onClick={(e) => {e.stopPropagation(); handleRemoveFromTimeline(item.id)}} className="p-1 bg-black/50 text-white rounded hover:bg-red-600" title="Xóa khỏi Timeline"><span className="material-symbols-outlined text-[10px] notranslate">close</span></button>
                                                             </div>
                                                         </div>
                                                     )) : <div className="w-full text-text-secondary dark:text-gray-600 text-xs italic pl-2">Các clip đã thêm vào timeline sẽ xuất hiện ở đây...</div>}
@@ -1267,7 +1269,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
                                                 {/* Audio Track */}
                                                 <div className="flex items-center gap-1 min-w-max h-10 bg-white dark:bg-[#1A1A1A] rounded-lg px-2 border border-border-color dark:border-[#302839]/50 transition-colors duration-300">
-                                                    <div className="w-8 flex justify-center"><span className="material-symbols-outlined text-gray-400 dark:text-gray-500 text-xs">music_note</span></div>
+                                                    <div className="w-8 flex justify-center"><span className="material-symbols-outlined text-gray-400 dark:text-gray-500 text-xs notranslate">music_note</span></div>
                                                     <div className="flex-1 relative h-full flex items-center">
                                                         {audioFile ? (
                                                             <div className="flex-1 bg-green-100 dark:bg-green-900/30 border border-green-200 dark:border-green-700/50 rounded flex items-center px-2 text-[10px] text-green-600 dark:text-green-400 truncate cursor-pointer" onClick={() => setAudioFile(null)}>
@@ -1291,14 +1293,14 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                     {(['text-to-video', 'transition', 'extend-video'].includes(activeItem)) ? (
                                         <div className="flex-1 flex items-center justify-center">
                                             <div className="text-center text-text-secondary dark:text-gray-500">
-                                                <span className="material-symbols-outlined text-6xl mb-4 text-yellow-500/20">engineering</span>
+                                                <span className="material-symbols-outlined text-6xl mb-4 text-yellow-500/20 notranslate">engineering</span>
                                                 <p>Tính năng đang được nâng cấp.</p>
                                             </div>
                                         </div>
                                     ) : (
                                         <>
                                             <h3 className="text-text-primary dark:text-white font-bold text-lg mb-4 flex items-center gap-2">
-                                                <span className="material-symbols-outlined text-[#7f13ec]">movie</span>
+                                                <span className="material-symbols-outlined text-[#7f13ec] notranslate">movie</span>
                                                 Kết quả
                                             </h3>
 
@@ -1318,7 +1320,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                     />
                                                 ) : (
                                                     <div className="flex flex-col items-center opacity-30">
-                                                        <span className="material-symbols-outlined text-6xl mb-2 text-white">video_file</span>
+                                                        <span className="material-symbols-outlined text-6xl mb-2 text-white notranslate">video_file</span>
                                                         <p className="text-gray-300 text-sm">Kết quả sẽ hiển thị ở đây</p>
                                                     </div>
                                                 )}
@@ -1331,16 +1333,16 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                     disabled={isSingleGenerating}
                                                     className="flex-1 py-3 px-6 rounded-xl font-bold transition-all border border-border-color dark:border-[#302839] text-text-secondary dark:text-gray-300 hover:text-text-primary dark:hover:text-white hover:bg-gray-100 dark:hover:bg-[#2A2A2A] hover:border-gray-400 dark:hover:border-gray-500 flex items-center justify-center gap-2 disabled:opacity-50"
                                                 >
-                                                    <span className="material-symbols-outlined">refresh</span>
-                                                    Tạo lại
+                                                    <span className="material-symbols-outlined notranslate">refresh</span>
+                                                    <span>Tạo lại</span>
                                                 </button>
                                                 <button 
                                                     onClick={handleSimpleDownload}
                                                     disabled={!videoState.generatedVideoUrl || isSingleGenerating}
                                                     className="flex-[2] py-3 px-6 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >
-                                                    <span className="material-symbols-outlined">download</span>
-                                                    Tải xuống
+                                                    <span className="material-symbols-outlined notranslate">download</span>
+                                                    <span>Tải xuống</span>
                                                 </button>
                                             </div>
                                         </>
