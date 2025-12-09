@@ -1,4 +1,3 @@
-
 import { FileData } from "../types";
 
 // Change this if your Cloudflare Worker is hosted elsewhere
@@ -15,69 +14,42 @@ const POLL_INTERVAL = 8000; // 8 seconds
 const TIMEOUT_DURATION = 180000; // 3 minutes in ms
 const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL); // ~23 attempts
 
-// Crop and Resize Image (Center Crop to Aspect Ratio, Max 1024px)
+// Helper to get image dimensions
+const getImageDimensions = (fileData: FileData): Promise<{width: number, height: number}> => {
+    return new Promise((resolve) => {
+        const img = new Image();
+        img.src = fileData.objectURL || `data:${fileData.mimeType};base64,${fileData.base64}`;
+        img.onload = () => resolve({ width: img.width, height: img.height });
+        img.onerror = () => resolve({ width: 1024, height: 576 }); // Fallback safe default
+    });
+};
+
+// Crop and Resize Image with Letterbox/Pillarbox support
+// If 16:9 -> Target 1024x576. If Image is vertical, add side black bars.
+// If 9:16 -> Target 576x1024. If Image is horizontal, add top/bottom black bars.
 export const resizeAndCropImage = async (
     fileData: FileData, 
     aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
 ): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
-        // Allow re-cropping from an existing base64/DataURL if that's what we have
         img.src = fileData.objectURL || `data:${fileData.mimeType};base64,${fileData.base64}`;
         
         img.onload = () => {
-            // Determine target dimensions
             let targetWidth, targetHeight;
-            let renderWidth, renderHeight, offsetX, offsetY;
-            
-            if (aspectRatio === 'default') {
-                // Keep original aspect ratio, limit max dimension to 1024px
-                const MAX_DIM = 1024;
-                if (img.width > img.height) {
-                    targetWidth = Math.min(img.width, MAX_DIM);
-                    targetHeight = Math.round(targetWidth * (img.height / img.width));
-                } else {
-                    targetHeight = Math.min(img.height, MAX_DIM);
-                    targetWidth = Math.round(targetHeight * (img.width / img.height));
-                }
-                
-                // Ensure dimensions are even numbers (video encoders prefer this)
-                targetWidth = Math.round(targetWidth / 2) * 2;
-                targetHeight = Math.round(targetHeight / 2) * 2;
-                
-                // For default, we draw full image into canvas of same size
-                renderWidth = targetWidth;
-                renderHeight = targetHeight;
-                offsetX = 0;
-                offsetY = 0;
+            let effectiveRatio = aspectRatio;
 
-            } else {
-                // Standard Fixed Ratios
-                if (aspectRatio === '16:9') {
-                    targetWidth = 1024;
-                    targetHeight = 576;
-                } else { // 9:16
-                    targetWidth = 576;
-                    targetHeight = 1024;
-                }
+            // 1. Resolve Target Container Dimensions
+            if (effectiveRatio === 'default') {
+                effectiveRatio = img.width >= img.height ? '16:9' : '9:16';
+            }
 
-                // Calculate "Cover" fit (Center Crop)
-                const imgRatio = img.width / img.height;
-                const targetRatio = targetWidth / targetHeight;
-                
-                if (imgRatio > targetRatio) {
-                    // Image is wider than target: Scale by height, crop width
-                    renderHeight = targetHeight;
-                    renderWidth = img.width * (targetHeight / img.height);
-                    offsetX = (targetWidth - renderWidth) / 2; // Center horizontally
-                    offsetY = 0;
-                } else {
-                    // Image is taller than target: Scale by width, crop height
-                    renderWidth = targetWidth;
-                    renderHeight = img.height * (targetWidth / img.width);
-                    offsetX = 0;
-                    offsetY = (targetHeight - renderHeight) / 2; // Center vertically
-                }
+            if (effectiveRatio === '16:9') {
+                targetWidth = 1024;
+                targetHeight = 576;
+            } else { // 9:16
+                targetWidth = 576;
+                targetHeight = 1024;
             }
 
             const canvas = document.createElement('canvas');
@@ -86,7 +58,6 @@ export const resizeAndCropImage = async (
             const ctx = canvas.getContext('2d');
 
             if (!ctx) {
-                // Fallback to original if context fails
                 resolve(`data:${fileData.mimeType};base64,${fileData.base64}`);
                 return;
             }
@@ -95,21 +66,31 @@ export const resizeAndCropImage = async (
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
 
-            // Draw white background (handles transparency)
-            ctx.fillStyle = '#FFFFFF';
+            // 2. Draw Background: ALWAYS BLACK (Letterbox style)
+            ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, targetWidth, targetHeight);
 
-            // Draw image
+            // 3. Calculate "Contain" fit (Letterbox / Pillarbox)
+            // Scale the image down until it fits entirely within the target box.
+            const scale = Math.min(targetWidth / img.width, targetHeight / img.height);
+            
+            const renderWidth = img.width * scale;
+            const renderHeight = img.height * scale;
+            
+            // Center the image in the container
+            const offsetX = (targetWidth - renderWidth) / 2;
+            const offsetY = (targetHeight - renderHeight) / 2;
+
+            // 4. Draw Image Centered
             ctx.drawImage(img, offsetX, offsetY, renderWidth, renderHeight);
 
             // Export as JPEG
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.95);
             resolve(compressedDataUrl);
         };
 
         img.onerror = (e) => {
             console.error("Image load failed for resize", e);
-            // Fallback to original
             resolve(`data:${fileData.mimeType};base64,${fileData.base64}`);
         };
     });
@@ -125,14 +106,11 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     let url = endpoint;
     
     if (BACKEND_URL) {
-        // If BACKEND_URL is set (e.g. https://my-worker.workers.dev)
-        const baseUrl = BACKEND_URL.replace(/\/$/, ""); // Remove trailing slash
+        const baseUrl = BACKEND_URL.replace(/\/$/, ""); 
         const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
         url = `${baseUrl}${path}`;
     } else {
-        // Fallback to relative /api path if no env var is set
         const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
-        // If the endpoint already starts with /api, don't double it
         if (path.startsWith('/api')) {
             url = path;
         } else {
@@ -149,14 +127,9 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
 
         const text = await res.text();
         
-        // Handle HTML responses (Cloudflare/Vercel errors) gracefully
         if (text.trim().startsWith("<") || text.includes("<!DOCTYPE") || text.includes("<html")) {
-             if (res.status === 404) {
-                 throw new Error(`SYSTEM_ERROR: Không tìm thấy dịch vụ API.`);
-             }
-             if (res.status === 500 || res.status === 502) {
-                 throw new Error(`SYSTEM_ERROR: Máy chủ đang bảo trì.`);
-             }
+             if (res.status === 404) throw new Error(`SYSTEM_ERROR: Không tìm thấy dịch vụ API.`);
+             if (res.status === 500 || res.status === 502) throw new Error(`SYSTEM_ERROR: Máy chủ đang bảo trì.`);
              throw new Error(`NETWORK_ERROR: Lỗi kết nối máy chủ (${res.status})`);
         }
 
@@ -168,25 +141,13 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
         }
         
         if (!res.ok) {
-            // Prefer detailed message
             let msg = data.error?.message || data.message || `Lỗi (${res.status})`;
-            
-            // Standardize Error Codes for UI Mapping
-            if (JSON.stringify(data).includes("SAFETY") || msg.includes("SAFETY")) {
-                throw new Error("SAFETY_ERROR");
-            }
-            if (res.status === 429 || msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) {
-                throw new Error("QUOTA_ERROR");
-            }
-            if (res.status === 401 || res.status === 403 || msg.includes("UNAUTHENTICATED")) {
-                throw new Error("AUTH_ERROR");
-            }
-            
-            // Pass through original message if not categorized
+            if (JSON.stringify(data).includes("SAFETY") || msg.includes("SAFETY")) throw new Error("SAFETY_ERROR");
+            if (res.status === 429 || msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) throw new Error("QUOTA_ERROR");
+            if (res.status === 401 || res.status === 403 || msg.includes("UNAUTHENTICATED")) throw new Error("AUTH_ERROR");
             throw new Error(msg);
         }
         
-        // Check for specific error flags in 200 OK responses (common in proxy wrappers)
         if (data.status === 'failed') {
              const failMsg = data.message || "Unknown error";
              if (failMsg.includes("SAFETY")) throw new Error("SAFETY_ERROR");
@@ -196,11 +157,9 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
         return data;
     } catch (err: any) {
         clearTimeout(timeoutId);
-        // Normalize error message
         let msg = err.message || "Lỗi kết nối";
         if (msg.includes("aborted") || msg.includes("signal") || msg.includes("timeout")) msg = "TIMEOUT_ERROR";
         if (msg.includes("Failed to fetch")) msg = "NETWORK_ERROR";
-        
         throw new Error(msg);
     }
 };
@@ -212,20 +171,44 @@ async function _executeVideoGeneration(
     aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
 ): Promise<{ videoUrl: string, mediaId?: string }> {
     console.log("==========================================================");
-    console.log(`[Video Service] EXECUTING VIDEO GENERATION - Ratio: ${aspectRatio}`);
+    console.log(`[Video Service] EXECUTING VIDEO GENERATION - Initial Ratio: ${aspectRatio}`);
     
-    // Step 0: Compress & Crop Image
+    let effectiveRatio: '16:9' | '9:16' = '16:9'; // Default fallback
     let imageBase64 = null;
+
     if (startImage) {
-        console.log(`[Client] Step 0: Processing Image...`);
+        console.log(`[Client] Step 0: Analyzing & Processing Image...`);
+        
+        if (aspectRatio === 'default') {
+            const dims = await getImageDimensions(startImage);
+            effectiveRatio = dims.width >= dims.height ? '16:9' : '9:16';
+            console.log(`[Client] Auto-detected Ratio for 'default': ${effectiveRatio} (Size: ${dims.width}x${dims.height})`);
+        } else {
+            effectiveRatio = aspectRatio;
+        }
+
         try {
+            // Resize and CROP (Contain) to fill the frame with black bars if needed
             const compressed = await resizeAndCropImage(startImage, aspectRatio);
             imageBase64 = compressed.split(',')[1];
         } catch (e) {
             console.warn("[Client] Processing failed, using original.");
             imageBase64 = startImage.base64;
         }
+    } else {
+        effectiveRatio = aspectRatio === 'default' ? '16:9' : aspectRatio as '16:9' | '9:16';
     }
+
+    // --- FIX: DEFINING ENUM VARIABLES ---
+    let imageAspectEnum = "IMAGE_ASPECT_RATIO_LANDSCAPE"; 
+    let videoAspectEnum = "VIDEO_ASPECT_RATIO_LANDSCAPE"; 
+
+    if (effectiveRatio === '9:16') {
+        imageAspectEnum = "IMAGE_ASPECT_RATIO_PORTRAIT";
+        videoAspectEnum = "VIDEO_ASPECT_RATIO_PORTRAIT"; 
+    }
+
+    console.log(`[Client] Resolved Enums -> Image: ${imageAspectEnum}, Video: ${videoAspectEnum}`);
 
     // Step 1: Auth
     const authData = await fetchJson('/auth', {
@@ -240,26 +223,33 @@ async function _executeVideoGeneration(
     let mediaId = null;
     if (imageBase64) {
         console.log(`[Client] Step 2: Uploading Image...`);
+        // Passing the variable containing "IMAGE_ASPECT_RATIO_PORTRAIT" or "...LANDSCAPE"
         const uploadData = await fetchJson('/upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'upload', token, image: imageBase64 })
+            body: JSON.stringify({ 
+                action: 'upload', 
+                token, 
+                image: imageBase64,
+                imageAspectRatio: imageAspectEnum 
+            })
         });
         mediaId = uploadData.mediaId;
     }
 
     // Step 3: Trigger
     console.log(`[Client] Step 3: Triggering Generation...`);
-    // NOTE: Cloudflare Worker expects '16:9' or '9:16'. If 'default', we likely pass the closest one
-    // or rely on the crop we just did. Veo API usually demands 'VIDEO_ASPECT_RATIO_LANDSCAPE' or 'PORTRAIT'.
-    // We map 'default' to '16:9' for the trigger API purely for the ratio flag, 
-    // BUT the startImage itself (which is authoritative) preserves original ratio (max 1024).
-    const apiRatio = aspectRatio === '9:16' ? '9:16' : '16:9';
-
+    // Passing the variable containing "VIDEO_ASPECT_RATIO_PORTRAIT" or "...LANDSCAPE"
     const triggerData = await fetchJson('/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'create', token, prompt, mediaId, aspectRatio: apiRatio })
+        body: JSON.stringify({ 
+            action: 'create', 
+            token, 
+            prompt, 
+            mediaId, 
+            videoAspectRatio: videoAspectEnum 
+        })
     });
     const { task_id, scene_id } = triggerData;
 
@@ -288,9 +278,7 @@ async function _executeVideoGeneration(
                 throw new Error(`GENERATION_FAILED: ${failReason}`);
             }
         } catch (e: any) {
-            // Immediately throw critical errors to stop retrying the same task
             if (e.message.includes("SAFETY_ERROR") || e.message.includes("AUTH_ERROR")) throw e;
-            // For other transient errors (Network, 500), continue loop until timeout
             console.warn(`[Client] Poll Error (Will retry):`, e.message);
         }
     }
@@ -307,14 +295,13 @@ export const generateVideoExternal = async (
     try {
         return await _executeVideoGeneration(prompt, startImage, aspectRatio);
     } catch (error: any) {
-        // Retry logic for Timeout
         if (error.message === 'TIMEOUT_ERROR') {
             console.warn("[Video Service] Timeout encountered (3 min). Retrying generation once...");
             try {
                 return await _executeVideoGeneration(prompt, startImage, aspectRatio);
             } catch (retryError: any) {
                 console.error("[Video Service] Retry attempt also failed.");
-                throw retryError; // Throw final error (likely TIMEOUT_ERROR again)
+                throw retryError; 
             }
         }
         throw error;

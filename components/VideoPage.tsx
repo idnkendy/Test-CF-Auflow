@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '@supabase/supabase-js';
 import { UserStatus, Tool, FileData } from '../types';
@@ -48,8 +47,7 @@ const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'de
         switch(val) {
             case '16:9': return 'crop_landscape';
             case '9:16': return 'crop_portrait';
-            case 'default': return 'crop_free';
-            default: return 'aspect_ratio';
+            default: return 'crop_landscape';
         }
     }
 
@@ -57,8 +55,7 @@ const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'de
             switch(val) {
             case '16:9': return '16:9';
             case '9:16': return '9:16';
-            case 'default': return 'Mặc định';
-            default: return val;
+            default: return '16:9';
         }
     }
 
@@ -71,9 +68,9 @@ const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'de
             >
                 <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-xl text-[#7f13ec] notranslate">
-                        {getIcon(value)}
+                        {getIcon(value === 'default' ? '16:9' : value)}
                     </span>
-                    <span>{getLabel(value)}</span>
+                    <span>{getLabel(value === 'default' ? '16:9' : value)}</span>
                 </div>
                 <span className={`material-symbols-outlined text-gray-500 dark:text-gray-400 text-sm transition-transform duration-200 notranslate ${isOpen ? 'rotate-180' : ''}`}>
                     expand_less
@@ -82,20 +79,6 @@ const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'de
 
             {isOpen && (
                 <div className="absolute bottom-full left-0 mb-2 w-full min-w-[140px] bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#302839] rounded-xl shadow-xl overflow-hidden z-50 p-1 animate-fade-in">
-                    {/* Option: Default (First) */}
-                    <button
-                        onClick={() => { onChange('default'); setIsOpen(false); }}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                            value === 'default' ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#2A2A2A]'
-                        }`}
-                    >
-                        <span className="material-symbols-outlined text-lg notranslate">crop_free</span>
-                        <div className="flex flex-col items-start text-left">
-                            <span className="font-bold">Mặc định</span>
-                            <span className="text-[10px] opacity-70">Gốc</span>
-                        </div>
-                        {value === 'default' && <span className="material-symbols-outlined text-sm ml-auto notranslate">check</span>}
-                    </button>
                     
                     {/* Option: 16:9 */}
                     <button
@@ -284,7 +267,11 @@ const MaintenanceView = ({ title }: { title: string }) => (
 
 const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [activeItem, setActiveItem] = useState('arch-film');
-    const [videoState, setVideoState] = useState<VideoGeneratorState>(initialToolStates[Tool.VideoGeneration]);
+    // Ensure default state starts with '16:9' if it was 'default' before
+    const [videoState, setVideoState] = useState<VideoGeneratorState>({
+        ...initialToolStates[Tool.VideoGeneration],
+        aspectRatio: '16:9' // Force 16:9 as initial if default was 'default'
+    });
     const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
     
     // --- SINGLE MODE STATES (Img2Vid, Text2Vid, Transition) ---
@@ -1184,11 +1171,39 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                                         disabled={item.isGeneratingVideo}
                                                                     />
                                                                     <div className="mt-auto">
-                                                                        <button onClick={() => handleGenerateClip(item)} disabled={item.isGeneratingVideo} className="w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] text-white rounded-lg text-sm font-bold transition-all shadow-md flex items-center justify-center">
-                                                                            <div className="flex items-center gap-1">
-                                                                                <span>{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</span>
-                                                                                {!item.isGeneratingVideo && <span className="text-[10px] opacity-80 font-normal bg-black/20 px-1.5 py-0.5 rounded">(5 Credits)</span>}
+                                                                        {/* Credit Info Bar */}
+                                                                        {!item.isGeneratingVideo && (
+                                                                            <div className="flex items-center justify-between mb-2 px-1">
+                                                                                <div className="flex items-center gap-1.5 text-xs font-medium text-text-secondary dark:text-gray-400 bg-gray-100 dark:bg-black/20 px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700">
+                                                                                    <span className="material-symbols-outlined text-yellow-500 text-sm notranslate">monetization_on</span>
+                                                                                    <span className="text-text-primary dark:text-white font-bold">Chi phí: 5 credits</span>
+                                                                                </div>
+                                                                                <div className={`text-[10px] font-bold ${
+                                                                                    (props.userStatus?.credits || 0) < 5 
+                                                                                    ? 'text-red-500' 
+                                                                                    : 'text-green-600 dark:text-green-400'
+                                                                                }`}>
+                                                                                    {(props.userStatus?.credits || 0) < 5 
+                                                                                        ? 'Không đủ' 
+                                                                                        : `Khả dụng: ${props.userStatus?.credits || 0}`
+                                                                                    }
+                                                                                </div>
                                                                             </div>
+                                                                        )}
+
+                                                                        <button
+                                                                            onClick={() => handleGenerateClip(item)}
+                                                                            disabled={item.isGeneratingVideo || (props.userStatus?.credits || 0) < 5}
+                                                                            className={`w-full py-2.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 ${
+                                                                                item.isGeneratingVideo 
+                                                                                    ? 'bg-gray-100 dark:bg-[#2A2A2A] text-gray-400'
+                                                                                    : (props.userStatus?.credits || 0) < 5
+                                                                                        ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                                                                                        : 'bg-[#7f13ec] hover:bg-[#690fca] text-white hover:shadow-purple-500/20'
+                                                                            }`}
+                                                                        >
+                                                                            {item.isGeneratingVideo ? <Spinner /> : <span className="material-symbols-outlined text-sm notranslate">movie_creation</span>}
+                                                                            <span>{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</span>
                                                                         </button>
                                                                     </div>
                                                                 </div>
