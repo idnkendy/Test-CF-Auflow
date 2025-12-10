@@ -1,3 +1,4 @@
+
 // --- CẤU HÌNH ---
 // Lấy các biến này từ Cloudflare Worker Settings (Environment Variables)
 // ADMIN_SECRET (Để bảo vệ endpoint update_token)
@@ -113,7 +114,7 @@ async function incrementAccountUsage(env, accountId, currentUsage) {
     const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
     
     try {
-        await fetch(`${sbUrl}/rest/v1/video_accounts?id=eq.${accountId}`, {
+        const res = await fetch(`${sbUrl}/rest/v1/video_accounts?id=eq.${accountId}`, {
             method: 'PATCH',
             headers: {
                 'apikey': sbKey,
@@ -123,8 +124,13 @@ async function incrementAccountUsage(env, accountId, currentUsage) {
             },
             body: JSON.stringify({ usage_count: (currentUsage || 0) + 1 })
         });
+        if (!res.ok) {
+            console.error(`[DB Update] Failed for ID ${accountId}: ${res.statusText}`);
+        } else {
+            console.log(`[DB Update] Increased usage for ID ${accountId} to ${(currentUsage || 0) + 1}`);
+        }
     } catch (e) {
-        console.error(`Failed to increment usage for account ${accountId}:`, e);
+        console.error(`[DB Update] Exception incrementing usage for account ${accountId}:`, e);
     }
 }
 
@@ -180,14 +186,17 @@ async function executeWithFailover(env, accounts, operationName, callback) {
         if (!account.project_id) continue;
 
         try {
-            const result = await callback(account);
-            try {
-                // Background update usage
-                if (operationName !== 'CheckStatus' && operationName !== 'UploadImage') {
-                     incrementAccountUsage(env, account.id, account.usage_count);
-                }
-            } catch (ignore) {}
+            // MOVED: Update usage BEFORE executing the request
+            // This ensures we count the attempt immediately.
+            if (operationName !== 'CheckStatus' && operationName !== 'UploadImage') {
+                 try {
+                     await incrementAccountUsage(env, account.id, account.usage_count);
+                 } catch (usageError) {
+                     console.error("Failed to increment usage but continuing:", usageError);
+                 }
+            }
 
+            const result = await callback(account);
             return result; 
         } catch (e) {
             lastError = e;
@@ -437,6 +446,46 @@ async function handleSePayWebhook(request, env) {
     }
 }
 
+// --- PROXY VIDEO DOWNLOAD HELPER ---
+async function handleProxyDownload(request) {
+    const corsHeaders = {
+        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+        'Access-Control-Allow-Headers': 'Content-Type',
+        'Access-Control-Expose-Headers': 'Content-Length, Content-Type' 
+    };
+    
+    if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+
+    try {
+        let url;
+        // Handle both POST and GET
+        if (request.method === 'POST') {
+            const body = await request.json();
+            url = body.url;
+        } else {
+            const u = new URL(request.url);
+            url = u.searchParams.get('url');
+        }
+
+        if (!url) return new Response("Missing URL", { status: 400, headers: corsHeaders });
+
+        const response = await fetch(url);
+        
+        // Recreate headers to be mutable and ensure CORS is set
+        const newHeaders = new Headers(response.headers);
+        newHeaders.set('Access-Control-Allow-Origin', '*');
+        newHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
+        
+        return new Response(response.body, {
+            status: response.status,
+            headers: newHeaders
+        });
+    } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
+    }
+}
+
 export default {
     async fetch(request, env, ctx) {
         const corsHeaders = {
@@ -463,6 +512,8 @@ export default {
         const path = url.pathname;
 
         if (path.includes('/sepay-webhook')) return handleSePayWebhook(request, env);
+        // ADDED: Route for Proxy Download
+        if (path.includes('/proxy-download')) return handleProxyDownload(request);
 
         try {
             let body = {};

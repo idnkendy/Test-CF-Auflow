@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { User } from '@supabase/supabase-js';
 import { UserStatus, Tool, FileData } from '../types';
@@ -12,6 +13,9 @@ import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
+
+// --- CONFIGURATION ---
+const API_BASE_URL = "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
 
 interface VideoPageProps {
     session: { user: User } | null;
@@ -28,7 +32,7 @@ interface VideoPageProps {
     onRefreshCredits: () => Promise<void>;
 }
 
-// --- HELPER COMPONENT FOR ASPECT RATIO (Moved outside for stability) ---
+// --- HELPER COMPONENT FOR ASPECT RATIO ---
 const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'default', onChange: (val: '16:9' | '9:16' | 'default') => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -678,6 +682,10 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 generatedVideoUrl: result.videoUrl
             }));
 
+            // NEW: Auto Download Trigger
+            // Note: We use handleSimpleDownload but pass the URL directly to ensure it works even before state update propagates
+            handleSimpleDownload(result.videoUrl);
+
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', result.videoUrl);
             await historyService.addToHistory({ 
                 tool: Tool.VideoGeneration, 
@@ -705,6 +713,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     };
 
+    
     // --- MERGE AND EXPORT ---
     const handleMergeAndExport = async () => {
         const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
@@ -717,19 +726,30 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setIsPlaying(false);
         setIsPlayingAll(false);
 
+        // --- SETUP CANVAS & RECORDER ---
         const canvas = document.createElement('canvas');
-        canvas.width = videoState.aspectRatio === '16:9' ? 1920 : 1080;
-        canvas.height = videoState.aspectRatio === '16:9' ? 1080 : 1920;
-        const ctx = canvas.getContext('2d');
+        // Use 1080p max to prevent memory crashes on mobile devices
+        const targetWidth = videoState.aspectRatio === '16:9' ? 1920 : 1080;
+        const targetHeight = videoState.aspectRatio === '16:9' ? 1080 : 1920;
+        canvas.width = targetWidth;
+        canvas.height = targetHeight;
+        
+        const ctx = canvas.getContext('2d', { 
+            alpha: false, // Performance optimization
+            desynchronized: true // Low latency hint
+        });
+        
         if (!ctx) { setIsExporting(false); return; }
+        
+        // Fill initial black background only once
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const videoStream = canvas.captureStream(30);
+        const videoStream = canvas.captureStream(30); // 30 FPS fixed
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
         const dest = audioContext.createMediaStreamDestination();
         
-        // Handle Background Music
+        // --- SETUP AUDIO ---
         let bgSource: AudioBufferSourceNode | null = null;
         if (audioUrl && !isMusicMuted) {
             try {
@@ -738,99 +758,234 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                 bgSource = audioContext.createBufferSource();
                 bgSource.buffer = audioBuffer;
+                bgSource.loop = true; 
                 bgSource.connect(dest);
-                bgSource.start(0);
-            } catch (e) { console.error(e); }
+            } catch (e) { console.error("Error loading background music:", e); }
         }
 
-        // If either audio is enabled, add track
+        // Combine audio tracks
         if ((!isMusicMuted && audioUrl) || !isVideoMuted) {
-             if (dest.stream.getAudioTracks().length > 0) {
-                videoStream.addTrack(dest.stream.getAudioTracks()[0]);
+             const audioTracks = dest.stream.getAudioTracks();
+             if (audioTracks.length > 0) {
+                videoStream.addTrack(audioTracks[0]);
             }
         }
 
-        const recorder = new MediaRecorder(videoStream, { mimeType: 'video/webm;codecs=vp9' });
+        // Setup MediaRecorder
+        let mimeType = 'video/webm;codecs=vp9';
+        let ext = 'webm';
+        if (MediaRecorder.isTypeSupported('video/mp4')) {
+            mimeType = 'video/mp4';
+            ext = 'mp4';
+        }
+
+        const recorder = new MediaRecorder(videoStream, { 
+            mimeType,
+            videoBitsPerSecond: 8000000 // 8 Mbps for quality
+        });
+        
         const chunks: Blob[] = [];
         recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+        
         recorder.onstop = () => {
-            const blob = new Blob(chunks, { type: 'video/webm' });
+            const blob = new Blob(chunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
+            
+            // Trigger download
             const a = document.createElement('a');
             a.href = url;
-            a.download = `Opzen_Project_${Date.now()}.webm`;
+            a.download = `Opzen_Final_${Date.now()}.${ext}`;
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
-            if (bgSource) bgSource.stop();
+            
+            // Cleanup
+            if (bgSource) { try { bgSource.stop(); } catch(e) {} }
             audioContext.close();
             setIsExporting(false);
             setExportProgress(0);
         };
 
-        recorder.start();
+        // Hidden Video Element for playback
         const hiddenVideo = document.createElement('video');
         hiddenVideo.crossOrigin = "anonymous";
         hiddenVideo.muted = false; 
-        hiddenVideo.volume = isVideoMuted ? 0 : 1; 
+        hiddenVideo.volume = isVideoMuted ? 0 : 1;
+        hiddenVideo.playsInline = true;
+        hiddenVideo.preload = "auto";
         
-        // Connect video element audio to destination if video sound is enabled
         if (!isVideoMuted) {
             try {
-                const source = audioContext.createMediaElementSource(hiddenVideo);
-                source.connect(dest);
-            } catch (e) {}
+                const sourceNode = audioContext.createMediaElementSource(hiddenVideo);
+                sourceNode.connect(dest);
+            } catch (e) { /* Ignore if already connected */ }
         }
 
+        // --- PROCESSING LOOP ---
+        // We process clips sequentially to save memory
         for (let i = 0; i < playableItems.length; i++) {
             const item = playableItems[i];
             if (!item.videoUrl) continue;
             setExportProgress(((i) / playableItems.length) * 100);
+
+            // 1. Fetch Blob (Just-in-Time)
+            // This prevents "Tự tắt" (Crash) by not loading all videos into memory at once
+            let playSource = item.videoUrl;
+            let isLocalBlob = false;
+
+            if (playSource.startsWith('http')) {
+                try {
+                    // Try Proxy first
+                    const proxyUrl = `${API_BASE_URL}/proxy-download`;
+                    const proxyResponse = await fetch(proxyUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: item.videoUrl })
+                    });
+                    
+                    if (proxyResponse.ok) {
+                        const blob = await proxyResponse.blob();
+                        const contentType = proxyResponse.headers.get('content-type') || 'video/mp4';
+                        const videoBlob = new Blob([blob], { type: contentType });
+                        playSource = URL.createObjectURL(videoBlob);
+                        isLocalBlob = true;
+                    } else {
+                        // Fallback direct fetch
+                        const response = await fetch(playSource);
+                        if (response.ok) {
+                            const blob = await response.blob();
+                            playSource = URL.createObjectURL(blob);
+                            isLocalBlob = true;
+                        }
+                    }
+                } catch (err) {
+                    console.warn("Fetch failed, using URL directly", err);
+                }
+            }
+
+            // 2. Play and Record
             await new Promise<void>((resolve) => {
-                hiddenVideo.src = item.videoUrl!;
-                hiddenVideo.onloadedmetadata = () => hiddenVideo.play();
+                hiddenVideo.src = playSource;
+                hiddenVideo.load();
+
                 const drawFrame = () => {
                     if (hiddenVideo.paused || hiddenVideo.ended) return;
-                    ctx.drawImage(hiddenVideo, 0, 0, canvas.width, canvas.height);
+                    
+                    // Calculate Fit
+                    const hRatio = canvas.width / hiddenVideo.videoWidth;
+                    const vRatio = canvas.height / hiddenVideo.videoHeight;
+                    const ratio = Math.min(hRatio, vRatio);
+                    const centerShift_x = (canvas.width - hiddenVideo.videoWidth * ratio) / 2;
+                    const centerShift_y = (canvas.height - hiddenVideo.videoHeight * ratio) / 2;
+                    
+                    // IMPORTANT: Do NOT clearRect here.
+                    // Drawing over the previous frame prevents flickering if a frame drops.
+                    ctx.drawImage(
+                        hiddenVideo, 
+                        0, 0, hiddenVideo.videoWidth, hiddenVideo.videoHeight,
+                        centerShift_x, centerShift_y, hiddenVideo.videoWidth * ratio, hiddenVideo.videoHeight * ratio
+                    );
+                    
                     requestAnimationFrame(drawFrame);
                 };
-                hiddenVideo.onplay = () => drawFrame();
-                hiddenVideo.onended = () => resolve();
-                hiddenVideo.onerror = () => resolve(); 
+
+                const onVideoReady = async () => {
+                    // 3. Draw FIRST frame manually before playing/recording
+                    // This ensures no black flash between clips
+                    const hRatio = canvas.width / hiddenVideo.videoWidth;
+                    const vRatio = canvas.height / hiddenVideo.videoHeight;
+                    const ratio = Math.min(hRatio, vRatio);
+                    const centerShift_x = (canvas.width - hiddenVideo.videoWidth * ratio) / 2;
+                    const centerShift_y = (canvas.height - hiddenVideo.videoHeight * ratio) / 2;
+
+                    // Only clear background for the FIRST clip to ensure clean start
+                    if (i === 0) {
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                    }
+
+                    ctx.drawImage(
+                        hiddenVideo, 
+                        0, 0, hiddenVideo.videoWidth, hiddenVideo.videoHeight,
+                        centerShift_x, centerShift_y, hiddenVideo.videoWidth * ratio, hiddenVideo.videoHeight * ratio
+                    );
+
+                    // 4. Start Recorder/Audio EXACTLY here
+                    if (i === 0 && recorder.state === 'inactive') {
+                        recorder.start();
+                        if (bgSource) {
+                            try { bgSource.start(0); } catch(e) {}
+                        }
+                    }
+
+                    try {
+                        await hiddenVideo.play();
+                        drawFrame(); // Start the animation loop
+                    } catch (playErr) {
+                        console.error("Playback failed", playErr);
+                        resolve();
+                    }
+                };
+
+                // Use 'loadeddata' which is faster than 'canplaythrough' for local blobs
+                // and sufficient for drawing the first frame immediately.
+                hiddenVideo.onloadeddata = () => {
+                    hiddenVideo.onloadeddata = null;
+                    onVideoReady();
+                };
+
+                // Fallback timeout
+                const timeoutId = setTimeout(() => {
+                    if (hiddenVideo.readyState >= 2) onVideoReady();
+                    else resolve(); // Skip if stuck
+                }, 5000);
+
+                hiddenVideo.onended = () => {
+                    clearTimeout(timeoutId);
+                    resolve();
+                };
+                
+                hiddenVideo.onerror = () => {
+                    clearTimeout(timeoutId);
+                    console.error("Video element error:", item.id);
+                    resolve();
+                }; 
             });
+
+            // 3. Cleanup Memory Immediately
+            if (isLocalBlob) {
+                URL.revokeObjectURL(playSource);
+            }
+            // Explicitly unload video to free memory
+            hiddenVideo.pause();
+            hiddenVideo.removeAttribute('src');
+            hiddenVideo.load(); 
         }
+        
         setExportProgress(100);
-        recorder.stop();
+        
+        // Small buffer to ensure last frame is captured
+        setTimeout(() => {
+            if (recorder.state !== 'inactive') recorder.stop();
+            else setIsExporting(false);
+        }, 200);
     };
 
+
     // --- COMMON DOWNLOAD/UPLOAD ---
-    const handleDownloadSingle = async (url: string, index: number) => {
-        const filename = `Canh_${index + 1}.mp4`;
-        try {
-            const response = await fetch(url);
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            // Clean up
-            setTimeout(() => URL.revokeObjectURL(blobUrl), 100);
-        } catch (e) {
-            console.error("Blob download failed, fallback to direct link", e);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            link.target = "_blank"; // Force new tab as fallback
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
+    const handleDownloadSingle = (url: string, index: number) => {
+        // Cập nhật: Mở trực tiếp trong tab mới theo yêu cầu
+        // Việc này giúp tránh lỗi CORS khi fetch Blob và cho phép người dùng tải trực tiếp từ trình duyệt
+        const link = document.createElement('a');
+        link.href = url;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        // Thuộc tính download gợi ý tên file (có thể bị trình duyệt bỏ qua nếu khác domain)
+        link.download = `Canh_${index + 1}.mp4`; 
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     const handleDownloadAll = async () => {
@@ -848,12 +1003,17 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     };
     
-    const handleSimpleDownload = async () => {
-        if (videoState.generatedVideoUrl) {
+    // Updated to accept optional URL override for immediate post-generation download
+    const handleSimpleDownload = async (urlOverride?: string) => {
+        const targetUrl = urlOverride || videoState.generatedVideoUrl;
+        
+        if (targetUrl) {
             const filename = `opzen-video-${Date.now()}.mp4`;
             try {
-                const response = await fetch(videoState.generatedVideoUrl);
-                const blob = await response.blob();
+                const response = await fetch(targetUrl);
+                const arrayBuffer = await response.arrayBuffer(); // Get raw data
+                // Force create MP4 Blob
+                const blob = new Blob([arrayBuffer], { type: 'video/mp4' });
                 const blobUrl = URL.createObjectURL(blob);
                 
                 const link = document.createElement('a');
@@ -864,8 +1024,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 document.body.removeChild(link);
                 URL.revokeObjectURL(blobUrl);
             } catch (e) {
+                // Fallback: Open in new tab if blob fetch fails
                 const link = document.createElement('a');
-                link.href = videoState.generatedVideoUrl;
+                link.href = targetUrl;
                 link.download = filename;
                 link.target = "_blank";
                 document.body.appendChild(link);
@@ -1315,8 +1476,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                             </div>
                                                         ) : (
                                                             <div className="flex-1 border-2 border-dashed border-gray-300 dark:border-gray-700 rounded flex items-center justify-center hover:bg-gray-50 dark:hover:bg-[#252525] transition-colors relative cursor-pointer">
-                                                                <span className="text-[10px] text-text-secondary dark:text-gray-500">Kéo thả nhạc</span>
-                                                                <input type="file" accept="audio/*" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {if(e.target.files?.[0]) { setAudioFile(e.target.files[0]); setAudioUrl(URL.createObjectURL(e.target.files[0])); }}} />
+                                                                <span className="text-[10px] text-text-secondary dark:text-gray-500">Kéo thả nhạc (.mp3)</span>
+                                                                <input type="file" accept=".mp3,audio/mpeg" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {if(e.target.files?.[0]) { setAudioFile(e.target.files[0]); setAudioUrl(URL.createObjectURL(e.target.files[0])); }}} />
                                                             </div>
                                                         )}
                                                     </div>
@@ -1375,7 +1536,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                     <span>Tạo lại</span>
                                                 </button>
                                                 <button 
-                                                    onClick={handleSimpleDownload}
+                                                    onClick={() => handleSimpleDownload()}
                                                     disabled={!videoState.generatedVideoUrl || isSingleGenerating}
                                                     className="flex-[2] py-3 px-6 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                                                 >

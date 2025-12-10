@@ -167,33 +167,36 @@ const processContentResponseAsync = async (response: any): Promise<string[]> => 
 const handleGeminiError = (e: any) => {
     let msg = e.message || e.toString();
     
-    // Attempt to parse JSON error message if present (e.g. from Google API raw response)
+    // Attempt to parse JSON error message if present
     if (msg.startsWith('{') && msg.includes('"error"')) {
         try {
             const parsed = JSON.parse(msg);
             if (parsed.error) {
                 if (parsed.error.message) msg = parsed.error.message;
-                // Prioritize code/status if available
                 if (parsed.error.code === 503 || parsed.error.status === 'UNAVAILABLE') {
-                    throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Vui lòng đợi 1-2 phút rồi thử lại.");
+                    throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Đã thử lại 3 lần nhưng chưa thành công. Vui lòng đợi 1-2 phút.");
                 }
             }
         } catch (err) {
-            // Ignore parse error, use original string
+            // Ignore parse error
         }
     }
 
     // Specific Error Mapping
     if (msg.includes('503') || msg.includes('overloaded') || msg.includes('UNAVAILABLE')) {
-        throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Vui lòng đợi 1-2 phút rồi thử lại.");
+        throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Vui lòng thử lại sau 1-2 phút.");
     }
     
     // Region/IP Block
     if (msg.includes('403') || msg.includes('location') || msg.includes('User location is not supported')) {
-        // Chỉ throw error, không dispatch event để hiện modal nữa
         throw new Error("Lỗi: IP không được hỗ trợ. Vui lòng bật VPN hoặc đổi vùng.");
     }
     
+    // Quota Limit
+    if (msg.includes('429') || msg.includes('quota') || msg.includes('exhausted') || msg.includes('Resource has been exhausted')) {
+        throw new Error("Hệ thống đang bận (Quota Exceeded). Vui lòng thử lại sau giây lát.");
+    }
+
     // Payload Size Limit
     if (msg.includes('413') || msg.includes('Too Large') || msg.includes('too large') || msg.includes('limit')) {
         throw new Error("Dữ liệu ảnh quá lớn so với giới hạn xử lý của AI. Vui lòng giảm kích thước ảnh hoặc nén ảnh trước khi tải lên.");
@@ -207,8 +210,34 @@ const handleGeminiError = (e: any) => {
         throw new Error("Dữ liệu ảnh không hợp lệ hoặc bị hỏng. Vui lòng thử lại với một ảnh khác.");
     }
     
-    // Return cleaned message as a new Error
     throw new Error(msg);
+};
+
+// --- RETRY LOGIC WRAPPER ---
+// Tự động thử lại khi gặp lỗi server hoặc quá tải (503, 500, 429)
+const retryOperation = async <T>(operation: () => Promise<T>, retries = 2, delay = 2000): Promise<T> => {
+    try {
+        return await operation();
+    } catch (error: any) {
+        const msg = error.message || JSON.stringify(error);
+        
+        const shouldRetry = 
+            msg.includes('503') || 
+            msg.includes('overloaded') || 
+            msg.includes('UNAVAILABLE') || 
+            msg.includes('500') || 
+            msg.includes('Internal error') ||
+            msg.includes('429') || 
+            msg.includes('exhausted');
+
+        if (retries > 0 && shouldRetry) {
+            console.warn(`[AI Service] Gặp lỗi: "${msg}". Đang thử lại... (Còn ${retries} lần)`);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return retryOperation(operation, retries - 1, delay * 2); // Exponential backoff (2s -> 4s -> 8s)
+        }
+        
+        throw error;
+    }
 };
 
 // --- GENERATION FUNCTIONS ---
@@ -233,23 +262,29 @@ export const generateStandardImage = async (
         });
     }
 
+    // Apply retry logic for each image generation
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        try {
-            const response = await ai.models.generateContent({
-                model: model,
-                contents: { parts },
-                config: {}
-            });
-            // Await the async processing
-            return await processContentResponseAsync(response);
-        } catch (e: any) {
-            handleGeminiError(e);
-            throw e;
-        }
+        return retryOperation(async () => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts },
+                    config: {}
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e; // Let retryOperation catch it
+            }
+        });
     });
 
-    const results = await Promise.all(promises);
-    return results.flat();
+    try {
+        const results = await Promise.all(promises);
+        return results.flat();
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
 
 export const generateHighQualityImage = async (
@@ -285,23 +320,24 @@ export const generateHighQualityImage = async (
         });
     }
 
-    try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: { parts },
-            config: {
-                imageConfig: {
-                    aspectRatio: aspectRatio,
-                    imageSize: resolution === 'Standard' ? '1K' : resolution
+    return retryOperation(async () => {
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts },
+                config: {
+                    imageConfig: {
+                        aspectRatio: aspectRatio,
+                        imageSize: resolution === 'Standard' ? '1K' : resolution
+                    }
                 }
-            }
-        });
-        // Await the async processing
-        return await processContentResponseAsync(response);
-    } catch (e: any) {
-        handleGeminiError(e);
-        throw e;
-    }
+            });
+            return await processContentResponseAsync(response);
+        } catch (e: any) {
+            handleGeminiError(e);
+            throw e;
+        }
+    });
 };
 
 export const editImage = async (
@@ -309,6 +345,7 @@ export const editImage = async (
     image: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
+    // Re-use standard image generation logic which handles retries
     const urls = await generateStandardImage(prompt, '4:3', numberOfImages, image);
     return urls.map(url => ({ imageUrl: url }));
 };
@@ -329,22 +366,26 @@ export const editImageWithMask = async (
     ];
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        try {
-            const response = await ai.models.generateContent({
-                model: model,
-                contents: { parts }
-            });
-            // Await the async processing
-            const urls = await processContentResponseAsync(response);
-            return urls;
-        } catch (e: any) {
-            handleGeminiError(e);
-            throw e;
-        }
+        return retryOperation(async () => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
+        });
     });
 
-    const results = await Promise.all(promises);
-    return results.flat().map(url => ({ imageUrl: url }));
+    try {
+        const results = await Promise.all(promises);
+        return results.flat().map(url => ({ imageUrl: url }));
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
 
 export const editImageWithReference = async (
@@ -361,22 +402,26 @@ export const editImageWithReference = async (
     if (referenceImage) parts.push({ inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.base64 } });
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        try {
-            const response = await ai.models.generateContent({
-                model: model,
-                contents: { parts }
-            });
-            // Await the async processing
-            const urls = await processContentResponseAsync(response);
-            return urls;
-        } catch (e: any) {
-            handleGeminiError(e);
-            throw e;
-        }
+        return retryOperation(async () => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
+        });
     });
 
-    const results = await Promise.all(promises);
-    return results.flat().map(url => ({ imageUrl: url }));
+    try {
+        const results = await Promise.all(promises);
+        return results.flat().map(url => ({ imageUrl: url }));
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
 
 export const editImageWithMaskAndReference = async (
@@ -397,22 +442,26 @@ export const editImageWithMaskAndReference = async (
     ];
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        try {
-            const response = await ai.models.generateContent({
-                model: model,
-                contents: { parts }
-            });
-            // Await the async processing
-            const urls = await processContentResponseAsync(response);
-            return urls;
-        } catch (e: any) {
-            handleGeminiError(e);
-            throw e;
-        }
+        return retryOperation(async () => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
+        });
     });
 
-    const results = await Promise.all(promises);
-    return results.flat().map(url => ({ imageUrl: url }));
+    try {
+        const results = await Promise.all(promises);
+        return results.flat().map(url => ({ imageUrl: url }));
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
 
 export const editImageWithMultipleReferences = async (
@@ -432,22 +481,26 @@ export const editImageWithMultipleReferences = async (
     });
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        try {
-            const response = await ai.models.generateContent({
-                model: model,
-                contents: { parts }
-            });
-            // Await the async processing
-            const urls = await processContentResponseAsync(response);
-            return urls;
-        } catch (e: any) {
-            handleGeminiError(e);
-            throw e;
-        }
+        return retryOperation(async () => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
+        });
     });
 
-    const results = await Promise.all(promises);
-    return results.flat().map(url => ({ imageUrl: url }));
+    try {
+        const results = await Promise.all(promises);
+        return results.flat().map(url => ({ imageUrl: url }));
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 }
 
 export const editImageWithMaskAndMultipleReferences = async (
@@ -469,22 +522,26 @@ export const editImageWithMaskAndMultipleReferences = async (
     });
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        try {
-            const response = await ai.models.generateContent({
-                model: model,
-                contents: { parts }
-            });
-            // Await the async processing
-            const urls = await processContentResponseAsync(response);
-            return urls;
-        } catch (e: any) {
-            handleGeminiError(e);
-            throw e;
-        }
+        return retryOperation(async () => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
+        });
     });
 
-    const results = await Promise.all(promises);
-    return results.flat().map(url => ({ imageUrl: url }));
+    try {
+        const results = await Promise.all(promises);
+        return results.flat().map(url => ({ imageUrl: url }));
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 }
 
 // --- TEXT GENERATION FUNCTIONS ---
@@ -493,16 +550,18 @@ export const generateText = async (prompt: string): Promise<string> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash';
     
-    try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: [{ parts: [{ text: prompt }] }]
-        });
-        return response.text || "";
-    } catch (e: any) {
-        handleGeminiError(e);
-        throw e;
-    }
+    return retryOperation(async () => {
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: [{ parts: [{ text: prompt }] }]
+            });
+            return response.text || "";
+        } catch (e: any) {
+            handleGeminiError(e);
+            throw e;
+        }
+    });
 };
 
 export const generatePromptSuggestions = async (
@@ -520,26 +579,28 @@ export const generatePromptSuggestions = async (
     
     Return the output strictly as a JSON object where keys are categories (e.g., "Lighting", "Composition", "Style") and values are arrays of prompt strings. Do not use Markdown code blocks.`;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: {
-                parts: [
-                    { text: prompt },
-                    { inlineData: { mimeType: image.mimeType, data: image.base64 } }
-                ]
-            },
-            config: { 
-                responseMimeType: "application/json"
-            }
-        });
+    return retryOperation(async () => {
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: {
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+                    ]
+                },
+                config: { 
+                    responseMimeType: "application/json"
+                }
+            });
 
-        const text = response.text || "";
-        return JSON.parse(text);
-    } catch (e: any) {
-        console.error("Failed to generate/parse suggestions", e);
-        return null;
-    }
+            const text = response.text || "";
+            return JSON.parse(text);
+        } catch (e: any) {
+            console.error("Failed to generate/parse suggestions", e);
+            return null; // Don't throw for suggestions, just return null
+        }
+    });
 };
 
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
@@ -553,16 +614,18 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
         parts[0].text += " \n\nAlso use the visual style of the attached image as a reference.";
     }
 
-    try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: { parts }
-        });
-        return response.text || "";
-    } catch (e: any) {
-        handleGeminiError(e);
-        throw e;
-    }
+    return retryOperation(async () => {
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts }
+            });
+            return response.text || "";
+        } catch (e: any) {
+            handleGeminiError(e);
+            throw e;
+        }
+    });
 };
 
 // --- VIDEO PROMPT GENERATION ---
@@ -575,21 +638,23 @@ export const generateVideoPromptFromImage = async (image: FileData): Promise<str
     Giữ prompt dưới 60 từ, súc tích và tập trung vào chuyển động hình ảnh. 
     QUAN TRỌNG: TUYỆT ĐỐI CHỈ TRẢ VỀ NỘI DUNG PROMPT BẰNG TIẾNG VIỆT. KHÔNG TRẢ LỜI BẰNG TIẾNG ANH. KHÔNG THÊM CÁC CÂU DẪN NHƯ "Dưới đây là prompt...". CHỈ TRẢ VỀ NỘI DUNG PROMPT.`;
 
-    try {
-        const response = await ai.models.generateContent({
-            model: model,
-            contents: {
-                parts: [
-                    { text: prompt },
-                    { inlineData: { mimeType: image.mimeType, data: image.base64 } }
-                ]
-            }
-        });
-        return response.text?.trim() || "Video kiến trúc điện ảnh với chuyển động camera chậm.";
-    } catch (e: any) {
-        console.error("Failed to generate video prompt from image", e);
-        return "Video kiến trúc điện ảnh với chuyển động camera chậm.";
-    }
+    return retryOperation(async () => {
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: {
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+                    ]
+                }
+            });
+            return response.text?.trim() || "Video kiến trúc điện ảnh với chuyển động camera chậm.";
+        } catch (e: any) {
+            console.error("Failed to generate video prompt from image", e);
+            return "Video kiến trúc điện ảnh với chuyển động camera chậm.";
+        }
+    });
 };
 
 // --- VIDEO GENERATION ---
@@ -609,20 +674,24 @@ export const generateStagingImage = async (prompt: string, sceneImage: FileData,
     });
 
     const promises = Array.from({ length: numberOfImages }).map(async () => {
-        try {
-            const response = await ai.models.generateContent({
-                model: model,
-                contents: { parts }
-            });
-            // Await the async processing
-            const urls = await processContentResponseAsync(response);
-            return urls;
-        } catch (e: any) {
-            handleGeminiError(e);
-            throw e;
-        }
+        return retryOperation(async () => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
+        });
     });
 
-    const results = await Promise.all(promises);
-    return results.flat().map(url => ({ imageUrl: url }));
+    try {
+        const results = await Promise.all(promises);
+        return results.flat().map(url => ({ imageUrl: url }));
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
