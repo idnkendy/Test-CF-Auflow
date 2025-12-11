@@ -61,7 +61,6 @@ const safeHistoryReplace = (path: string) => {
 
 const App: React.FC = () => {
   const [view, setView] = useState<'homepage' | 'auth' | 'app' | 'pricing' | 'payment' | 'video'>('homepage');
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
@@ -133,7 +132,6 @@ const App: React.FC = () => {
                   setView('video');
               } else {
                   // If accessing /video directly while logged out, redirect to login then back to video
-                  setAuthMode('login');
                   setView('auth');
               }
           } else if (path === '/') {
@@ -301,8 +299,8 @@ const App: React.FC = () => {
     setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
   };
   
-  const handleAuthNavigate = (mode: 'login' | 'signup') => {
-    setAuthMode(mode);
+  const handleAuthNavigate = (mode?: 'login' | 'signup') => {
+    // Mode argument is intentionally ignored as we now only support one auth method
     setView('auth');
   };
 
@@ -311,7 +309,7 @@ const App: React.FC = () => {
         setView('app');
         safeHistoryPush('/feature');
     } else {
-        handleAuthNavigate('login');
+        handleAuthNavigate();
     }
   };
 
@@ -324,7 +322,7 @@ const App: React.FC = () => {
           } else {
               // Remember where we wanted to go? 
               // Simplest is just redirect login, then default logic kicks in.
-              handleAuthNavigate('login');
+              handleAuthNavigate();
           }
           return;
       }
@@ -334,7 +332,7 @@ const App: React.FC = () => {
           setView('app');
           safeHistoryPush('/feature');
       } else {
-          handleAuthNavigate('login');
+          handleAuthNavigate();
       }
   };
 
@@ -405,8 +403,7 @@ const App: React.FC = () => {
       } else {
           setPendingPlan(plan);
           localStorage.setItem('pendingPlanId', plan.id);
-          setAuthMode('login'); 
-          setView('auth');
+          handleAuthNavigate(); 
       }
   };
 
@@ -781,7 +778,7 @@ const App: React.FC = () => {
 
   // PUBLIC VIEW (Homepage or Auth)
   if (view === 'auth') {
-    return <AuthPage onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} initialMode={authMode} />;
+    return <AuthPage onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} />;
   }
   
   // Homepage View

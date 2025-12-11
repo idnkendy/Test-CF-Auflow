@@ -714,6 +714,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     };
 
     
+    
     // --- MERGE AND EXPORT ---
     const handleMergeAndExport = async () => {
         const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
@@ -726,30 +727,31 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setIsPlaying(false);
         setIsPlayingAll(false);
 
-        // --- SETUP CANVAS & RECORDER ---
+        // --- SETUP CANVAS ---
         const canvas = document.createElement('canvas');
-        // Use 1080p max to prevent memory crashes on mobile devices
         const targetWidth = videoState.aspectRatio === '16:9' ? 1920 : 1080;
         const targetHeight = videoState.aspectRatio === '16:9' ? 1080 : 1920;
         canvas.width = targetWidth;
         canvas.height = targetHeight;
         
         const ctx = canvas.getContext('2d', { 
-            alpha: false, // Performance optimization
-            desynchronized: true // Low latency hint
+            alpha: false,
+            desynchronized: true
         });
         
         if (!ctx) { setIsExporting(false); return; }
         
-        // Fill initial black background only once
         ctx.fillStyle = '#000';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        const videoStream = canvas.captureStream(30); // 30 FPS fixed
+        // --- SETUP AUDIO CONTEXT ---
         const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        // Vital: Resume context immediately to prevent browser blocking
+        await audioContext.resume();
+        
         const dest = audioContext.createMediaStreamDestination();
         
-        // --- SETUP AUDIO ---
+        // 1. Background Music
         let bgSource: AudioBufferSourceNode | null = null;
         if (audioUrl && !isMusicMuted) {
             try {
@@ -759,29 +761,63 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 bgSource = audioContext.createBufferSource();
                 bgSource.buffer = audioBuffer;
                 bgSource.loop = true; 
+                // Create a GainNode to control music volume if needed, currently direct
                 bgSource.connect(dest);
             } catch (e) { console.error("Error loading background music:", e); }
         }
 
-        // Combine audio tracks
-        if ((!isMusicMuted && audioUrl) || !isVideoMuted) {
-             const audioTracks = dest.stream.getAudioTracks();
-             if (audioTracks.length > 0) {
-                videoStream.addTrack(audioTracks[0]);
-            }
+        // 2. Prepare Video Element & Connect Audio
+        const hiddenVideo = document.createElement('video');
+        hiddenVideo.crossOrigin = "anonymous";
+        hiddenVideo.muted = false; // Must be false to capture audio via Web Audio API
+        hiddenVideo.volume = 1;    // Max volume, we control mix via GainNodes if needed
+        hiddenVideo.playsInline = true;
+        hiddenVideo.preload = "auto";
+        
+        // Connect hidden video audio to destination
+        // Only if we want video sound. If muted, we simply don't connect or set gain to 0.
+        let videoSourceNode: MediaElementAudioSourceNode | null = null;
+        let videoGainNode: GainNode | null = null;
+
+        try {
+            videoSourceNode = audioContext.createMediaElementSource(hiddenVideo);
+            videoGainNode = audioContext.createGain();
+            videoGainNode.gain.value = isVideoMuted ? 0.0 : 1.0;
+            
+            videoSourceNode.connect(videoGainNode);
+            videoGainNode.connect(dest);
+        } catch (e) {
+            console.warn("Could not create media element source (Audio might be missing):", e);
         }
 
-        // Setup MediaRecorder
-        let mimeType = 'video/webm;codecs=vp9';
+        // --- SETUP STREAM & RECORDER ---
+        const canvasStream = canvas.captureStream(30); // Video track
+        const audioStream = dest.stream;               // Audio track
+        
+        // CRITICAL FIX: Create a combined stream explicitly
+        const combinedTracks = [
+            ...canvasStream.getVideoTracks(),
+            ...audioStream.getAudioTracks()
+        ];
+        const combinedStream = new MediaStream(combinedTracks);
+
+        // Codecs: Try H.264 (mp4) for best compatibility, fallback to VP9 (webm)
+        let mimeType = 'video/webm;codecs=vp9,opus';
         let ext = 'webm';
+        
+        // Check for MP4 support (Safari / Modern Chrome)
         if (MediaRecorder.isTypeSupported('video/mp4')) {
-            mimeType = 'video/mp4';
+            mimeType = 'video/mp4'; // Try default mp4 first
+            if (MediaRecorder.isTypeSupported('video/mp4;codecs=avc1,mp4a.40.2')) {
+                 mimeType = 'video/mp4;codecs=avc1,mp4a.40.2';
+            }
             ext = 'mp4';
         }
 
-        const recorder = new MediaRecorder(videoStream, { 
+        const recorder = new MediaRecorder(combinedStream, { 
             mimeType,
-            videoBitsPerSecond: 8000000 // 8 Mbps for quality
+            videoBitsPerSecond: 8000000, // 8 Mbps
+            audioBitsPerSecond: 128000   // 128 Kbps
         });
         
         const chunks: Blob[] = [];
@@ -791,7 +827,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const blob = new Blob(chunks, { type: mimeType });
             const url = URL.createObjectURL(blob);
             
-            // Trigger download
             const a = document.createElement('a');
             a.href = url;
             a.download = `Opzen_Final_${Date.now()}.${ext}`;
@@ -800,43 +835,30 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            // Cleanup
             if (bgSource) { try { bgSource.stop(); } catch(e) {} }
-            audioContext.close();
+            audioContext.close(); // Important to release audio hardware
+            
+            // Clean up video element
+            hiddenVideo.pause();
+            hiddenVideo.src = "";
+            hiddenVideo.load();
+
             setIsExporting(false);
             setExportProgress(0);
         };
 
-        // Hidden Video Element for playback
-        const hiddenVideo = document.createElement('video');
-        hiddenVideo.crossOrigin = "anonymous";
-        hiddenVideo.muted = false; 
-        hiddenVideo.volume = isVideoMuted ? 0 : 1;
-        hiddenVideo.playsInline = true;
-        hiddenVideo.preload = "auto";
-        
-        if (!isVideoMuted) {
-            try {
-                const sourceNode = audioContext.createMediaElementSource(hiddenVideo);
-                sourceNode.connect(dest);
-            } catch (e) { /* Ignore if already connected */ }
-        }
-
         // --- PROCESSING LOOP ---
-        // We process clips sequentially to save memory
         for (let i = 0; i < playableItems.length; i++) {
             const item = playableItems[i];
             if (!item.videoUrl) continue;
             setExportProgress(((i) / playableItems.length) * 100);
 
-            // 1. Fetch Blob (Just-in-Time)
-            // This prevents "Tự tắt" (Crash) by not loading all videos into memory at once
             let playSource = item.videoUrl;
             let isLocalBlob = false;
 
+            // Fetch logic
             if (playSource.startsWith('http')) {
                 try {
-                    // Try Proxy first
                     const proxyUrl = `${API_BASE_URL}/proxy-download`;
                     const proxyResponse = await fetch(proxyUrl, {
                         method: 'POST',
@@ -851,7 +873,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                         playSource = URL.createObjectURL(videoBlob);
                         isLocalBlob = true;
                     } else {
-                        // Fallback direct fetch
                         const response = await fetch(playSource);
                         if (response.ok) {
                             const blob = await response.blob();
@@ -864,7 +885,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 }
             }
 
-            // 2. Play and Record
             await new Promise<void>((resolve) => {
                 hiddenVideo.src = playSource;
                 hiddenVideo.load();
@@ -872,15 +892,13 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 const drawFrame = () => {
                     if (hiddenVideo.paused || hiddenVideo.ended) return;
                     
-                    // Calculate Fit
                     const hRatio = canvas.width / hiddenVideo.videoWidth;
                     const vRatio = canvas.height / hiddenVideo.videoHeight;
                     const ratio = Math.min(hRatio, vRatio);
                     const centerShift_x = (canvas.width - hiddenVideo.videoWidth * ratio) / 2;
                     const centerShift_y = (canvas.height - hiddenVideo.videoHeight * ratio) / 2;
                     
-                    // IMPORTANT: Do NOT clearRect here.
-                    // Drawing over the previous frame prevents flickering if a frame drops.
+                    // Note: No clearRect to prevent flicker
                     ctx.drawImage(
                         hiddenVideo, 
                         0, 0, hiddenVideo.videoWidth, hiddenVideo.videoHeight,
@@ -891,15 +909,13 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 };
 
                 const onVideoReady = async () => {
-                    // 3. Draw FIRST frame manually before playing/recording
-                    // This ensures no black flash between clips
+                    // Draw first frame
                     const hRatio = canvas.width / hiddenVideo.videoWidth;
                     const vRatio = canvas.height / hiddenVideo.videoHeight;
                     const ratio = Math.min(hRatio, vRatio);
                     const centerShift_x = (canvas.width - hiddenVideo.videoWidth * ratio) / 2;
                     const centerShift_y = (canvas.height - hiddenVideo.videoHeight * ratio) / 2;
 
-                    // Only clear background for the FIRST clip to ensure clean start
                     if (i === 0) {
                         ctx.fillStyle = '#000';
                         ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -911,7 +927,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                         centerShift_x, centerShift_y, hiddenVideo.videoWidth * ratio, hiddenVideo.videoHeight * ratio
                     );
 
-                    // 4. Start Recorder/Audio EXACTLY here
+                    // Start Recorder ONCE
                     if (i === 0 && recorder.state === 'inactive') {
                         recorder.start();
                         if (bgSource) {
@@ -921,25 +937,23 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
                     try {
                         await hiddenVideo.play();
-                        drawFrame(); // Start the animation loop
+                        drawFrame();
                     } catch (playErr) {
                         console.error("Playback failed", playErr);
                         resolve();
                     }
                 };
 
-                // Use 'loadeddata' which is faster than 'canplaythrough' for local blobs
-                // and sufficient for drawing the first frame immediately.
                 hiddenVideo.onloadeddata = () => {
                     hiddenVideo.onloadeddata = null;
                     onVideoReady();
                 };
 
-                // Fallback timeout
+                // Safety timeout
                 const timeoutId = setTimeout(() => {
                     if (hiddenVideo.readyState >= 2) onVideoReady();
-                    else resolve(); // Skip if stuck
-                }, 5000);
+                    else resolve(); 
+                }, 8000); // Give it plenty of time for network
 
                 hiddenVideo.onended = () => {
                     clearTimeout(timeoutId);
@@ -953,24 +967,19 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 }; 
             });
 
-            // 3. Cleanup Memory Immediately
-            if (isLocalBlob) {
-                URL.revokeObjectURL(playSource);
-            }
-            // Explicitly unload video to free memory
+            if (isLocalBlob) URL.revokeObjectURL(playSource);
+            // Don't fully unload here, just pause to keep the audio node connection alive if possible,
+            // or we risk disconnecting the node graph. Actually, src change is fine.
             hiddenVideo.pause();
-            hiddenVideo.removeAttribute('src');
-            hiddenVideo.load(); 
         }
         
         setExportProgress(100);
-        
-        // Small buffer to ensure last frame is captured
         setTimeout(() => {
             if (recorder.state !== 'inactive') recorder.stop();
             else setIsExporting(false);
-        }, 200);
+        }, 500);
     };
+
 
 
     // --- COMMON DOWNLOAD/UPLOAD ---
