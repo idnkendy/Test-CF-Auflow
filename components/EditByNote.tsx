@@ -544,7 +544,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 objectURL: '' 
             } : undefined;
 
-            const fullPrompt = `Edit the image based on the visual annotations (arrows and text notes) overlaid on the guide image. Edit Request -> ${notePrompts}`;
+            const fullPrompt = `Edit the image based on the visual annotations (arrows and text notes) overlaid on the tutorial image. Note that the modified element must be fixed at the arrow and must not affect other elements. Apply the requested edits. IMPORTANT: The final output must be a clean image with NO annotations, arrows, or text markers visible. Edit Request -> ${notePrompts}`;
 
             if (onDeductCredits) {
                 await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh)`);
