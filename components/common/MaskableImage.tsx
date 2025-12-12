@@ -99,7 +99,8 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
   const draw = (event: MouseEvent | TouchEvent) => {
     event.preventDefault();
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
+    if (!canvas) return; // Check required for TS
+    const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
