@@ -150,6 +150,7 @@ export interface FloorPlanState {
     numberOfImages: number;
     renderMode: 'top-down' | 'perspective';
     planType: 'interior' | 'exterior';
+    aspectRatio: AspectRatio;
     resolution: ImageResolution;
 }
 
@@ -402,6 +403,7 @@ export const initialToolStates = {
         numberOfImages: 1,
         renderMode: 'top-down',
         planType: 'interior',
+        aspectRatio: '4:3',
         resolution: 'Standard',
     } as FloorPlanState,
     [Tool.Renovation]: {

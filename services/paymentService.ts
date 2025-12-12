@@ -172,7 +172,12 @@ export const redeemGiftCode = async (userId: string, code: string): Promise<numb
     return data; // returns amount added
 };
 
-export const createPendingTransaction = async (userId: string, plan: PricingPlan, amount: number, customerInfo?: { name: string, phone: string }) => {
+export const createPendingTransaction = async (
+    userId: string, 
+    plan: PricingPlan, 
+    amount: number, 
+    customerInfo?: { name: string, phone: string, email: string }
+) => {
     // Force integer comparison to avoid floating point mismatch
     const intAmount = Math.round(amount);
 
@@ -202,7 +207,8 @@ export const createPendingTransaction = async (userId: string, plan: PricingPlan
                 await supabase.from('transactions')
                     .update({ 
                         customer_name: customerInfo.name, 
-                        customer_phone: customerInfo.phone 
+                        customer_phone: customerInfo.phone,
+                        customer_email: customerInfo.email
                     })
                     .eq('id', existingTx.id);
             }
@@ -245,7 +251,8 @@ export const createPendingTransaction = async (userId: string, plan: PricingPlan
             payment_method: 'bank_transfer',
             transaction_code: transactionCode,
             customer_name: customerInfo?.name,
-            customer_phone: customerInfo?.phone
+            customer_phone: customerInfo?.phone,
+            customer_email: customerInfo?.email
         })
         .select('id, transaction_code, amount')
         .single();

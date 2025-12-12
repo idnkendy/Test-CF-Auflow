@@ -6,7 +6,7 @@ import { Logo } from '../common/Logo';
 
 interface AuthPageProps {
   onGoHome: () => void;
-  initialMode?: 'login' | 'signup'; // Giữ lại để tương thích nhưng không dùng
+  initialMode?: 'login' | 'signup'; // Kept for compatibility but unused
 }
 
 const GoogleIcon = () => (
@@ -44,19 +44,19 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
             Quay lại trang chủ
         </button>
         <div className="w-full max-w-md">
-            <div className="flex flex-col items-center mb-8">
-                 <Logo className="w-20 h-20 mb-4 drop-shadow-xl" />
-                <h1 className="text-text-primary dark:text-white text-3xl font-extrabold mb-2">OPZEN AI</h1>
-                <p className="text-text-secondary dark:text-gray-400 text-center">Nền tảng kiến trúc & nội thất AI hàng đầu</p>
+            <div className="flex flex-col items-center mb-6">
+                 <Logo className="w-16 h-16 mb-4 drop-shadow-xl" />
+                <h1 className="text-text-primary dark:text-white text-3xl font-extrabold mb-1">OPZEN AI</h1>
+                <p className="text-text-secondary dark:text-gray-400 text-center text-sm">Kiến tạo không gian với AI</p>
             </div>
             
             <div className="bg-surface dark:bg-dark-bg p-8 rounded-2xl shadow-2xl border border-border-color dark:border-gray-700">
                 <div className="text-center mb-8">
-                    <h2 className="text-xl font-bold text-text-primary dark:text-white mb-2">
+                    <h2 className="text-2xl font-bold text-text-primary dark:text-white">
                         Đăng nhập
                     </h2>
-                    <p className="text-text-secondary dark:text-gray-400 text-sm">
-                        Sử dụng tài khoản Google để truy cập nhanh, không cần mật khẩu.
+                    <p className="text-sm text-text-secondary dark:text-gray-400 mt-2">
+                        Vui lòng đăng nhập để tiếp tục sử dụng dịch vụ.
                     </p>
                 </div>
                 
@@ -73,15 +73,15 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                     <button
                         onClick={handleGoogleSignIn}
                         disabled={loading || !isSupabaseConfigured}
-                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-900 dark:text-white font-bold py-4 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-gray-600 shadow-md hover:shadow-lg transform hover:-translate-y-0.5"
+                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-semibold py-3 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-gray-600 shadow-sm"
                     >
                         {loading ? <Spinner /> : <GoogleIcon />}
-                        <span className="text-base">Tiếp tục với Google</span>
+                        <span className="text-sm font-medium">Tiếp tục với Google</span>
                     </button>
                 </div>
 
                 <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
-                    <p className="text-xs text-center text-text-secondary dark:text-gray-500 leading-relaxed">
+                    <p className="text-[10px] text-center text-text-secondary dark:text-gray-500 leading-relaxed">
                         Bằng việc tiếp tục, bạn đồng ý với Điều khoản dịch vụ và Chính sách bảo mật của OPZEN AI.
                     </p>
                 </div>

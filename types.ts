@@ -85,6 +85,7 @@ export interface Transaction {
   transaction_code: string;
   customer_name?: string; // New field
   customer_phone?: string; // New field
+  customer_email?: string; // New field for Gmail
   created_at: string;
 }
 

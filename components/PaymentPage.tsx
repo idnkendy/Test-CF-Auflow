@@ -97,12 +97,12 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                 setTransactionData(null);
                 setInitError(null);
                 try {
-                    // Pass current user info to save snapshot in transaction record
+                    // Pass current user info AND EMAIL to save snapshot in transaction record
                     const result = await paymentService.createPendingTransaction(
                         user.id, 
                         plan, 
                         finalPrice,
-                        { name: fullName, phone: phoneNumber }
+                        { name: fullName, phone: phoneNumber, email: user.email || '' }
                     );
                     
                     setTransactionData({
@@ -119,7 +119,7 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
             };
             createTx();
         }
-    }, [step, plan, finalPrice, user.id, fullName, phoneNumber]);
+    }, [step, plan, finalPrice, user.id, fullName, phoneNumber, user.email]);
 
     // 3. Listen for Payment Success
     useEffect(() => {

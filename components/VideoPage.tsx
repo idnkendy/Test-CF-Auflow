@@ -568,6 +568,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) { 
                  jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.VideoGeneration, prompt: item.prompt, cost: cost, usage_log_id: logId });
+                 
+                 // SAFETY CHECK: If createJob failed (returned null) but money taken
+                 if (!jobId && logId) {
+                     throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
+                 }
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
@@ -661,6 +666,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) { 
                  jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.VideoGeneration, prompt: singlePrompt, cost: cost, usage_log_id: logId });
+                 
+                 // SAFETY CHECK
+                 if (!jobId && logId) {
+                     throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
+                 }
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 

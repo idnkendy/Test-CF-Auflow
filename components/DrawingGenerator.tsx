@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution } from '../types';
 import { DrawingGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
@@ -47,9 +49,11 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
         Strictly black lines on white background. Show accurate details, contours, and proportions. 
         Focus on: ${prompt || 'general elevation/section view'}.`;
 
+        let logId: string | null = null;
+
         try {
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Tạo Bản vẽ (${numberOfImages} ảnh)`);
+                logId = await onDeductCredits(cost, `Tạo Bản vẽ (${numberOfImages} ảnh)`);
             }
 
             let results: { imageUrl: string }[] = [];
@@ -77,7 +81,17 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

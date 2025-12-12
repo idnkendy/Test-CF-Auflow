@@ -212,7 +212,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         sourceImage: FileData | null, 
         referenceImage: FileData | null, 
         numberOfImages: number, 
-        aspectRatio: AspectRatio,
+        aspectRatio: AspectRatio, 
         resolution: ImageResolution,
         jobId?: string
     ): Promise<string[]> => {
@@ -269,6 +269,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     cost: cost,
                     usage_log_id: logId
                 });
+                
+                // CRITICAL SAFETY CHECK: If credits were deducted but job creation failed
+                if (!jobId && logId) {
+                    throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
+                }
+                
                 setActiveJobId(jobId);
             }
 

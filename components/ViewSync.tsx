@@ -4,6 +4,8 @@ import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { ViewSyncState } from '../state/toolState';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
@@ -127,10 +129,12 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         let combinedPrompt = promptParts.join(' ');
         let promptWithAspectRatio = `${combinedPrompt} The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally; do not add black bars or letterbox.`;
 
+        let logId: string | null = null;
+
         try {
             // Deduct credits
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Đồng bộ view (${numberOfImages} ảnh) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Đồng bộ view (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             let results: { imageUrl: string }[] = [];
@@ -163,7 +167,17 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             onStateChange({ resultImages: imageUrls });
             imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.ViewSync, prompt: promptWithAspectRatio, sourceImageURL: sourceImage.objectURL, resultImageURL: url }));
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn trong quá trình tạo góc nhìn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi đồng bộ view (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

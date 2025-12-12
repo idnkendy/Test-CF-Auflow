@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution } from '../types';
 import { LayoutGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
@@ -48,9 +50,11 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
         ${sourceImage ? 'Use the provided image as a base for the building footprint/outline.' : 'Create a layout from scratch.'}
         The layout should clearly show room zoning, walls, doors, and furniture arrangement. Use a clean, professional diagrammatic style.`;
 
+        let logId: string | null = null;
+
         try {
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Tạo Layout (${numberOfImages} ảnh)`);
+                logId = await onDeductCredits(cost, `Tạo Layout (${numberOfImages} ảnh)`);
             }
 
             let results: { imageUrl: string }[] = [];
@@ -78,7 +82,17 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo layout (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

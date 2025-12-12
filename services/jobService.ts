@@ -163,7 +163,7 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
     }
 };
 
-export const createJob = async (jobData: Partial<GenerationJob>): Promise<string | null> => {
+export const createJob = async (jobData: Partial<GenerationJob>): Promise<string> => {
     try {
         const { data, error } = await supabase
             .from('generation_jobs')
@@ -178,12 +178,14 @@ export const createJob = async (jobData: Partial<GenerationJob>): Promise<string
 
         if (error) {
             console.error("Error creating generation job:", error.message || JSON.stringify(error));
-            return null;
+            // CRITICAL FIX: Throw error instead of returning null so the frontend catch block triggers refund
+            throw new Error(`Lỗi tạo Job: ${error.message}`);
         }
         return data.id;
     } catch (e: any) {
         console.error("Exception creating job:", e.message || e);
-        return null;
+        // CRITICAL FIX: Re-throw error to ensure refund logic works
+        throw new Error(e.message || "Không thể tạo bản ghi công việc (Job Creation Failed)");
     }
 };
 

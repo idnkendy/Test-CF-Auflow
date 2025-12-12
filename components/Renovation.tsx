@@ -4,6 +4,8 @@ import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { RenovationState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
@@ -70,10 +72,12 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
         onStateChange({ isLoading: true, error: null, renovatedImages: [] });
 
+        let logId: string | null = null;
+
         try {
             // Deduct credits
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Cải tạo thiết kế (${numberOfImages} ảnh) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Cải tạo thiết kế (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             let results: { imageUrl: string }[] = [];
@@ -117,7 +121,17 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 });
             });
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund Logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi cải tạo (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }
@@ -286,7 +300,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             </button>
                         </div>
                     </div>
-                    {error && <p className="mt-3 text-sm text-red-500 text-center font-medium">{error}</p>}
+                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                 </div>
             </div>
 

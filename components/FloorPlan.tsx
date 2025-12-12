@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution } from '../types';
 import { FloorPlanState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
@@ -11,6 +13,7 @@ import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
+import AspectRatioSelector from './common/AspectRatioSelector';
 
 interface FloorPlanProps {
     state: FloorPlanState;
@@ -20,7 +23,7 @@ interface FloorPlanProps {
 }
 
 const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { prompt, layoutPrompt, sourceImage, referenceImage, isLoading, error, resultImages, numberOfImages, renderMode, planType, resolution } = state;
+    const { prompt, layoutPrompt, sourceImage, referenceImage, isLoading, error, resultImages, numberOfImages, renderMode, planType, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
 
     // Calculate cost based on resolution
@@ -52,10 +55,12 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
+        let logId: string | null = null;
+
         try {
             // Deduct credits
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Render mặt bằng (${numberOfImages} ảnh) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Render mặt bằng (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             let fullPrompt = '';
@@ -92,12 +97,15 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                 }
             }
 
+            // Append aspect ratio instruction for adherence
+            fullPrompt += ` The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally; do not add black bars or letterbox.`;
+
             // --- Generation Logic ---
             // High Quality (Pro) Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     // We map sourceImage to be the primary image input for generateHighQualityImage
-                    const images = await geminiService.generateHighQualityImage(fullPrompt, '4:3', resolution, sourceImage || undefined);
+                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage || undefined);
                     return { imageUrl: images[0] };
                 });
                 results = await Promise.all(promises);
@@ -107,7 +115,11 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                 if (referenceImage && renderMode === 'perspective') {
                      results = await geminiService.editImageWithReference(fullPrompt, sourceImage, referenceImage, numberOfImages);
                 } else {
-                     results = await geminiService.editImage(fullPrompt, sourceImage, numberOfImages);
+                     // Use generateStandardImage instead of editImage wrapper to pass aspectRatio explicitly if supported, 
+                     // or ensure prompt handles it. Currently editImage wrapper is limited, but prompt contains instruction.
+                     // For best consistency, we should use generateStandardImage directly.
+                     const imageUrls = await geminiService.generateStandardImage(fullPrompt, aspectRatio, numberOfImages, sourceImage || undefined);
+                     results = imageUrls.map(url => ({ imageUrl: url }));
                 }
             }
 
@@ -123,7 +135,17 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                 });
             });
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi render mặt bằng (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }
@@ -248,11 +270,19 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                             )}
 
                             <div className="flex-grow"></div>
-                            <div className="pt-2">
-                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                            </div>
-                            <div className="pt-2">
-                                <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
+                            
+                            <div className="space-y-4">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div>
+                                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                                    </div>
+                                    <div>
+                                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                                    </div>
+                                </div>
+                                <div>
+                                    <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
+                                </div>
                             </div>
 
                              <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mt-4 mb-2 border border-gray-200 dark:border-gray-700">

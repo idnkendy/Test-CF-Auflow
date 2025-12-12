@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { SketchConverterState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
@@ -121,12 +123,15 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                 'medium': 'with a balanced amount of detail and shading',
                 'high': 'with intricate details, textures, and rich shading'
             };
-            prompt = `Convert this realistic image into ${styleMap[sketchStyle as 'pencil' | 'charcoal']}. The sketch must be strictly black and white on a clean white background. The final result should look like a hand-drawn artwork. The sketch should have a level of detail that is ${detailMap[detailLevel]}. Do not include any color.`;
+            prompt = 
+`Convert this realistic image into ${styleMap[sketchStyle as 'pencil' | 'charcoal']}. The sketch must be strictly black and white on a clean white background. The final result should look like a hand-drawn artwork. The sketch should have a level of detail that is ${detailMap[detailLevel]}. Do not include any color.`;
         }
+
+        let logId: string | null = null;
 
         try {
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Chuyển đổi Sketch (${sketchStyle}) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Chuyển đổi Sketch (${sketchStyle}) - ${resolution}`);
             }
 
             let results: any[] = [];
@@ -153,7 +158,17 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi sketch (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }
