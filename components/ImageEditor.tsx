@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { ImageEditorState } from '../state/toolState';
@@ -114,20 +113,16 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
             // High Quality (Pro) Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                let finalPrompt = prompt;
-                if (maskImage) {
-                    finalPrompt += " Note: The user provided a mask for specific edits, but in High Quality mode, please perform the requested edit while maintaining the overall composition and integrity of the image as best as possible.";
-                }
-                
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    // generateHighQualityImage accepts sourceImage and referenceImages
+                    // generateHighQualityImage accepts sourceImage, referenceImages AND maskImage now
                     const images = await geminiService.generateHighQualityImage(
-                        finalPrompt, 
+                        prompt, 
                         detectedAspectRatio, // Use detected aspect ratio
                         resolution, 
                         sourceImage, 
                         undefined, 
-                        referenceImages
+                        referenceImages,
+                        maskImage || undefined // Pass mask image here
                     );
                     return { imageUrl: images[0] };
                 });
@@ -194,6 +189,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     image={sourceImage}
                     onClose={() => setIsMaskingModalOpen(false)}
                     onApply={handleApplyMask}
+                    maskColor="rgba(239, 68, 68, 0.5)" // Red mask with 50% opacity
                 />
             )}
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Chỉnh Sửa Ảnh</h2>
@@ -204,7 +200,11 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 <div className="space-y-6 flex flex-col">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Gốc</label>
-                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
+                        <ImageUpload 
+                            onFileSelect={handleFileSelect} 
+                            previewUrl={sourceImage?.objectURL}
+                            maskPreviewUrl={maskImage?.objectURL} // Pass mask here for overlay
+                        />
                          {sourceImage && (
                             <div className="mt-4">
                                 <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">Tùy chọn vùng chọn:</p>
@@ -212,8 +212,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                     <button
                                         onClick={() => setIsMaskingModalOpen(true)}
                                         className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
-                                        disabled={resolution !== 'Standard'}
-                                        title={resolution !== 'Standard' ? "Chế độ chất lượng cao sẽ tự động xử lý toàn bộ ảnh" : "Vẽ vùng chọn"}
+                                        title="Vẽ vùng chọn"
                                     >
                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
                                         {maskImage ? 'Sửa vùng chọn' : 'Vẽ vùng chọn (Mask)'}
@@ -229,7 +228,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                     )}
                                 </div>
                                 {maskImage && <p className="text-xs text-green-500 dark:text-green-400 mt-2">Đã áp dụng vùng chọn. AI sẽ chỉ chỉnh sửa trong vùng này.</p>}
-                                {resolution !== 'Standard' && <p className="text-xs text-yellow-500 mt-1">Lưu ý: Chế độ 2K/4K sẽ xử lý toàn bộ ảnh để đảm bảo chất lượng đồng nhất.</p>}
                             </div>
                         )}
                     </div>

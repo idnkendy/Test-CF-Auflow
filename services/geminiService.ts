@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from "./supabaseClient";
 import { AspectRatio, FileData, ImageResolution } from "../types";
@@ -293,13 +292,16 @@ export const generateHighQualityImage = async (
     resolution: ImageResolution, 
     sourceImage?: FileData,
     jobId?: string,
-    referenceImages?: FileData[]
+    referenceImages?: FileData[],
+    maskImage?: FileData
 ): Promise<string[]> => {
     const ai = await getAIClient();
     const model = 'gemini-3-pro-image-preview';
 
-    const parts: any[] = [{ text: prompt }];
+    let finalPrompt = prompt;
+    const parts: any[] = [];
     
+    // 1. Source Image
     if (sourceImage) {
         parts.push({
             inlineData: {
@@ -309,6 +311,25 @@ export const generateHighQualityImage = async (
         });
     }
 
+    // 2. Mask Image (If provided) - CRITICAL FOR IN-PAINTING WITH PRO MODEL
+    if (maskImage) {
+        parts.push({
+            inlineData: {
+                mimeType: maskImage.mimeType,
+                data: maskImage.base64
+            }
+        });
+        finalPrompt = `I have provided two images. The first is the SOURCE image. The second is the MASK image where the edit zone is marked in white/color. Please perform the following edit ONLY within the masked area of the source image, keeping the rest of the image exactly the same: ${prompt}`;
+    } else {
+        parts.push({ text: finalPrompt });
+    }
+
+    // 3. Prompt (If mask included, prompt is already in parts or modified above)
+    if (maskImage) {
+        parts.push({ text: finalPrompt });
+    }
+
+    // 4. Reference Images
     if (referenceImages && referenceImages.length > 0) {
         referenceImages.forEach(ref => {
             parts.push({

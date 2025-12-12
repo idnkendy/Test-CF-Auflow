@@ -110,7 +110,20 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     const y = clientY - rect.top;
 
     ctx.globalCompositeOperation = mode === 'draw' ? 'source-over' : 'destination-out';
-    ctx.fillStyle = mode === 'draw' ? (maskColor || 'rgba(255, 255, 255, 0.7)') : '#000';
+    
+    // FIX: Use solid color (Alpha = 1) for drawing to prevent opacity stacking.
+    // We handle the visual transparency via CSS on the canvas element instead.
+    let drawingColor = '#ffffff';
+    if (maskColor) {
+        if (maskColor.startsWith('rgba')) {
+             // Force alpha to 1. Example: rgba(255, 0, 0, 0.5) -> rgba(255, 0, 0, 1)
+             drawingColor = maskColor.replace(/,\s*[\d\.]+\s*\)/, ', 1)');
+        } else {
+             drawingColor = maskColor;
+        }
+    }
+
+    ctx.fillStyle = mode === 'draw' ? drawingColor : '#000';
     ctx.beginPath();
     ctx.arc(x, y, brushSize / 2, 0, Math.PI * 2);
     ctx.fill();
@@ -144,6 +157,26 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     }
   };
   
+  // Determine cursor styles for visibility
+  const getCursorStyle = () => {
+      const isRedMask = maskColor && maskColor.includes('239, 68, 68'); // Check if red-ish
+      const borderColor = mode === 'draw' 
+          ? (isRedMask ? '#ffffff' : '#ef4444') // If drawing red, white border. If white, red border.
+          : '#000000'; // Erase -> Black border
+      
+      const bgColor = mode === 'draw' 
+          ? (maskColor || 'rgba(255, 255, 255, 0.3)') 
+          : 'rgba(255, 255, 255, 0.5)'; // Erase -> White hint
+
+      return {
+          borderColor,
+          backgroundColor: bgColor,
+          boxShadow: '0 0 4px 1px rgba(0,0,0,0.4)' // Add shadow for better contrast
+      };
+  };
+
+  const cursorStyle = getCursorStyle();
+  
   return (
     <div className="space-y-4">
       <div 
@@ -171,6 +204,7 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
         />
         <canvas
           ref={canvasRef}
+          style={{ opacity: 0.55 }} // Visual transparency applied here
         />
         {isCursorVisible && (
             <div
@@ -180,8 +214,9 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
                     top: cursorPosition.y,
                     width: brushSize,
                     height: brushSize,
-                    borderColor: mode === 'draw' ? (maskColor ? '#ef4444' : 'white') : '#ef4444',
-                    backgroundColor: mode === 'draw' ? (maskColor ? 'rgba(239, 68, 68, 0.3)' : 'rgba(255, 255, 255, 0.3)') : 'rgba(239, 68, 68, 0.3)',
+                    borderColor: cursorStyle.borderColor,
+                    backgroundColor: cursorStyle.backgroundColor,
+                    boxShadow: cursorStyle.boxShadow,
                     transform: `translate(-50%, -50%) scale(${isDrawing ? 0.9 : 1})`,
                 }}
             />

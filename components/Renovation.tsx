@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { RenovationState } from '../state/toolState';
@@ -85,11 +84,19 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
             // High Quality (Pro) Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                if (maskImage) finalPrompt += " Note: The user wanted to mask specific areas, but in High Quality mode, the entire image will be regenerated to match the renovation request while preserving the overall composition.";
                 if (referenceImage) finalPrompt += " Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image.";
 
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(finalPrompt, aspectRatio, resolution, sourceImage || undefined);
+                    // Pass maskImage here to generateHighQualityImage
+                    const images = await geminiService.generateHighQualityImage(
+                        finalPrompt, 
+                        aspectRatio, 
+                        resolution, 
+                        sourceImage || undefined,
+                        undefined,
+                        undefined,
+                        maskImage || undefined
+                    );
                     return { imageUrl: images[0] };
                 });
                 results = await Promise.all(promises);
@@ -143,7 +150,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
     const handleReferenceFileSelect = (fileData: FileData | null) => {
         onStateChange({ referenceImage: fileData });
-    };
+    }
 
     const handleSuggestionSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const selectedPrompt = e.target.value;
@@ -181,7 +188,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     image={sourceImage}
                     onClose={() => setIsMaskingModalOpen(false)}
                     onApply={handleApplyMask}
-                    maskColor="rgba(239, 68, 68, 0.7)"
+                    maskColor="rgba(239, 68, 68, 0.5)"
                 />
             )}
             <div>
@@ -193,7 +200,11 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                         <div className="space-y-6">
                             <div>
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Thực Tế</label>
-                                <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} maskPreviewUrl={maskImage?.objectURL} />
+                                <ImageUpload 
+                                    onFileSelect={handleFileSelect} 
+                                    previewUrl={sourceImage?.objectURL} 
+                                    maskPreviewUrl={maskImage?.objectURL} // Pass mask to overlay on preview
+                                />
                                 {sourceImage && (
                                     <div className="mt-4">
                                         <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">Chỉ định vùng cần cải tạo (tùy chọn):</p>
@@ -201,8 +212,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                             <button
                                                 onClick={() => setIsMaskingModalOpen(true)}
                                                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
-                                                disabled={resolution !== 'Standard'}
-                                                title={resolution !== 'Standard' ? "Chế độ chất lượng cao sẽ tự động xử lý toàn bộ ảnh để đảm bảo sự đồng nhất" : "Vẽ vùng chọn"}
+                                                title="Vẽ vùng chọn"
                                             >
                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
                                                 {maskImage ? 'Sửa vùng chọn' : 'Vẽ vùng chọn'}
@@ -218,7 +228,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                             )}
                                         </div>
                                         {maskImage && <p className="text-xs text-green-500 dark:text-green-400 mt-2">Đã áp dụng vùng chọn.</p>}
-                                        {resolution !== 'Standard' && <p className="text-xs text-yellow-500 mt-1">Lưu ý: Chế độ 2K/4K sẽ cải tạo toàn bộ ảnh để đạt chất lượng tốt nhất.</p>}
                                     </div>
                                 )}
                             </div>

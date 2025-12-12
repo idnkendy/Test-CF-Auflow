@@ -1,3 +1,4 @@
+
 import { FileData } from "../types";
 
 // Change this if your Cloudflare Worker is hosted elsewhere
@@ -219,37 +220,26 @@ async function _executeVideoGeneration(
     const token = authData.token;
     if (!token) throw new Error("AUTH_ERROR");
 
-    // Step 2: Upload
-    let mediaId = null;
+    // Step 2 & 3 Combined: Upload AND Trigger
+    // We send image data directly to 'create'. The worker handles atomic upload if image is present.
+    console.log(`[Client] Step 3: Triggering Generation (Atomic Upload & Create)...`);
+    
+    const triggerBody: any = { 
+        action: 'create', 
+        token, 
+        prompt, 
+        videoAspectRatio: videoAspectEnum 
+    };
+
     if (imageBase64) {
-        console.log(`[Client] Step 2: Uploading Image...`);
-        // Passing the variable containing "IMAGE_ASPECT_RATIO_PORTRAIT" or "...LANDSCAPE"
-        const uploadData = await fetchJson('/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ 
-                action: 'upload', 
-                token, 
-                image: imageBase64,
-                imageAspectRatio: imageAspectEnum 
-            })
-        });
-        mediaId = uploadData.mediaId;
+        triggerBody.image = imageBase64;
+        triggerBody.imageAspectRatio = imageAspectEnum;
     }
 
-    // Step 3: Trigger
-    console.log(`[Client] Step 3: Triggering Generation...`);
-    // Passing the variable containing "VIDEO_ASPECT_RATIO_PORTRAIT" or "...LANDSCAPE"
     const triggerData = await fetchJson('/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-            action: 'create', 
-            token, 
-            prompt, 
-            mediaId, 
-            videoAspectRatio: videoAspectEnum 
-        })
+        body: JSON.stringify(triggerBody)
     });
     const { task_id, scene_id } = triggerData;
 

@@ -225,58 +225,69 @@ async function executeWithFailover(env, accounts, operationName, callback) {
     throw lastError || new Error(`All accounts failed for ${operationName}`);
 }
 
-// --- VIDEO GENERATION FUNCTIONS (Veo) ---
+// --- CORE LOGIC: INTERNAL UPLOAD HELPER ---
+async function performUpload(authData, base64Data, imageAspectRatio) {
+    const { access_token: token, auth_cookies: cookies } = authData;
+    const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+    const aspectRatioEnum = imageAspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE";
+
+    const payload = {
+        "imageInput": { 
+            "aspectRatio": aspectRatioEnum, 
+            "isUserUploaded": true, 
+            "mimeType": "image/jpeg", 
+            "rawImageBytes": cleanBase64 
+        },
+        "clientContext": { "sessionId": ";" + Date.now(), "tool": "ASSET_MANAGER" }
+    };
+
+    const res = await fetch('https://aisandbox-pa.googleapis.com/v1:uploadUserImage', {
+        method: 'POST',
+        headers: { 
+            ...HEADERS, 
+            'authorization': `Bearer ${token}`,
+            'cookie': cookies || ''
+        },
+        body: JSON.stringify(payload)
+    });
+
+    if (!res.ok) {
+        const errText = await res.text();
+        throw new Error(`Upload Failed (${res.status}): ${errText}`);
+    }
+    const data = await res.json();
+    const mediaId = data.mediaGenerationId?.mediaGenerationId || data.mediaGenerationId || data.imageOutput?.image?.id;
+    
+    if (!mediaId) throw new Error("No mediaId found in upload response");
+    return mediaId;
+}
+
+// --- EXPORTED ACTIONS ---
 
 async function uploadImage(env, accounts, base64Data, imageAspectRatio) {
     return executeWithFailover(env, accounts, "UploadImage", async (authData) => {
-        const { access_token: token, auth_cookies: cookies } = authData;
-        const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
-
-        // Use the explicit enum passed from client, or fallback to landscape if missing
-        const aspectRatioEnum = imageAspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE";
-
-        const payload = {
-            "imageInput": { 
-                "aspectRatio": aspectRatioEnum, 
-                "isUserUploaded": true, 
-                "mimeType": "image/jpeg", 
-                "rawImageBytes": cleanBase64 
-            },
-            "clientContext": { "sessionId": ";" + Date.now(), "tool": "ASSET_MANAGER" }
-        };
-
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:uploadUserImage', {
-            method: 'POST',
-            headers: { 
-                ...HEADERS, 
-                'authorization': `Bearer ${token}`,
-                'cookie': cookies || ''
-            },
-            body: JSON.stringify(payload)
-        });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Upload Failed (${res.status}) [Enum: ${aspectRatioEnum}]: ${errText}`);
-        }
-        const data = await res.json();
-
-        let mediaId = data.mediaGenerationId?.mediaGenerationId || data.mediaGenerationId || data.imageOutput?.image?.id;
-        if (!mediaId) throw new Error("No mediaId found in upload response");
-        return mediaId;
+        return await performUpload(authData, base64Data, imageAspectRatio);
     });
 }
 
-async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRatio) {
+// UPDATED: Now supports atomic upload-and-generate logic if image data is passed
+async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRatio, imageData, imageAspectRatio) {
     return executeWithFailover(env, accounts, "CreateVideo", async (authData) => {
         const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
+        
+        // 1. ATOMIC UPLOAD (If image data is provided in the request)
+        // This ensures upload and generation happen in the same account context
+        let activeMediaId = mediaId;
+        if (imageData) {
+            console.log(`[Worker] Performing atomic upload for account ${authData.id}...`);
+            activeMediaId = await performUpload(authData, imageData, imageAspectRatio);
+        }
+
+        // 2. GENERATION
         const sceneId = crypto.randomUUID();
-
-        // Use the explicit enum passed from client, or fallback to landscape if missing
         const aspectRatioEnum = videoAspectRatio || "VIDEO_ASPECT_RATIO_LANDSCAPE";
-
+        
         // CRITICAL FIX: SELECT CORRECT MODEL KEY BASED ON ASPECT RATIO
-        // Use specialized portrait model for vertical videos to prevent 400 errors
         const modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
             ? "veo_3_1_i2v_s_fast_portrait_ultra" 
             : "veo_3_1_i2v_s_fast_ultra";
@@ -292,8 +303,8 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
                 "aspectRatio": aspectRatioEnum,
                 "seed": Math.floor(Date.now() / 1000), 
                 "textInput": { "prompt": prompt },
-                "videoModelKey": modelKey, // Dynamically selected model key
-                "startImage": { "mediaId": mediaId },
+                "videoModelKey": modelKey, 
+                "startImage": { "mediaId": activeMediaId },
                 "metadata": { "sceneId": sceneId }
             }]
         };
@@ -358,7 +369,6 @@ async function triggerUpscale(env, accounts, mediaId) {
             throw new Error(`Upscale Trigger Failed (${res.status}): ${errText}`);
         }
         const data = await res.json();
-        
         const opItem = data.operations?.[0];
         const operationName = opItem?.operation?.name || opItem?.name;
         if (!operationName) throw new Error("No operation name returned in upscale trigger response");
@@ -551,8 +561,16 @@ export default {
             }
             else if (action === 'create') {
                 const accounts = await getAllAccounts(env);
-                // Extract videoAspectRatio from body
-                const result = await triggerGeneration(env, accounts, body.prompt, body.mediaId, body.videoAspectRatio);
+                // Extract params including atomic image upload data
+                const result = await triggerGeneration(
+                    env, 
+                    accounts, 
+                    body.prompt, 
+                    body.mediaId, 
+                    body.videoAspectRatio,
+                    body.image, // Atomic: Base64 data
+                    body.imageAspectRatio // Atomic: Ratio Enum
+                );
                 return sendJson(result);
             }
             else if (action === 'upscale') {
