@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { FileData } from '../types';
 import { PromptSuggesterState } from '../state/toolState';
@@ -24,29 +25,29 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelec
 
     return (
         <div className="bg-surface dark:bg-dark-bg p-4 rounded-lg border border-border-color dark:border-gray-700">
-            <h3 className="text-lg font-semibold text-text-primary dark:text-white mb-3">{title}</h3>
+            <h3 className="text-lg font-semibold text-text-primary dark:text-white mb-3 capitalize">{title}</h3>
             <div className="space-y-3">
                 {prompts.map((prompt, index) => (
-                    <div key={index} className="group flex justify-between items-start gap-2 bg-main-bg dark:bg-gray-700/50 p-3 rounded-md">
+                    <div key={index} className="group flex justify-between items-start gap-2 bg-main-bg dark:bg-gray-700/50 p-3 rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-gray-600">
                         <p className="text-text-secondary dark:text-gray-300 text-sm">{prompt}</p>
-                        <div className="flex items-center flex-shrink-0">
+                        <div className="flex items-center flex-shrink-0 gap-1">
                             <button 
                                 onClick={() => onSelectPrompt(prompt)}
                                 title="Sử dụng prompt này trong Đồng Bộ View"
                                 aria-label={`Sử dụng: ${prompt}`}
-                                className="opacity-50 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-accent/20"
+                                className="opacity-50 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-[#7f13ec] hover:text-white text-gray-500"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-text-secondary dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
                                 </svg>
                             </button>
                             <button 
                                 onClick={() => handleCopy(prompt)}
                                 title="Copy prompt"
                                 aria-label={`Sao chép: ${prompt}`}
-                                className="opacity-50 group-hover:opacity-100 transition-opacity p-1 rounded-md hover:bg-accent/20"
+                                className="opacity-50 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-500"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 text-text-secondary dark:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                 </svg>
                             </button>
@@ -58,6 +59,7 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelec
     );
 };
 
+// Cập nhật danh sách chủ đề theo đúng yêu cầu
 const suggestionSubjects = [
     { value: 'all', label: 'Tất cả chủ đề' },
     { value: 'Góc toàn cảnh', label: 'Góc toàn cảnh' },
@@ -136,7 +138,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                                 disabled={isLoading}
                             />
                             <div>
-                                <label htmlFor="suggestion-count" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Số lượng gợi ý</label>
+                                <label htmlFor="suggestion-count" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Số lượng gợi ý (mỗi loại)</label>
                                 <input 
                                     type="number" 
                                     id="suggestion-count"
@@ -148,7 +150,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                                         }
                                     }}
                                     min="1"
-                                    max="10"
+                                    max="5"
                                     className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
                                     disabled={isLoading}
                                 />
@@ -173,7 +175,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                     <button
                         onClick={handleGenerate}
                         disabled={isLoading || !sourceImage}
-                        className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                        className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg shadow-purple-500/20"
                     >
                         {isLoading ? <><Spinner /> Đang phân tích...</> : 'Tạo Gợi ý'}
                     </button>
@@ -182,19 +184,27 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
 
                 {/* --- RESULTS --- */}
                 <div className="space-y-4">
-                     <h3 className="text-lg font-semibold text-text-primary dark:text-white">Gợi ý từ AI</h3>
-                     <div className="w-full min-h-[400px] bg-surface dark:bg-dark-bg rounded-lg border border-border-color dark:border-gray-700 flex items-center justify-center p-4">
-                        {isLoading && <Spinner />}
+                     <h3 className="text-lg font-semibold text-text-primary dark:text-white flex items-center justify-between">
+                        Gợi ý từ AI
+                        {suggestions && <span className="text-xs font-normal text-green-500 bg-green-100 dark:bg-green-900/20 px-2 py-1 rounded-full">Đã xong</span>}
+                     </h3>
+                     <div className={`w-full min-h-[400px] bg-surface dark:bg-dark-bg rounded-lg border border-border-color dark:border-gray-700 flex flex-col p-4 ${!suggestions ? 'items-center justify-center' : ''}`}>
+                        {isLoading && (
+                            <>
+                                <Spinner />
+                                <p className="mt-4 text-text-secondary dark:text-gray-400 animate-pulse">AI đang đọc ảnh và suy nghĩ...</p>
+                            </>
+                        )}
                         {!isLoading && !suggestions && (
                              <div className="text-center text-text-secondary dark:text-gray-400 p-4">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+                                <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                                 </svg>
                                 <p className="mt-2">Tải lên một ảnh và nhấn "Tạo Gợi ý" để xem kết quả.</p>
                              </div>
                         )}
                         {!isLoading && suggestions && (
-                            <div className="w-full space-y-4 max-h-[60vh] overflow-y-auto pr-2">
+                            <div className="w-full space-y-4 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
                                 {Object.entries(suggestions).map(([title, prompts]) => (
                                     <SuggestionCard 
                                         key={title} 

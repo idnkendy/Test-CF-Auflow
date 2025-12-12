@@ -72,6 +72,12 @@ const DiagramIcon = (props: React.SVGProps<SVGSVGElement>) => (
 const PosterIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
 );
+const NoteEditIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+);
+const LightBulbIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>
+);
 const HomeIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
 );
@@ -103,6 +109,22 @@ export const utilityToolsGroup = {
             desc: 'Chuyển đổi bản vẽ 2D thành phối cảnh 3D ấn tượng',
             gradient: 'from-blue-500/20 to-cyan-500/20 hover:border-blue-500/50',
             image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.PromptSuggester, 
+            label: 'Gợi ý Prompt', 
+            icon: <LightBulbIcon />, 
+            desc: 'AI phân tích ảnh và gợi ý prompt cho Đồng bộ View.',
+            gradient: 'from-yellow-500/20 to-orange-500/20 hover:border-yellow-500/50',
+            image: 'https://images.unsplash.com/photo-1555421689-3f034debb7a6?q=80&w=600&auto=format&fit=crop'
+        },
+        { 
+            tool: Tool.EditByNote, 
+            label: 'Sửa Bằng Ghi Chú', 
+            icon: <NoteEditIcon />, 
+            desc: 'Chỉnh sửa ảnh trực tiếp bằng các câu lệnh ngôn ngữ tự nhiên.',
+            gradient: 'from-purple-500/20 to-pink-500/20 hover:border-purple-500/50',
+            image: 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?q=80&w=600&auto=format&fit=crop'
         },
         { 
             tool: Tool.LayoutGenerator, 

@@ -315,6 +315,16 @@ export interface RealEstatePosterState {
     resolution: ImageResolution;
 }
 
+export interface EditByNoteState {
+    prompt: string;
+    sourceImage: FileData | null;
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    resolution: ImageResolution;
+}
+
 export interface PricingState {
     // Now mostly unused but kept for compatibility if needed
 }
@@ -613,6 +623,15 @@ export const initialToolStates = {
         posterStyle: 'luxury',
         resolution: 'Standard',
     } as RealEstatePosterState,
+    [Tool.EditByNote]: {
+        prompt: '',
+        sourceImage: null,
+        isLoading: false,
+        error: null,
+        resultImages: [],
+        numberOfImages: 1,
+        resolution: 'Standard',
+    } as EditByNoteState,
     [Tool.Pricing]: {} as PricingState,
     [Tool.Profile]: { activeTab: 'profile' } as ProfileState,
     [Tool.History]: {},

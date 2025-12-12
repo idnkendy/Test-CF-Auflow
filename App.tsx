@@ -27,6 +27,8 @@ import LayoutGenerator from './components/LayoutGenerator';
 import DrawingGenerator from './components/DrawingGenerator';
 import DiagramGenerator from './components/DiagramGenerator';
 import RealEstatePoster from './components/RealEstatePoster';
+import EditByNote from './components/EditByNote';
+import PromptSuggester from './components/PromptSuggester';
 import UserProfile from './components/UserProfile';
 import Checkout from './components/Checkout'; 
 import PaymentPage from './components/PaymentPage';
@@ -427,6 +429,18 @@ const App: React.FC = () => {
      });
     setActiveTool(Tool.ViewSync);
   };
+
+  const handleSendToViewSyncWithPrompt = (image: FileData, prompt: string) => {
+    handleToolStateChange(Tool.ViewSync, {
+        sourceImage: image,
+        resultImages: [],
+        error: null,
+        customPrompt: prompt,
+        // Reset direction image when coming from prompt suggester
+        directionImage: null 
+    });
+    setActiveTool(Tool.ViewSync);
+  };
   
   const userCredits = userStatus?.credits || 0;
 
@@ -766,6 +780,19 @@ const App: React.FC = () => {
                                 onStateChange={(newState) => handleToolStateChange(Tool.RealEstatePoster, newState)}
                                 userCredits={userCredits}
                                 onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.EditByNote ? (
+                            <EditByNote
+                                state={toolStates.EditByNote}
+                                onStateChange={(newState) => handleToolStateChange(Tool.EditByNote, newState)}
+                                userCredits={userCredits}
+                                onDeductCredits={handleDeductCredits}
+                            />
+                        ) : activeTool === Tool.PromptSuggester ? (
+                            <PromptSuggester
+                                state={toolStates.PromptSuggester}
+                                onStateChange={(newState) => handleToolStateChange(Tool.PromptSuggester, newState)}
+                                onSendToViewSyncWithPrompt={handleSendToViewSyncWithPrompt}
                             />
                         ) : null}
                       </ErrorBoundary>

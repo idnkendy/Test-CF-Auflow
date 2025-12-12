@@ -657,11 +657,38 @@ export const generatePromptSuggestions = async (
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash';
     
-    const prompt = `Analyze this image and generate ${count} creative prompts for an AI image generator to create a similar architectural/interior style or view. 
-    Focus on: ${subject === 'all' ? 'various aspects' : subject}. 
-    ${customInstruction ? `Additional instruction: ${customInstruction}` : ''}
+    // Define the specific categories requested
+    const allCategories = [
+        "Góc toàn cảnh", 
+        "Góc trung cảnh", 
+        "Góc lấy nét", 
+        "Chi tiết kiến trúc"
+    ];
+
+    let systemPrompt = "";
+
+    if (subject === 'all') {
+        systemPrompt = `Analyze the provided image and generate prompt suggestions for EACH of the following 4 categories: ${allCategories.join(', ')}. 
+        For each category, provide exactly ${count} distinct prompts in Vietnamese.`;
+    } else {
+        systemPrompt = `Analyze the provided image and generate exactly ${count} distinct prompt suggestions focusing specifically on the category: "${subject}".`;
+    }
+
+    const fullPrompt = `${systemPrompt}
+    ${customInstruction ? `Additional user requirement: ${customInstruction}` : ''}
     
-    Return the output strictly as a JSON object where keys are categories (e.g., "Lighting", "Composition", "Style") and values are arrays of prompt strings. Do not use Markdown code blocks.`;
+    IMPORTANT FORMATTING RULES:
+    1. Language: Vietnamese.
+    2. **Conciseness**: Each prompt must be short and impactful (approx 2-4 lines of text).
+    3. **Structure**: Combine all details (lighting, angle, materials, mood) into **ONE single, coherent sentence** or a short paragraph. Do NOT use bullet points or lists within a suggestion.
+    4. **Goal**: Create a prompt suitable for "View Sync" (consistent style transfer).
+
+    RETURN FORMAT: Strictly a raw JSON object (no markdown, no code blocks).
+    Keys must be the category names.
+    Values must be arrays of strings (the prompts).
+    Example for 'all': { "Góc toàn cảnh": ["..."], "Góc trung cảnh": ["..."], ... }
+    Example for single: { "${subject}": ["...", "..."] }
+    `;
 
     return retryOperation(async () => {
         try {
@@ -669,7 +696,7 @@ export const generatePromptSuggestions = async (
                 model: model,
                 contents: {
                     parts: [
-                        { text: prompt },
+                        { text: fullPrompt },
                         { inlineData: { mimeType: image.mimeType, data: image.base64 } }
                     ]
                 },
@@ -678,7 +705,7 @@ export const generatePromptSuggestions = async (
                 }
             });
 
-            const text = response.text || "";
+            const text = response.text || "{}";
             return JSON.parse(text);
         } catch (e: any) {
             console.error("Failed to generate/parse suggestions", e);

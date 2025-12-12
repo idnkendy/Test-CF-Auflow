@@ -6,6 +6,7 @@ interface ResolutionSelectorProps {
   value: ImageResolution;
   onChange: (value: ImageResolution) => void;
   disabled?: boolean;
+  filter?: (option: { value: ImageResolution }) => boolean;
 }
 
 const options: { value: ImageResolution; label: string; badge?: string; cost: number; desc: string }[] = [
@@ -15,13 +16,15 @@ const options: { value: ImageResolution; label: string; badge?: string; cost: nu
     { value: '4K', label: '4K UHD', badge: 'Siêu thực', cost: 30, desc: 'Nano Pro' },
 ];
 
-const ResolutionSelector: React.FC<ResolutionSelectorProps> = ({ value, onChange, disabled }) => {
+const ResolutionSelector: React.FC<ResolutionSelectorProps> = ({ value, onChange, disabled, filter }) => {
+  const visibleOptions = filter ? options.filter(filter) : options;
+
   return (
     <div className="w-full">
         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Chất lượng ảnh & Độ phân giải</label>
-        {/* Optimized Grid: 2 cols on mobile/tablet, 4 cols on larger screens (lg+) */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {options.map(option => (
+        {/* Optimized Grid */}
+        <div className={`grid gap-3 ${visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
+            {visibleOptions.map(option => (
                 <button
                     key={option.value}
                     onClick={() => onChange(option.value)}
