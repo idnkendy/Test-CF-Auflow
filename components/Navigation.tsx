@@ -356,7 +356,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
             {/* Centered Main Nav Pill */}
             <div className="flex-1 flex justify-center">
                 <div className="flex items-center p-1.5 rounded-full bg-gray-50/80 dark:bg-white/5 border border-gray-200 dark:border-white/5 shadow-inner">
-                    {mainNavItems.map((item) => (
+                    {mainNavItems.map((item, index) => (
                         <React.Fragment key={item.tool}>
                             {renderItem(item)}
                             <div className="h-4 w-px bg-gray-300 dark:bg-white/10 mx-1"></div>

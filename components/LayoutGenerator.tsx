@@ -10,6 +10,7 @@ import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
+import ResultGrid from './common/ResultGrid';
 import ResolutionSelector from './common/ResolutionSelector';
 
 interface LayoutGeneratorProps {
@@ -65,7 +66,13 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                 });
                 results = await Promise.all(promises);
             } else {
-                results = await geminiService.editImage(fullPrompt, sourceImage || undefined as unknown as FileData, numberOfImages);
+                if (sourceImage) {
+                    results = await geminiService.editImage(fullPrompt, sourceImage, numberOfImages);
+                } else {
+                    // Fallback to standard generation if no source image provided, though editImage was called in previous logic which would fail types
+                    const imageUrls = await geminiService.generateStandardImage(fullPrompt, '4:3', numberOfImages, undefined);
+                    results = imageUrls.map(url => ({ imageUrl: url }));
+                }
             }
 
             const imageUrls = results.map(r => r.imageUrl);

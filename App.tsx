@@ -289,7 +289,7 @@ const App: React.FC = () => {
   
   const handleDeductCredits = async (amount: number, description?: string): Promise<string> => {
       if (!session?.user) throw new Error("Vui lòng đăng nhập để sử dụng.");
-      const logId = await deductCredits(session.user.id, amount, description);
+      const logId = await deductCredits(session.user.id, amount, description || '');
       await fetchUserStatus();
       return logId;
   };

@@ -2,7 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
-import { FileData, Tool, ImageResolution } from '../types';
+import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { LandscapeRenderingState } from '../state/toolState';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
@@ -51,7 +51,7 @@ interface LandscapeRenderingProps {
   onDeductCredits?: (amount: number, description: string) => Promise<string>;
 }
 
-const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
+const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateChange, onSendToViewSync, userCredits, onDeductCredits }) => {
     const { 
         gardenStyle, timeOfDay, features, customPrompt, referenceImage, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
@@ -145,7 +145,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
     const cost = numberOfImages * getCostPerImage();
 
     const handleGenerate = async () => {
-        if (onDeductCredits && userCredits < cost) {
+        if (onDeductCredits && (userCredits || 0) < cost) {
              onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
              return;
         }
@@ -325,7 +325,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                                 <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                             </div>
                             <div className="text-xs">
-                                {userCredits < cost ? (
+                                {userCredits && userCredits < cost ? (
                                     <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
                                 ) : (
                                     <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
@@ -334,7 +334,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                         </div>
                         <button
                             onClick={handleGenerate}
-                            disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost}
+                            disabled={isLoading || !customPrompt.trim() || isUpscaling || (userCredits && userCredits < cost)}
                             className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                         >
                            {isLoading ? <><Spinner /> Đang Render...</> : 'Bắt đầu Render'}

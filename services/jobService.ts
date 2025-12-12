@@ -1,6 +1,7 @@
 
 import { supabase } from './supabaseClient';
 import { GenerationJob } from '../types';
+import { refundCredits } from './paymentService';
 
 const BUCKET_NAME = 'assets';
 
@@ -260,7 +261,7 @@ export const getQueuePosition = async (jobId: string, knownCreatedAt?: string): 
     }
 };
 
-export const cleanupStaleJobs = async () => {
+export const cleanupStaleJobs = async (userId: string) => {
     // This function is deliberately empty on the client side.
     // Cleanup tasks are handled by Supabase pg_cron to prevent client-side DB load spikes.
     return; 

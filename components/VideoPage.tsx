@@ -295,6 +295,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [isMusicMuted, setIsMusicMuted] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [exportProgress, setExportProgress] = useState(0); 
+    const [audioDuration, setAudioDuration] = useState(0);
 
     // --- DELETE MODAL STATE ---
     const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({
@@ -399,6 +400,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                     mainVideoRef.current.currentTime = percentWithinSegment * dur;
                 }
             }, 50);
+            if (audioRef.current && audioDuration > 0) {
+                audioRef.current.currentTime = (percent / 100) * audioDuration;
+            }
         } else {
             if (mainVideoRef.current) {
                 const dur = mainVideoRef.current.duration || 1;
@@ -638,10 +642,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             setVideoState(prev => ({ ...prev, error: 'Vui lòng tải lên ảnh.' }));
             return;
         }
-        if (activeItem === 'transition' && !singleSourceImage) {
-            setVideoState(prev => ({ ...prev, error: 'Vui lòng tải lên ảnh bắt đầu.' }));
-            return;
-        }
 
         setIsSingleGenerating(true);
         setVideoState(prev => ({ ...prev, error: null, generatedVideoUrl: null, loadingMessage: loadingMessages[0] }));
@@ -663,9 +663,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             // Handle Image Processing if needed
-            let startImageToUse = singleSourceImage;
+            let startImageToUse: FileData | null | undefined = singleSourceImage;
             if (activeItem === 'text-to-video') {
-                startImageToUse = null; // FIX: explicitly null, not undefined to match state type
+                startImageToUse = undefined; 
             } else if (singleSourceImage) {
                 // Crop
                 const croppedBase64 = await externalVideoService.resizeAndCropImage(singleSourceImage, videoState.aspectRatio);
@@ -1150,7 +1150,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 <textarea 
                                     value={singlePrompt}
                                     onChange={(e) => setSinglePrompt(e.target.value)}
-                                    className="w-full bg-gray-50 dark:bg-[#121212] border border-gray-300 dark:border-[#302839] rounded-lg p-3 text-sm text-gray-900 dark:text-gray-200 focus:border-[#7f13ec] focus:outline-none resize-none h-32"
+                                    className="w-full bg-gray-50 dark:bg-[#121212] border border-border-color dark:border-[#302839] rounded-lg p-3 text-sm text-gray-900 dark:text-gray-200 focus:border-[#7f13ec] focus:outline-none resize-none h-32"
                                     placeholder="Mô tả chuyển động..."
                                 />
                             </div>
@@ -1167,12 +1167,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                             </div>
                             <button
                                 onClick={handleSingleGeneration}
-                                disabled={true} /* Disabled as requested */
-                                className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 h-full cursor-not-allowed"
-                                title="Tính năng đang bảo trì"
+                                disabled={isSingleGenerating} 
+                                className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 flex items-center justify-center gap-2 h-full"
                             >
                                 {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined notranslate">movie_creation</span>}
-                                <span className="whitespace-nowrap">{isSingleGenerating ? 'Đang tạo...' : 'Tạo Video (Bảo trì)'}</span>
+                                <span className="whitespace-nowrap">{isSingleGenerating ? 'Đang tạo...' : 'Tạo Video'}</span>
                             </button>
                         </div>
                     </div>
