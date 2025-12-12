@@ -106,6 +106,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     }, []);
 
+    // Effect to reset annotations ONLY when sourceImage changes (new file uploaded)
     useEffect(() => {
         if (sourceImage) {
             setAnnotations([]);
@@ -159,6 +160,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             img.src = fileData.objectURL;
         }
         onStateChange({ sourceImage: fileData, resultImages: [] });
+        // Correct place to reset: New File Loaded
         setAnnotations([]);
         setAnnotatedPreview(null);
         setPanOffset({ x: 0, y: 0 });
@@ -171,7 +173,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
     const handleOpenEditor = () => {
         setIsEditorOpen(true);
-        // Center image logic could go here
         setPanOffset({ x: 0, y: 0 });
         setZoom(1.0);
     };
@@ -367,8 +368,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     a.id === 'temp_arrow' ? { ...a, id: newId } : a
                 );
             });
-            // Switch to move tool after drawing arrow? Optional. 
-            // setActiveTool('move'); 
         }
         setIsDragging(false);
         setDraggingAnnotationId(null);
@@ -395,13 +394,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             return newArr;
         });
         setSelectedId(null);
-    };
-
-    const clearAllAnnotations = () => {
-        if (window.confirm("Bạn có chắc muốn xóa tất cả hình vẽ không?")) {
-            setAnnotations([]);
-            setSelectedId(null);
-        }
     };
 
     const handleCloseEditor = async () => {
@@ -480,22 +472,31 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const x = note.x * safeScale;
             const y = note.y * safeScale;
             
-            const textMetrics = ctx.measureText(note.text);
+            // Multiline split
+            const lines = note.text.split('\n');
+            const lineHeight = fontSize * 1.2;
+            const maxLineWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
+            
             const padding = 12 * safeScale;
-            const bgWidth = textMetrics.width + (padding * 2);
-            const bgHeight = fontSize * 1.5;
+            const bgWidth = maxLineWidth + (padding * 2);
+            const bgHeight = (lineHeight * lines.length) + padding;
 
             // Box
             ctx.save();
             ctx.strokeStyle = '#9ca3af'; 
             ctx.lineWidth = 2 * safeScale;
             ctx.setLineDash([5 * safeScale, 5 * safeScale]); 
+            // Draw box centered
             ctx.strokeRect(x - bgWidth/2, y - bgHeight/2, bgWidth, bgHeight);
             ctx.restore();
             
             // Text Color
             ctx.fillStyle = note.color; 
-            ctx.fillText(note.text, x, y);
+            // Draw each line centered
+            lines.forEach((line, i) => {
+                const lineY = y - ((lines.length - 1) * lineHeight) / 2 + (i * lineHeight);
+                ctx.fillText(line, x, lineY);
+            });
         });
 
         return canvas.toDataURL('image/png').split(',')[1];
@@ -512,16 +513,76 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             return;
         }
 
-        // Aggregate prompts
-        const notePrompts = annotations
-            .filter(a => a.type === 'text' && a.text?.trim())
-            .map(a => a.text)
-            .join('. ');
+        // --- ENHANCED PROMPT LOGIC ---
+        // Match arrows to their closest text notes
+        const arrows = annotations.filter(a => a.type === 'arrow');
+        const textNotes = annotations.filter(a => a.type === 'text');
+        
+        // Calculate image dimensions for relative coordinates
+        const imgEl = document.createElement('img');
+        imgEl.src = sourceImage.objectURL;
+        await new Promise(r => imgEl.onload = r);
+        const naturalWidth = imgEl.naturalWidth;
+        const naturalHeight = imgEl.naturalHeight;
+        
+        // If image not loaded correctly, fallback to client dim
+        const safeWidth = naturalWidth || 1000;
+        const safeHeight = naturalHeight || 1000;
 
-        if (!notePrompts && annotations.length === 0) {
-            onStateChange({ error: 'Vui lòng thêm ghi chú chỉnh sửa.' });
-            return;
+        // Scale factor: internal coordinate (from editor) to natural image coordinate
+        // Editor coordinates are stored relative to image display size * zoom.
+        // But flattenVisualsToImage calculates positions based on scaling `img.naturalWidth / clientWidth`.
+        // To be safe, let's assume the annotations array holds the raw editor coordinates.
+        // We need to know the ratio of the editor's "natural" coordinate space vs actual image.
+        // Actually, simpler: Let's assume the user visualizes the arrows on the screen.
+        // The most robust way is to just use the text content and general "arrow tip" concept.
+        // But if we can provide coordinates, it helps.
+        
+        // Let's create specific instructions
+        let promptInstructions = [];
+        
+        if (arrows.length > 0) {
+            // Find closest text for each arrow
+            arrows.forEach((arrow, index) => {
+                if (arrow.toX === undefined || arrow.toY === undefined) return;
+                
+                // Find closest text
+                let closestText = "";
+                let minDist = Infinity;
+                
+                textNotes.forEach(note => {
+                    // Use simple euclidean dist from arrow tail to text center
+                    const dist = Math.sqrt(Math.pow(note.x - arrow.x, 2) + Math.pow(note.y - arrow.y, 2));
+                    if (dist < minDist) {
+                        minDist = dist;
+                        closestText = note.text || "";
+                    }
+                });
+
+                if (closestText) {
+                    // Normalize coordinates to % to be resolution independent
+                    // Note: This relies on 'imageRef' being available and having size
+                    const clientW = imageRef.current?.width || 1;
+                    const clientH = imageRef.current?.height || 1;
+                    const relativeX = Math.round((arrow.toX / clientW) * 100);
+                    const relativeY = Math.round((arrow.toY / clientH) * 100);
+                    
+                    promptInstructions.push(`- Edit ${index + 1}: At position [X:${relativeX}%, Y:${relativeY}%], change to: "${closestText}".`);
+                }
+            });
+        } 
+        
+        // Fallback if no arrows but text exists, or just combine all text
+        const generalText = textNotes.map(t => t.text).join('. ');
+        
+        if (promptInstructions.length === 0 && !generalText) {
+             onStateChange({ error: 'Vui lòng thêm mũi tên và ghi chú chỉnh sửa.' });
+             return;
         }
+
+        const structuredPrompt = promptInstructions.length > 0 
+            ? promptInstructions.join('\n') 
+            : `Requests: ${generalText}`;
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
@@ -544,7 +605,19 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 objectURL: '' 
             } : undefined;
 
-            const fullPrompt = `Edit the image based on the visual annotations (arrows and text notes) overlaid on the tutorial image. Note that the modified element must be fixed at the arrow and must not affect other elements. Apply the requested edits. IMPORTANT: The final output must be a clean image with NO annotations, arrows, or text markers visible. Edit Request -> ${notePrompts}`;
+            const fullPrompt = `
+                I have provided an image with overlaid visual annotations (RED ARROWS and TEXT boxes).
+                
+                YOUR TASK:
+                1. Identify the RED ARROWS. The TIP of each arrow points to the EXACT location that needs editing.
+                2. Read the text note nearest to the tail of each arrow.
+                3. Apply the edit described in the text note specifically to the area indicated by the ARROW TIP.
+                4. Do NOT modify the rest of the image. Keep the original style, lighting, and context.
+                5. The final output must be clean: REMOVE all arrows and text boxes.
+                
+                SPECIFIC INSTRUCTIONS & COORDINATES:
+                ${structuredPrompt}
+            `;
 
             if (onDeductCredits) {
                 await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh)`);
@@ -820,29 +893,35 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                             }
                                         `}>
                                             {isSelected && (
-                                                <div className="cursor-move p-1 text-white bg-blue-500 rounded-sm">
+                                                <div className="cursor-move p-1 text-white bg-blue-500 rounded-sm self-start mt-1">
                                                     <span className="material-symbols-outlined text-xs block">open_with</span>
                                                 </div>
                                             )}
-                                            <input 
-                                                type="text"
+                                            {/* Changed input to textarea for multiline support */}
+                                            <textarea 
                                                 autoFocus={note.text === ''}
                                                 value={note.text}
                                                 onChange={(e) => handleTextChange(note.id, e.target.value)}
                                                 placeholder="Nhập..."
                                                 style={{ 
                                                     color: note.color, 
-                                                    fontSize: `${note.fontSize}px` 
+                                                    fontSize: `${note.fontSize}px`,
+                                                    minWidth: '100px',
+                                                    minHeight: '40px'
                                                 }}
                                                 className={`
-                                                    bg-transparent border-none outline-none font-bold text-center min-w-[50px] placeholder-gray-500/50
+                                                    bg-transparent border-none outline-none font-bold text-center placeholder-gray-500/50 resize-none overflow-hidden
                                                 `}
                                                 onMouseDown={(e) => e.stopPropagation()} // Allow text selection
+                                                // Simple auto-expand logic via rows, or let user type. 
+                                                // Using CSS resize-none + content-based size is tricky without refs per item.
+                                                // Simple approach: Use rows based on line breaks
+                                                rows={(note.text?.match(/\n/g) || []).length + 1}
                                             />
                                             {isSelected && (
                                                 <button 
                                                     onMouseDown={(e) => { e.stopPropagation(); deleteSelected(); }}
-                                                    className="p-1 text-white bg-red-500 rounded-sm hover:bg-red-600"
+                                                    className="p-1 text-white bg-red-500 rounded-sm hover:bg-red-600 self-start mt-1"
                                                 >
                                                     <span className="material-symbols-outlined text-xs block">close</span>
                                                 </button>
