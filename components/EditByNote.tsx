@@ -1,7 +1,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { FileData, ImageResolution, Tool } from '../types';
+import { FileData, ImageResolution, Tool, AspectRatio } from '../types';
 import { EditByNoteState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -45,6 +45,29 @@ const COLORS = [
     { id: 'green', value: '#16A34A', label: 'Lá' },
 ];
 
+const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
+    const ratio = width / height;
+    const ratios: { [key in AspectRatio]: number } = {
+        "1:1": 1,
+        "3:4": 3/4,
+        "4:3": 4/3,
+        "9:16": 9/16,
+        "16:9": 16/9
+    };
+    
+    let closest: AspectRatio = '1:1';
+    let minDiff = Infinity;
+
+    (Object.keys(ratios) as AspectRatio[]).forEach((r) => {
+        const diff = Math.abs(ratio - ratios[r]);
+        if (diff < minDiff) {
+            minDiff = diff;
+            closest = r;
+        }
+    });
+    return closest;
+};
+
 const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { sourceImage, isLoading, error, resultImages, numberOfImages, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
@@ -52,6 +75,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     // UI State
     const [isEditorOpen, setIsEditorOpen] = useState(false);
     const [annotatedPreview, setAnnotatedPreview] = useState<string | null>(null);
+    const [detectedAspectRatio, setDetectedAspectRatio] = useState<AspectRatio>('1:1');
 
     // Editor State
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
@@ -127,6 +151,13 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     // --- HANDLERS ---
 
     const handleFileSelect = (fileData: FileData | null) => {
+        if (fileData?.objectURL) {
+            const img = new Image();
+            img.onload = () => {
+                setDetectedAspectRatio(getClosestAspectRatio(img.width, img.height));
+            };
+            img.src = fileData.objectURL;
+        }
         onStateChange({ sourceImage: fileData, resultImages: [] });
         setAnnotations([]);
         setAnnotatedPreview(null);
@@ -513,7 +544,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 objectURL: '' 
             } : undefined;
 
-            const fullPrompt = `Edit the image based on the visual annotations (arrows and text notes) overlaid on the guide image. Instructions: ${notePrompts}`;
+            const fullPrompt = `Edit the image based on the visual annotations (arrows and text notes) overlaid on the guide image. Edit Request -> ${notePrompts}`;
 
             if (onDeductCredits) {
                 await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh)`);
@@ -524,7 +555,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const promises = Array.from({ length: numberOfImages }).map(async () => {
                 const images = await geminiService.generateHighQualityImage(
                     fullPrompt, 
-                    '1:1', 
+                    detectedAspectRatio, // Auto detected aspect ratio 
                     resolution, 
                     sourceImage, 
                     undefined, 
@@ -537,6 +568,11 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
             const imageUrls = results.map(r => r.imageUrl);
             onStateChange({ resultImages: imageUrls });
+
+            // Clear annotations after success
+            setAnnotations([]);
+            setAnnotatedPreview(null);
+            setSelectedId(null);
 
             imageUrls.forEach(url => {
                 historyService.addToHistory({
@@ -888,7 +924,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                     className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
                                 >
                                     <span className="material-symbols-outlined">draw</span>
-                                    Chỉnh Sửa
+                                    Thực Hiện Chỉnh Sửa
                                 </button>
                             </div>
                         )}
@@ -953,7 +989,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             <button
                                 onClick={handleGenerate}
                                 disabled={isLoading || !sourceImage || annotations.length === 0 || userCredits < cost}
-                                className="w-full flex justify-center items-center gap-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg"
+                                className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg"
                             >
                                 {isLoading ? 'Đang tạo...' : 'Tạo Ảnh'}
                             </button>
