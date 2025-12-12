@@ -540,7 +540,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 });
 
                 if (closestText) {
-                    promptInstructions.push(`- Note ${index + 1}: The arrow pointing to this location has the note: "${closestText}". Apply this change to the object pointed at.`);
+                    promptInstructions.push(`- Note ${index + 1}: The arrow pointing to this location has the note: "${closestText}". Apply this change to the object pointed at by the arrow tip.`);
                 }
             });
         } 
@@ -557,6 +557,8 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             : `Requests: ${generalText}`;
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
+
+        let logId: string | null = null;
 
         try {
             // --- CRITICAL CHANGE: COMPOSITE IMAGE GENERATION ---
@@ -594,7 +596,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 YOUR TASK:
                 1. Look at the image and identify the arrows and text notes.
                 2. Read the text notes to understand the requested edits.
-                3. Follow the arrows to find the target objects for those edits.
+                3. Follow the arrows to find the target objects for those edits (the arrow tip points to the target).
                 4. Apply the edits described in the notes to the target objects.
                 5. IMPORTANT: In the final output, REMOVE all arrows and text notes, restoring the background behind them to look natural. The result should be a clean, edited image without any UI overlays.
                 
@@ -602,8 +604,9 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 ${structuredPrompt}
             `;
 
+            // 1. Credit Deduction
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh)`);
+                logId = await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh)`);
             }
 
             let results: { imageUrl: string }[] = [];
@@ -639,7 +642,17 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // 2. Refund Logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ghi chú (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }
