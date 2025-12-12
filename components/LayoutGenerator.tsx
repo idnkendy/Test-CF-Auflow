@@ -10,7 +10,6 @@ import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
-import ResultGrid from './common/ResultGrid';
 import ResolutionSelector from './common/ResolutionSelector';
 
 interface LayoutGeneratorProps {
@@ -66,7 +65,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                 });
                 results = await Promise.all(promises);
             } else {
-                results = await geminiService.editImage(fullPrompt, sourceImage, numberOfImages);
+                results = await geminiService.editImage(fullPrompt, sourceImage || undefined as unknown as FileData, numberOfImages);
             }
 
             const imageUrls = results.map(r => r.imageUrl);

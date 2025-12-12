@@ -59,12 +59,10 @@ const houseDirections = [
 
 const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { 
-        name, birthDay, birthMonth, birthYear, gender, analysisType, 
+        name, birthYear, gender, analysisType, 
         floorPlanImage, houseDirection, isLoading, error, resultImage, analysisText,
-        deathDay, deathMonth, deathYear, deathHour, 
-        spouseName, spouseBirthYear, eldestChildName, eldestChildBirthYear,
-        graveDirection, terrainDescription, latitude, longitude,
-        kitchenDirection, bedroomDirection, eventType, vanKhanType, resolution
+        terrainDescription, latitude, longitude,
+        eventType, vanKhanType, resolution
     } = state;
 
     // Calculate cost based on resolution if image generation is involved

@@ -38,7 +38,6 @@ import PublicPricing from './components/PublicPricing';
 import TermsOfServicePage from './components/TermsOfServicePage'; 
 import VideoPage from './components/VideoPage';
 import { getUserStatus, deductCredits } from './services/paymentService';
-import * as jobService from './services/jobService';
 import { plans } from './constants/plans';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
@@ -299,7 +298,7 @@ const App: React.FC = () => {
     setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
   };
   
-  const handleAuthNavigate = (mode?: 'login' | 'signup') => {
+  const handleAuthNavigate = () => {
     // Mode argument is intentionally ignored as we now only support one auth method
     setView('auth');
   };
@@ -497,7 +496,7 @@ const App: React.FC = () => {
               onOpenProfile={handleOpenProfile}
               onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
               onDeductCredits={handleDeductCredits}
-              onRefreshCredits={fetchUserStatus}
+              onRefreshCredits={async () => { await fetchUserStatus() }}
           />
       );
   }

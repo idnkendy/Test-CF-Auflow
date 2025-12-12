@@ -280,12 +280,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     
     // --- SINGLE MODE STATES (Img2Vid, Text2Vid, Transition) ---
     const [singleSourceImage, setSingleSourceImage] = useState<FileData | null>(null);
-    const [singleEndImage, setSingleEndImage] = useState<FileData | null>(null); // For transition
     const [singlePrompt, setSinglePrompt] = useState('');
     const [isSingleGenerating, setIsSingleGenerating] = useState(false);
-
-    // --- EXTEND VIDEO STATE ---
-    const [videoToExtend, setVideoToExtend] = useState<VideoContextItem | null>(null);
 
     // --- TIMELINE & PLAYER STATES ---
     const [currentPlayingIndex, setCurrentPlayingIndex] = useState<number>(0);
@@ -299,7 +295,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [isMusicMuted, setIsMusicMuted] = useState(false);
     const [isExporting, setIsExporting] = useState(false);
     const [exportProgress, setExportProgress] = useState(0); 
-    const [audioDuration, setAudioDuration] = useState(0);
 
     // --- DELETE MODAL STATE ---
     const [deleteModalState, setDeleteModalState] = useState<{ isOpen: boolean; itemId: string | null }>({
@@ -404,9 +399,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                     mainVideoRef.current.currentTime = percentWithinSegment * dur;
                 }
             }, 50);
-            if (audioRef.current && audioDuration > 0) {
-                audioRef.current.currentTime = (percent / 100) * audioDuration;
-            }
         } else {
             if (mainVideoRef.current) {
                 const dur = mainVideoRef.current.duration || 1;
@@ -460,11 +452,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setVideoState(prev => ({ ...prev, error: null }));
         // Reset single mode states
         setSingleSourceImage(null);
-        setSingleEndImage(null);
         setIsSingleGenerating(false);
-        if (item.id !== 'extend-video') {
-            setVideoToExtend(null);
-        }
     };
 
     // --- ASPECT RATIO CHANGE HANDLER ---
@@ -677,7 +665,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             // Handle Image Processing if needed
             let startImageToUse = singleSourceImage;
             if (activeItem === 'text-to-video') {
-                startImageToUse = undefined; 
+                startImageToUse = null; // FIX: explicitly null, not undefined to match state type
             } else if (singleSourceImage) {
                 // Crop
                 const croppedBase64 = await externalVideoService.resizeAndCropImage(singleSourceImage, videoState.aspectRatio);
@@ -1070,7 +1058,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
     // --- CLIP EXTENSION ---
     const handleExtendClip = (item: VideoContextItem) => {
-        setVideoToExtend(item);
         setActiveItem('extend-video');
         setSinglePrompt("Nối tiếp cảnh quay hiện tại, giữ nguyên phong cách và ánh sáng, camera di chuyển mượt mà.");
     };

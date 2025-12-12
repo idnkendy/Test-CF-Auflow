@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';

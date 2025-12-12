@@ -2,7 +2,7 @@
 import React, { useState, useCallback } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
-import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
+import { FileData, Tool, ImageResolution } from '../types';
 import { LandscapeRenderingState } from '../state/toolState';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
@@ -51,7 +51,7 @@ interface LandscapeRenderingProps {
   onDeductCredits?: (amount: number, description: string) => Promise<string>;
 }
 
-const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateChange, onSendToViewSync, userCredits, onDeductCredits }) => {
+const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
     const { 
         gardenStyle, timeOfDay, features, customPrompt, referenceImage, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
