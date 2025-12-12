@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { supabase } from "./supabaseClient";
 import { AspectRatio, FileData, ImageResolution } from "../types";
@@ -69,8 +70,6 @@ const getAIClient = async () => {
 
 /**
  * Converts a Base64 string to a Blob URL ASYNCHRONOUSLY to prevent UI freeze.
- * Using fetch with data protocol allows the browser to handle the decoding 
- * efficiently off the main thread.
  */
 const base64ToBlobUrlAsync = async (base64: string, mimeType: string = 'image/png'): Promise<string> => {
     try {
@@ -79,17 +78,14 @@ const base64ToBlobUrlAsync = async (base64: string, mimeType: string = 'image/pn
         return URL.createObjectURL(blob);
     } catch (e) {
         console.error("Failed to convert Base64 to Blob Async", e);
-        // Fallback to data URI if fetch fails (rare)
         return `data:${mimeType};base64,${base64}`; 
     }
 };
 
 /**
- * Extracts raw Base64 and MimeType from a URL (Blob or Data URI) for API transmission.
- * Used for Upscaling or Editing where the API needs raw data.
+ * Extracts raw Base64 and MimeType from a URL.
  */
 export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
-    // 1. Handle Data URI
     if (url.startsWith('data:')) {
         const arr = url.split(',');
         const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
@@ -100,7 +96,6 @@ export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
         };
     }
 
-    // 2. Handle Blob URL or Remote URL
     try {
         const response = await fetch(url);
         const blob = await response.blob();
@@ -108,10 +103,9 @@ export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
             const reader = new FileReader();
             reader.onloadend = () => {
                 const base64data = reader.result as string;
-                // FileReader returns "data:image/png;base64,....."
                 const arr = base64data.split(',');
                 resolve({
-                    base64: arr[1], // Only the base64 part
+                    base64: arr[1],
                     mimeType: blob.type,
                     objectURL: url
                 });
@@ -123,6 +117,67 @@ export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
         console.error("getFileDataFromUrl failed:", e);
         throw new Error("Không thể xử lý ảnh này. Vui lòng thử lại.");
     }
+};
+
+/**
+ * Creates a composite image: Source Image + Mask (Colored Red) overlaid.
+ * This effectively "burns" the mask into the image for the Pro model to see.
+ */
+const createCompositeImage = async (source: FileData, mask: FileData): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+            reject(new Error("Cannot create canvas context"));
+            return;
+        }
+
+        const imgSource = new Image();
+        const imgMask = new Image();
+
+        // Handle CORS if needed, though FileData usually comes from local or data URI
+        imgSource.crossOrigin = "Anonymous";
+        imgMask.crossOrigin = "Anonymous";
+
+        imgSource.onload = () => {
+            canvas.width = imgSource.width;
+            canvas.height = imgSource.height;
+            
+            // 1. Draw Source Image
+            ctx.drawImage(imgSource, 0, 0);
+
+            imgMask.onload = () => {
+                // 2. Prepare the Mask Layer (Tint it RED)
+                // Create a temporary canvas to colorize the mask
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = canvas.width;
+                tempCanvas.height = canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                if (tempCtx) {
+                    // Draw the white mask
+                    tempCtx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
+                    
+                    // Composite operation to tint non-transparent pixels to RED
+                    tempCtx.globalCompositeOperation = 'source-in';
+                    tempCtx.fillStyle = '#FF0000'; // Pure Red
+                    tempCtx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // 3. Draw the Red Mask onto the Main Canvas
+                    ctx.drawImage(tempCanvas, 0, 0);
+                }
+
+                // Return Base64 of the combined image
+                resolve(canvas.toDataURL('image/jpeg', 0.95).split(',')[1]);
+            };
+            
+            imgMask.onerror = (e) => reject(new Error("Failed to load mask image for compositing"));
+            imgMask.src = mask.objectURL || `data:${mask.mimeType};base64,${mask.base64}`;
+        };
+
+        imgSource.onerror = (e) => reject(new Error("Failed to load source image for compositing"));
+        imgSource.src = source.objectURL || `data:${source.mimeType};base64,${source.base64}`;
+    });
 };
 
 // --- HELPER: Process Response ---
@@ -143,7 +198,6 @@ const processContentResponseAsync = async (response: any): Promise<string[]> => 
             for (const part of candidate.content.parts) {
                 if (part.inlineData) {
                     const mime = part.inlineData.mimeType || 'image/png';
-                    // Await the async conversion here to prevent locking UI
                     const blobUrl = await base64ToBlobUrlAsync(part.inlineData.data, mime);
                     images.push(blobUrl);
                 }
@@ -166,7 +220,6 @@ const processContentResponseAsync = async (response: any): Promise<string[]> => 
 const handleGeminiError = (e: any) => {
     let msg = e.message || e.toString();
     
-    // Attempt to parse JSON error message if present
     if (msg.startsWith('{') && msg.includes('"error"')) {
         try {
             const parsed = JSON.parse(msg);
@@ -176,27 +229,21 @@ const handleGeminiError = (e: any) => {
                     throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Đã thử lại 3 lần nhưng chưa thành công. Vui lòng đợi 1-2 phút.");
                 }
             }
-        } catch (err) {
-            // Ignore parse error
-        }
+        } catch (err) {}
     }
 
-    // Specific Error Mapping
     if (msg.includes('503') || msg.includes('overloaded') || msg.includes('UNAVAILABLE')) {
         throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Vui lòng thử lại sau 1-2 phút.");
     }
     
-    // Region/IP Block
     if (msg.includes('403') || msg.includes('location') || msg.includes('User location is not supported')) {
         throw new Error("Lỗi: IP không được hỗ trợ. Vui lòng bật VPN hoặc đổi vùng.");
     }
     
-    // Quota Limit
     if (msg.includes('429') || msg.includes('quota') || msg.includes('exhausted') || msg.includes('Resource has been exhausted')) {
         throw new Error("Hệ thống đang bận (Quota Exceeded). Vui lòng thử lại sau giây lát.");
     }
 
-    // Payload Size Limit
     if (msg.includes('413') || msg.includes('Too Large') || msg.includes('too large') || msg.includes('limit')) {
         throw new Error("Dữ liệu ảnh quá lớn so với giới hạn xử lý của AI. Vui lòng giảm kích thước ảnh hoặc nén ảnh trước khi tải lên.");
     }
@@ -213,7 +260,6 @@ const handleGeminiError = (e: any) => {
 };
 
 // --- RETRY LOGIC WRAPPER ---
-// Tự động thử lại khi gặp lỗi server hoặc quá tải (503, 500, 429)
 const retryOperation = async <T>(operation: () => Promise<T>, retries = 2, delay = 2000): Promise<T> => {
     try {
         return await operation();
@@ -232,7 +278,7 @@ const retryOperation = async <T>(operation: () => Promise<T>, retries = 2, delay
         if (retries > 0 && shouldRetry) {
             console.warn(`[AI Service] Gặp lỗi: "${msg}". Đang thử lại... (Còn ${retries} lần)`);
             await new Promise(resolve => setTimeout(resolve, delay));
-            return retryOperation(operation, retries - 1, delay * 2); // Exponential backoff (2s -> 4s -> 8s)
+            return retryOperation(operation, retries - 1, delay * 2);
         }
         
         throw error;
@@ -261,7 +307,6 @@ export const generateStandardImage = async (
         });
     }
 
-    // Apply retry logic for each image generation
     const promises = Array.from({ length: numberOfImages }).map(async () => {
         return retryOperation(async () => {
             try {
@@ -272,7 +317,7 @@ export const generateStandardImage = async (
                 });
                 return await processContentResponseAsync(response);
             } catch (e: any) {
-                throw e; // Let retryOperation catch it
+                throw e; 
             }
         });
     });
@@ -301,35 +346,53 @@ export const generateHighQualityImage = async (
     let finalPrompt = prompt;
     const parts: any[] = [];
     
-    // 1. Source Image
-    if (sourceImage) {
-        parts.push({
-            inlineData: {
-                mimeType: sourceImage.mimeType,
-                data: sourceImage.base64
-            }
-        });
-    }
+    // --- SPECIAL HANDLING FOR MASKING IN PRO MODEL ---
+    // If mask exists, we create a composite image (Source + Red Mask) and send ONLY that.
+    if (maskImage && sourceImage) {
+        try {
+            console.log("Creating composite image for Pro Model in-painting...");
+            const compositeBase64 = await createCompositeImage(sourceImage, maskImage);
+            
+            // 1. Push Composite Image (Source marked with Red)
+            parts.push({
+                inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: compositeBase64
+                }
+            });
 
-    // 2. Mask Image (If provided) - CRITICAL FOR IN-PAINTING WITH PRO MODEL
-    if (maskImage) {
-        parts.push({
-            inlineData: {
-                mimeType: maskImage.mimeType,
-                data: maskImage.base64
-            }
-        });
-        finalPrompt = `I have provided two images. The first is the SOURCE image. The second is the MASK image where the edit zone is marked in white/color. Please perform the following edit ONLY within the masked area of the source image, keeping the rest of the image exactly the same: ${prompt}`;
+            // 2. Updated Prompt for "Red Mask" logic
+            finalPrompt = `
+                I have provided an image where a specific area is marked with a RED overlay. 
+                Your task is to EDIT the image by modifying ONLY the area covered by the RED mask.
+                
+                Instructions:
+                1. Identify the red overlaid area.
+                2. Replace the content of that red area based on this request: "${prompt}".
+                3. Ensure the new content matches the lighting, perspective, and style of the surrounding unmasked image seamlessly.
+                4. Completely remove the red overlay in the final result.
+                5. Do NOT modify any part of the image outside the red area.
+            `;
+        } catch (e) {
+            console.error("Failed to create composite image", e);
+            throw new Error("Lỗi xử lý vùng chọn ảnh.");
+        }
     } else {
-        parts.push({ text: finalPrompt });
+        // Standard flow (No mask)
+        if (sourceImage) {
+            parts.push({
+                inlineData: {
+                    mimeType: sourceImage.mimeType,
+                    data: sourceImage.base64
+                }
+            });
+        }
     }
 
-    // 3. Prompt (If mask included, prompt is already in parts or modified above)
-    if (maskImage) {
-        parts.push({ text: finalPrompt });
-    }
+    // Add Text Prompt
+    parts.push({ text: finalPrompt });
 
-    // 4. Reference Images
+    // Add Reference Images (if any)
     if (referenceImages && referenceImages.length > 0) {
         referenceImages.forEach(ref => {
             parts.push({

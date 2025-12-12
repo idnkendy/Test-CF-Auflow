@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { RenovationState } from '../state/toolState';
@@ -176,7 +177,8 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         setIsMaskingModalOpen(false);
     };
 
-    const handleRemoveMask = () => {
+    const handleRemoveMask = (e?: React.MouseEvent) => {
+        if (e) e.preventDefault();
         onStateChange({ maskImage: null });
     };
 
@@ -210,7 +212,8 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                         <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">Chỉ định vùng cần cải tạo (tùy chọn):</p>
                                         <div className="flex gap-2">
                                             <button
-                                                onClick={() => setIsMaskingModalOpen(true)}
+                                                type="button"
+                                                onClick={(e) => { e.preventDefault(); setIsMaskingModalOpen(true); }}
                                                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
                                                 title="Vẽ vùng chọn"
                                             >
@@ -219,6 +222,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                             </button>
                                             {maskImage && (
                                                 <button
+                                                    type="button"
                                                     onClick={handleRemoveMask}
                                                     className="bg-red-600 hover:bg-red-700 text-white font-semibold p-2 rounded-lg transition-colors"
                                                     title="Xóa vùng chọn"
