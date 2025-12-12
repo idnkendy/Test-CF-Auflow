@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { FileData, ImageResolution, Tool } from '../types';
 import { EditByNoteState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -30,7 +31,19 @@ interface Annotation {
     toX?: number; // For arrows
     toY?: number; // For arrows
     text?: string; // For text notes
+    color: string;
+    fontSize?: number; // For text
+    strokeWidth?: number; // For arrows
 }
+
+const COLORS = [
+    { id: 'red', value: '#DC2626', label: 'Đỏ' },
+    { id: 'white', value: '#FFFFFF', label: 'Trắng' },
+    { id: 'black', value: '#000000', label: 'Đen' },
+    { id: 'yellow', value: '#EAB308', label: 'Vàng' },
+    { id: 'blue', value: '#2563EB', label: 'Xanh' },
+    { id: 'green', value: '#16A34A', label: 'Lá' },
+];
 
 const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { sourceImage, isLoading, error, resultImages, numberOfImages, resolution } = state;
@@ -45,25 +58,30 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
     const [selectedId, setSelectedId] = useState<string | null>(null);
     
+    // Style State
+    const [currentColor, setCurrentColor] = useState<string>('#DC2626');
+    const [currentFontSize, setCurrentFontSize] = useState<number>(24);
+    const [currentStrokeWidth, setCurrentStrokeWidth] = useState<number>(8);
+    
     // Interaction State
     const [isDragging, setIsDragging] = useState(false);
+    const [draggingAnnotationId, setDraggingAnnotationId] = useState<string | null>(null);
     const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
     const [panOffset, setPanOffset] = useState<{x: number, y: number}>({ x: 0, y: 0 });
-    const [zoom, setZoom] = useState(1.5); // Default 150%
+    const [zoom, setZoom] = useState(1.0); // Start at 100% to fit screen better initially
     
     // Refs
     const containerRef = useRef<HTMLDivElement>(null);
     const imageRef = useRef<HTMLImageElement>(null);
-    const hiddenInputRef = useRef<HTMLInputElement>(null); // For "Change Image" functionality
+    const hiddenInputRef = useRef<HTMLInputElement>(null);
 
-    // Initial Setup - Default to Standard (Nano Flash) if not set
+    // Initial Setup
     useEffect(() => {
         if (!resolution) {
             onStateChange({ resolution: 'Standard' });
         }
     }, []);
 
-    // Reset when source image changes
     useEffect(() => {
         if (sourceImage) {
             setAnnotations([]);
@@ -71,7 +89,30 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     }, [sourceImage]);
 
-    // Canvas Sizing & Cost
+    // Lock body scroll when editor is open to prevent background scrolling
+    useEffect(() => {
+        if (isEditorOpen) {
+            document.body.style.overflow = 'hidden';
+        } else {
+            document.body.style.overflow = '';
+        }
+        return () => {
+            document.body.style.overflow = '';
+        };
+    }, [isEditorOpen]);
+
+    // Update controls when selection changes
+    useEffect(() => {
+        if (selectedId) {
+            const item = annotations.find(a => a.id === selectedId);
+            if (item) {
+                if (item.color) setCurrentColor(item.color);
+                if (item.type === 'text' && item.fontSize) setCurrentFontSize(item.fontSize);
+                if (item.type === 'arrow' && item.strokeWidth) setCurrentStrokeWidth(item.strokeWidth);
+            }
+        }
+    }, [selectedId, annotations]);
+
     const getCost = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -90,7 +131,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         setAnnotations([]);
         setAnnotatedPreview(null);
         setPanOffset({ x: 0, y: 0 });
-        setZoom(1.5);
+        setZoom(1.0);
     };
 
     const handleResolutionChange = (val: ImageResolution) => {
@@ -99,18 +140,47 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
     const handleOpenEditor = () => {
         setIsEditorOpen(true);
-        // Reset view for editing
+        // Center image logic could go here
         setPanOffset({ x: 0, y: 0 });
-        setZoom(1.5);
+        setZoom(1.0);
     };
 
     const handleTriggerChangeImage = () => {
-        // Trigger the hidden file input from the ImageUpload component would be hard to reach
-        // So we use a hidden input here or reset the state to null to show upload UI
         if (hiddenInputRef.current) {
             hiddenInputRef.current.click();
         } else {
             handleFileSelect(null);
+        }
+    };
+
+    // --- STYLE HANDLERS ---
+
+    const handleColorSelect = (newColor: string) => {
+        setCurrentColor(newColor);
+        if (selectedId) {
+            setAnnotations(prev => prev.map(a => 
+                a.id === selectedId ? { ...a, color: newColor } : a
+            ));
+        }
+    };
+
+    const handleFontSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const size = parseInt(e.target.value);
+        setCurrentFontSize(size);
+        if (selectedId) {
+            setAnnotations(prev => prev.map(a => 
+                a.id === selectedId && a.type === 'text' ? { ...a, fontSize: size } : a
+            ));
+        }
+    };
+
+    const handleStrokeWidthChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const width = parseInt(e.target.value);
+        setCurrentStrokeWidth(width);
+        if (selectedId) {
+            setAnnotations(prev => prev.map(a => 
+                a.id === selectedId && a.type === 'arrow' ? { ...a, strokeWidth: width } : a
+            ));
         }
     };
 
@@ -128,15 +198,23 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     };
 
     const toImageCoords = (screenX: number, screenY: number) => {
-        // panOffset is handled by CSS transform, so screenX/Y (relative to container rect)
-        // only needs to be divided by zoom to get internal unscaled coordinates.
         return {
             x: screenX / zoom,
             y: screenY / zoom
         };
     };
 
-    // --- MOUSE EVENTS (Inside Editor) ---
+    // --- MOUSE EVENTS ---
+
+    const handleAnnotationDragStart = (id: string, e: React.MouseEvent | React.TouchEvent) => {
+        e.stopPropagation();
+        setSelectedId(id);
+        setDraggingAnnotationId(id);
+        
+        const coords = getRelativeCoords(e);
+        const imgCoords = toImageCoords(coords.x, coords.y);
+        setStartPos(imgCoords);
+    };
 
     const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
         if (!sourceImage) return;
@@ -146,10 +224,14 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
+        // If clicking on canvas (not on an item)
         if (activeTool === 'move') {
             setIsDragging(true);
-            // Store anchor: MousePos - CurrentPan
             setStartPos({ x: clientX - panOffset.x, y: clientY - panOffset.y });
+            // Deselect if clicking empty space
+            if (e.target === containerRef.current || e.target === imageRef.current) {
+                setSelectedId(null);
+            }
         } else if (activeTool === 'arrow') {
             setIsDragging(true);
             setStartPos(imgCoords);
@@ -159,7 +241,9 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 x: imgCoords.x,
                 y: imgCoords.y,
                 toX: imgCoords.x,
-                toY: imgCoords.y
+                toY: imgCoords.y,
+                color: currentColor,
+                strokeWidth: currentStrokeWidth
             };
             setAnnotations(prev => [...prev.filter(a => a.id !== 'temp_arrow'), newArrow]);
             setSelectedId(null);
@@ -169,33 +253,61 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 type: 'text',
                 x: imgCoords.x,
                 y: imgCoords.y,
-                text: ''
+                text: '',
+                color: currentColor,
+                fontSize: currentFontSize
             };
             setAnnotations(prev => [...prev, newNote]);
             setSelectedId(newNote.id);
-            setActiveTool('move');
+            setActiveTool('move'); // Switch back to move after placing text
         }
     };
 
     const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!isDragging) return;
         const coords = getRelativeCoords(e);
-        
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
-        if (activeTool === 'move' && startPos) {
+        // 1. Panning Canvas
+        if (isDragging && activeTool === 'move' && startPos) {
             e.preventDefault();
-            // New Pan = CurrentMousePos - Anchor
             setPanOffset({
                 x: clientX - startPos.x,
                 y: clientY - startPos.y
             });
-        } else if (activeTool === 'arrow' && startPos) {
+        } 
+        // 2. Drawing Arrow
+        else if (isDragging && activeTool === 'arrow' && startPos) {
             const imgCoords = toImageCoords(coords.x, coords.y);
             setAnnotations(prev => prev.map(a => 
                 a.id === 'temp_arrow' ? { ...a, toX: imgCoords.x, toY: imgCoords.y } : a
             ));
+        }
+        // 3. Dragging Annotation
+        else if (draggingAnnotationId && startPos) {
+            e.preventDefault();
+            const imgCoords = toImageCoords(coords.x, coords.y);
+            const dx = imgCoords.x - startPos.x;
+            const dy = imgCoords.y - startPos.y;
+
+            setAnnotations(prev => prev.map(a => {
+                if (a.id !== draggingAnnotationId) return a;
+                
+                if (a.type === 'text') {
+                    return { ...a, x: a.x + dx, y: a.y + dy };
+                } else if (a.type === 'arrow') {
+                    return { 
+                        ...a, 
+                        x: a.x + dx, 
+                        y: a.y + dy,
+                        toX: (a.toX || 0) + dx,
+                        toY: (a.toY || 0) + dy
+                    };
+                }
+                return a;
+            }));
+            
+            setStartPos(imgCoords); // Reset start pos to current for continuous delta
         }
     };
 
@@ -213,16 +325,22 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     Math.pow(tempArrow.toY - tempArrow.y, 2)
                 );
 
-                if (dist < 30) {
+                if (dist < 20) {
                     return prev.filter(a => a.id !== 'temp_arrow');
                 }
 
+                // Finalize arrow
+                const newId = Date.now().toString();
+                setSelectedId(newId); // Auto select new arrow
                 return prev.map(a => 
-                    a.id === 'temp_arrow' ? { ...a, id: Date.now().toString() } : a
+                    a.id === 'temp_arrow' ? { ...a, id: newId } : a
                 );
             });
+            // Switch to move tool after drawing arrow? Optional. 
+            // setActiveTool('move'); 
         }
         setIsDragging(false);
+        setDraggingAnnotationId(null);
         setStartPos(null);
     };
 
@@ -255,9 +373,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     };
 
-    // --- SAVE & CLOSE EDITOR ---
     const handleCloseEditor = async () => {
-        // Generate preview of annotated image
         if (sourceImage) {
             const previewUrl = await flattenVisualsToImage(true); 
             setAnnotatedPreview(previewUrl ? `data:image/png;base64,${previewUrl}` : null);
@@ -285,7 +401,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             ctx.drawImage(img, 0, 0);
         }
 
-        const clientWidth = img.width; // This is the rendered width
+        const clientWidth = img.width; 
         const scaleX = img.naturalWidth / clientWidth;
         const safeScale = (scaleX && isFinite(scaleX)) ? scaleX : 1;
 
@@ -297,15 +413,16 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const fromY = arrow.y * safeScale;
             const toX = arrow.toX * safeScale;
             const toY = arrow.toY * safeScale;
+            const width = (arrow.strokeWidth || 8) * safeScale;
 
-            const headlen = 25 * safeScale; 
+            const headlen = width * 3; 
             const dx = toX - fromX;
             const dy = toY - fromY;
             const angle = Math.atan2(dy, dx);
 
-            ctx.lineWidth = 8 * safeScale; 
-            ctx.strokeStyle = '#DC2626'; 
-            ctx.fillStyle = '#DC2626';
+            ctx.lineWidth = width; 
+            ctx.strokeStyle = arrow.color; 
+            ctx.fillStyle = arrow.color;
             ctx.lineCap = 'round';
 
             ctx.beginPath();
@@ -321,31 +438,32 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             ctx.fill();
         });
 
-        // Draw Text (Updated to Dashed Border + Transparent Background)
-        ctx.font = `bold ${24 * safeScale}px Arial`;
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        
+        // Draw Text
         annotations.filter(a => a.type === 'text').forEach(note => {
             if (!note.text) return;
+            const fontSize = (note.fontSize || 24) * safeScale;
+            ctx.font = `bold ${fontSize}px Arial`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            
             const x = note.x * safeScale;
             const y = note.y * safeScale;
             
             const textMetrics = ctx.measureText(note.text);
             const padding = 12 * safeScale;
             const bgWidth = textMetrics.width + (padding * 2);
-            const bgHeight = 40 * safeScale; 
+            const bgHeight = fontSize * 1.5;
 
-            // Dashed Border box (Simulating what user sees)
+            // Box
             ctx.save();
-            ctx.strokeStyle = '#DC2626'; // Red Border
+            ctx.strokeStyle = '#9ca3af'; 
             ctx.lineWidth = 2 * safeScale;
-            ctx.setLineDash([5 * safeScale, 5 * safeScale]); // Dashed line
+            ctx.setLineDash([5 * safeScale, 5 * safeScale]); 
             ctx.strokeRect(x - bgWidth/2, y - bgHeight/2, bgWidth, bgHeight);
             ctx.restore();
             
             // Text Color
-            ctx.fillStyle = '#DC2626'; 
+            ctx.fillStyle = note.color; 
             ctx.fillText(note.text, x, y);
         });
 
@@ -377,18 +495,17 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
         try {
-            // WORKAROUND: Create an offscreen image to allow canvas drawing.
+            // WORKAROUND: Create offscreen image
             const tempImg = new Image();
             tempImg.src = sourceImage.objectURL;
             await new Promise(r => tempImg.onload = r);
             
-            // Temporary ref override for the helper function
             const originalRef = imageRef.current;
             // @ts-ignore
             imageRef.current = tempImg; 
-            const guideBase64 = await flattenVisualsToImage(false); // Only arrows/text
+            const guideBase64 = await flattenVisualsToImage(false); 
             // @ts-ignore
-            imageRef.current = originalRef; // Restore
+            imageRef.current = originalRef; 
 
             const guideImage: FileData | undefined = guideBase64 ? {
                 base64: guideBase64,
@@ -396,7 +513,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 objectURL: '' 
             } : undefined;
 
-            const fullPrompt = `Edit the image based on the visual annotations (red arrows and text notes) overlaid on the guide image. Instructions: ${notePrompts}`;
+            const fullPrompt = `Edit the image based on the visual annotations (arrows and text notes) overlaid on the guide image. Instructions: ${notePrompts}`;
 
             if (onDeductCredits) {
                 await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh)`);
@@ -451,186 +568,271 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            {/* --- EDITOR MODAL (Full Screen Overlay) --- */}
-            {isEditorOpen && sourceImage && (
-                <div className="fixed inset-0 z-[100] bg-black/90 backdrop-blur-xl flex flex-col animate-fade-in">
-                    {/* Modal Header */}
-                    <div className="h-16 border-b border-[#302839] flex items-center justify-between px-6 bg-[#191919]/50">
-                        <h3 className="text-white font-bold text-lg flex items-center gap-2">
+            {/* --- FULL SCREEN EDITOR OVERLAY (PORTAL) --- */}
+            {isEditorOpen && sourceImage && createPortal(
+                <div className="fixed inset-0 z-[9999] bg-[#121212] flex flex-col animate-fade-in select-none touch-none overflow-hidden">
+                    
+                    {/* TOP TOOLBAR */}
+                    <div className="h-16 bg-[#191919] border-b border-[#302839] flex items-center px-4 justify-between gap-4 z-50 flex-shrink-0">
+                        {/* 1. Label */}
+                        <div className="flex items-center gap-2 text-white font-bold min-w-fit">
                             <span className="material-symbols-outlined text-[#7f13ec]">edit_note</span>
-                            Trình Chỉnh Sửa Ghi Chú
-                        </h3>
-                        <div className="flex items-center gap-3">
+                            <span className="hidden sm:inline">Ghi chú</span>
+                        </div>
+
+                        {/* 2. Main Tools */}
+                        <div className="flex bg-[#252525] rounded-lg p-1 gap-1 border border-[#302839]">
+                            <button
+                                onClick={() => setActiveTool('move')}
+                                className={`p-2 rounded-md transition-all ${activeTool === 'move' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Di chuyển / Chọn"
+                            >
+                                <span className="material-symbols-outlined text-xl">pan_tool_alt</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTool('arrow')}
+                                className={`p-2 rounded-md transition-all ${activeTool === 'arrow' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Vẽ mũi tên"
+                            >
+                                <span className="material-symbols-outlined text-xl">arrow_outward</span>
+                            </button>
+                            <button
+                                onClick={() => setActiveTool('text')}
+                                className={`p-2 rounded-md transition-all ${activeTool === 'text' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
+                                title="Thêm chữ"
+                            >
+                                <span className="material-symbols-outlined text-xl">text_fields</span>
+                            </button>
+                        </div>
+
+                        {/* 3. Settings (Sliders & Colors & Delete) */}
+                        <div className="flex-grow flex items-center gap-4 sm:gap-8 justify-center overflow-x-auto no-scrollbar px-2">
+                            {/* Font Size Slider */}
+                            <div className="flex flex-col w-24 sm:w-32">
+                                <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between">
+                                    <span>Cỡ chữ</span>
+                                    <span>{currentFontSize}</span>
+                                </label>
+                                <input 
+                                    type="range" 
+                                    min="12" max="72" 
+                                    value={currentFontSize} 
+                                    onChange={handleFontSizeChange}
+                                    className="h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-[#7f13ec]"
+                                />
+                            </div>
+
+                            {/* Stroke Width Slider */}
+                            <div className="flex flex-col w-24 sm:w-32">
+                                <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between">
+                                    <span>Độ dày</span>
+                                    <span>{currentStrokeWidth}</span>
+                                </label>
+                                <input 
+                                    type="range" 
+                                    min="2" max="30" 
+                                    value={currentStrokeWidth} 
+                                    onChange={handleStrokeWidthChange}
+                                    className="h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-[#7f13ec]"
+                                />
+                            </div>
+
+                            {/* Color Palette */}
+                            <div className="flex gap-2 items-center border-l border-[#302839] pl-4">
+                                {COLORS.map(color => (
+                                    <button
+                                        key={color.id}
+                                        onMouseDown={(e) => e.preventDefault()}
+                                        onClick={() => handleColorSelect(color.value)}
+                                        className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 transition-all ${currentColor === color.value ? 'border-white scale-110 ring-1 ring-white/30' : 'border-transparent hover:scale-105'}`}
+                                        style={{ backgroundColor: color.value }}
+                                        title={color.label}
+                                    />
+                                ))}
+                            </div>
+
+                            {/* Delete Button (New) */}
+                            <div className="flex items-center border-l border-[#302839] pl-4">
+                                <button
+                                    onClick={deleteSelected}
+                                    disabled={!selectedId}
+                                    className={`p-2 rounded-lg transition-all ${
+                                        selectedId 
+                                            ? 'text-red-500 hover:bg-red-500/10 hover:shadow-sm cursor-pointer' 
+                                            : 'text-gray-600 cursor-not-allowed'
+                                    }`}
+                                    title="Xóa đối tượng đã chọn"
+                                >
+                                    <span className="material-symbols-outlined text-xl">delete</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* 4. Actions */}
+                        <div className="flex items-center gap-2 sm:gap-3 min-w-fit">
+                            <button
+                                onClick={undoLast}
+                                className="p-2 text-gray-400 hover:text-white hover:bg-[#302839] rounded-lg transition-colors"
+                                title="Hoàn tác"
+                            >
+                                <span className="material-symbols-outlined text-xl">undo</span>
+                            </button>
+                            <button 
+                                onClick={() => { 
+                                    setAnnotations([]);
+                                    setIsEditorOpen(false); 
+                                }}
+                                className="px-4 py-2 text-sm text-gray-300 hover:text-white font-medium hover:bg-[#302839] rounded-lg transition-colors"
+                            >
+                                Hủy
+                            </button>
                             <button 
                                 onClick={handleCloseEditor}
-                                className="px-6 py-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold rounded-lg transition-colors shadow-lg"
+                                className="px-4 py-2 text-sm bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold rounded-lg transition-colors shadow-lg"
                             >
                                 Hoàn tất
                             </button>
                         </div>
                     </div>
 
-                    {/* Modal Body */}
-                    <div className="flex-grow flex relative overflow-hidden">
-                        {/* Toolbar */}
-                        <div className="w-20 bg-[#191919]/80 border-r border-[#302839] flex flex-col items-center py-6 gap-4 z-20 backdrop-blur-sm">
-                            <button
-                                onClick={() => setActiveTool('move')}
-                                className={`p-3 rounded-xl transition-all ${activeTool === 'move' ? 'bg-[#7f13ec] text-white shadow-lg' : 'text-gray-400 hover:bg-[#302839] hover:text-white'}`}
-                                title="Di chuyển / Xem"
-                            >
-                                <span className="material-symbols-outlined text-2xl">pan_tool</span>
-                            </button>
-                            <button
-                                onClick={() => setActiveTool('text')}
-                                className={`p-3 rounded-xl transition-all ${activeTool === 'text' ? 'bg-[#7f13ec] text-white shadow-lg' : 'text-gray-400 hover:bg-[#302839] hover:text-white'}`}
-                                title="Thêm ghi chú"
-                            >
-                                <span className="material-symbols-outlined text-2xl">edit_note</span>
-                            </button>
-                            <button
-                                onClick={() => setActiveTool('arrow')}
-                                className={`p-3 rounded-xl transition-all ${activeTool === 'arrow' ? 'bg-[#7f13ec] text-white shadow-lg' : 'text-gray-400 hover:bg-[#302839] hover:text-white'}`}
-                                title="Vẽ mũi tên"
-                            >
-                                <span className="material-symbols-outlined text-2xl">arrow_outward</span>
-                            </button>
-                            
-                            <div className="w-10 h-px bg-[#302839] my-2"></div>
-                            
-                            <button
-                                onClick={undoLast}
-                                className="p-3 rounded-xl text-gray-400 hover:bg-[#302839] hover:text-white transition-all"
-                                title="Hoàn tác"
-                            >
-                                <span className="material-symbols-outlined text-2xl">undo</span>
-                            </button>
-                            <button
-                                onClick={clearAllAnnotations}
-                                className="p-3 rounded-xl text-red-500 hover:bg-red-900/20 transition-all"
-                                title="Xóa tất cả"
-                            >
-                                <span className="material-symbols-outlined text-2xl">delete_sweep</span>
-                            </button>
-                            
-                            {selectedId && (
-                                <button
-                                    onClick={deleteSelected}
-                                    className="p-3 rounded-xl text-red-500 hover:bg-red-900/20 transition-all animate-pulse border border-red-500/30"
-                                    title="Xóa mục chọn"
-                                >
-                                    <span className="material-symbols-outlined text-2xl">delete</span>
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Canvas Area */}
+                    {/* CANVAS AREA */}
+                    <div 
+                        className="flex-grow bg-[#0f0f0f] relative overflow-hidden flex items-center justify-center cursor-crosshair h-full w-full"
+                        onMouseDown={handleMouseDown}
+                        onMouseMove={handleMouseMove}
+                        onMouseUp={handleMouseUp}
+                        onTouchStart={handleMouseDown}
+                        onTouchMove={handleMouseMove}
+                        onTouchEnd={handleMouseUp}
+                    >
                         <div 
-                            className="flex-grow bg-black relative overflow-hidden flex items-center justify-center select-none cursor-crosshair"
-                            onMouseDown={handleMouseDown}
-                            onMouseMove={handleMouseMove}
-                            onMouseUp={handleMouseUp}
-                            onTouchStart={handleMouseDown}
-                            onTouchMove={handleMouseMove}
-                            onTouchEnd={handleMouseUp}
+                            ref={containerRef}
+                            className={`relative shadow-2xl transition-transform duration-75 origin-center ${activeTool === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                            style={{ 
+                                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`
+                            }}
                         >
-                            <div 
-                                ref={containerRef}
-                                className={`relative shadow-2xl transition-transform duration-75 origin-center ${activeTool === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                                style={{ 
-                                    transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`
-                                }}
-                            >
-                                <img 
-                                    ref={imageRef}
-                                    src={sourceImage.objectURL} 
-                                    alt="Editing Source" 
-                                    className="max-w-full max-h-[85vh] object-contain pointer-events-none"
-                                    draggable={false}
-                                />
-                                
-                                {/* SVG Layer for Arrows */}
-                                <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
-                                    <defs>
-                                        <marker id="arrowhead" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                                            <polygon points="0 0, 6 3, 0 6" fill="#DC2626" />
-                                        </marker>
-                                        <marker id="arrowhead-selected" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
-                                            <polygon points="0 0, 6 3, 0 6" fill="#3B82F6" />
-                                        </marker>
-                                    </defs>
-                                    {annotations.filter(a => a.type === 'arrow').map(arrow => (
-                                        <g key={arrow.id} onClick={(e) => { e.stopPropagation(); setSelectedId(arrow.id); }} className="pointer-events-auto cursor-pointer group">
+                            <img 
+                                ref={imageRef}
+                                src={sourceImage.objectURL} 
+                                alt="Editing Source" 
+                                className="max-w-none pointer-events-none"
+                                style={{ maxHeight: '85vh', maxWidth: '90vw' }} // Ensure it fits but keeps aspect ratio
+                                draggable={false}
+                            />
+                            
+                            {/* SVG Layer for Arrows */}
+                            <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
+                                <defs>
+                                    {COLORS.map(color => (
+                                        <React.Fragment key={color.id}>
+                                            <marker id={`arrowhead-${color.id}`} markerWidth="3" markerHeight="3" refX="2.5" refY="1.5" orient="auto">
+                                                <polygon points="0 0, 3 1.5, 0 3" fill={color.value} />
+                                            </marker>
+                                        </React.Fragment>
+                                    ))}
+                                </defs>
+                                {annotations.filter(a => a.type === 'arrow').map(arrow => {
+                                    const colorObj = COLORS.find(c => c.value === arrow.color) || COLORS[0];
+                                    const sw = arrow.strokeWidth || 8;
+                                    const isSelected = selectedId === arrow.id;
+                                    
+                                    return (
+                                        <g 
+                                            key={arrow.id} 
+                                            onMouseDown={(e) => handleAnnotationDragStart(arrow.id, e)}
+                                            className="pointer-events-auto cursor-move group"
+                                        >
+                                            {/* Transparent hit area for easier selection */}
                                             <line 
                                                 x1={arrow.x} y1={arrow.y}
                                                 x2={arrow.toX} y2={arrow.toY}
                                                 stroke="transparent"
-                                                strokeWidth="20"
+                                                strokeWidth={sw + 20}
                                             />
                                             <line 
                                                 x1={arrow.x} y1={arrow.y}
                                                 x2={arrow.toX} y2={arrow.toY}
-                                                stroke={selectedId === arrow.id ? "#3B82F6" : "#DC2626"}
-                                                strokeWidth="2"
-                                                markerEnd={selectedId === arrow.id ? "url(#arrowhead-selected)" : "url(#arrowhead)"}
-                                                className="group-hover:stroke-blue-400 transition-colors"
+                                                stroke={arrow.color}
+                                                strokeWidth={sw}
+                                                markerEnd={`url(#arrowhead-${colorObj.id})`}
+                                                className="transition-colors"
+                                                style={{ filter: isSelected ? 'drop-shadow(0 0 4px white)' : 'none' }}
                                             />
-                                            <circle 
-                                                cx={arrow.toX} 
-                                                cy={arrow.toY} 
-                                                r="15" 
-                                                fill="transparent" 
-                                                className="cursor-pointer"
-                                            />
+                                            {/* Drag Handle at Tip */}
+                                            {isSelected && (
+                                                <circle cx={arrow.toX} cy={arrow.toY} r="8" fill="white" stroke="#7f13ec" strokeWidth="2" />
+                                            )}
                                         </g>
-                                    ))}
-                                </svg>
+                                    );
+                                })}
+                            </svg>
 
-                                {/* HTML Layer for Text Bubbles */}
-                                {annotations.filter(a => a.type === 'text').map(note => (
+                            {/* HTML Layer for Text Bubbles */}
+                            {annotations.filter(a => a.type === 'text').map(note => {
+                                const isSelected = selectedId === note.id;
+                                return (
                                     <div
                                         key={note.id}
-                                        className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 min-w-[120px]`}
+                                        className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 cursor-move group`}
                                         style={{ left: note.x, top: note.y }}
-                                        onClick={(e) => { e.stopPropagation(); setSelectedId(note.id); }}
+                                        onMouseDown={(e) => handleAnnotationDragStart(note.id, e)}
                                     >
                                         <div className={`
-                                            p-2 border-2 border-dashed rounded-lg transition-all
-                                            ${selectedId === note.id 
-                                                ? 'border-blue-500 bg-blue-500/10' 
-                                                : 'border-red-500 bg-transparent'
+                                            flex items-center gap-1 p-1 rounded-lg transition-all
+                                            ${isSelected 
+                                                ? 'border-2 border-dashed border-blue-400 bg-black/20' 
+                                                : 'border-2 border-dashed border-gray-400/50 hover:border-gray-400'
                                             }
                                         `}>
+                                            {isSelected && (
+                                                <div className="cursor-move p-1 text-white bg-blue-500 rounded-sm">
+                                                    <span className="material-symbols-outlined text-xs block">open_with</span>
+                                                </div>
+                                            )}
                                             <input 
                                                 type="text"
                                                 autoFocus={note.text === ''}
                                                 value={note.text}
                                                 onChange={(e) => handleTextChange(note.id, e.target.value)}
-                                                placeholder="Nhập ghi chú..."
+                                                placeholder="Nhập..."
+                                                style={{ 
+                                                    color: note.color, 
+                                                    fontSize: `${note.fontSize}px` 
+                                                }}
                                                 className={`
-                                                    bg-transparent border-none outline-none text-sm font-bold text-center w-full min-w-[100px] placeholder-red-300/50
-                                                    ${selectedId === note.id ? 'text-blue-500' : 'text-red-500'}
+                                                    bg-transparent border-none outline-none font-bold text-center min-w-[50px] placeholder-gray-500/50
                                                 `}
+                                                onMouseDown={(e) => e.stopPropagation()} // Allow text selection
                                             />
+                                            {isSelected && (
+                                                <button 
+                                                    onMouseDown={(e) => { e.stopPropagation(); deleteSelected(); }}
+                                                    className="p-1 text-white bg-red-500 rounded-sm hover:bg-red-600"
+                                                >
+                                                    <span className="material-symbols-outlined text-xs block">close</span>
+                                                </button>
+                                            )}
                                         </div>
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })}
+                        </div>
 
-                            {/* Zoom Controls */}
-                            <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#191919]/90 backdrop-blur-md p-1.5 rounded-xl border border-[#302839] shadow-lg z-20">
-                                <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-2 hover:bg-[#302839] rounded-lg text-white">
-                                    <span className="material-symbols-outlined text-lg">remove</span>
-                                </button>
-                                <span className="text-xs font-bold w-12 text-center text-white">{Math.round(zoom * 100)}%</span>
-                                <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-2 hover:bg-[#302839] rounded-lg text-white">
-                                    <span className="material-symbols-outlined text-lg">add</span>
-                                </button>
-                                <button onClick={() => { setZoom(1.5); setPanOffset({x:0, y:0}); }} className="px-3 py-1 hover:bg-[#302839] rounded-lg text-xs text-gray-400 font-medium">Reset</button>
-                            </div>
+                        {/* Floating Zoom Controls */}
+                        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#191919]/90 backdrop-blur-md p-1.5 rounded-full border border-[#302839] shadow-xl z-20">
+                            <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-2 hover:bg-[#302839] rounded-full text-white">
+                                <span className="material-symbols-outlined text-lg">remove</span>
+                            </button>
+                            <span className="text-xs font-bold w-12 text-center text-white">{Math.round(zoom * 100)}%</span>
+                            <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-2 hover:bg-[#302839] rounded-full text-white">
+                                <span className="material-symbols-outlined text-lg">add</span>
+                            </button>
+                            <button onClick={() => { setZoom(1.0); setPanOffset({x:0, y:0}); }} className="px-3 py-1 hover:bg-[#302839] rounded-full text-xs text-gray-400 font-medium">Reset</button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
 
             <div className="flex flex-col gap-2 flex-shrink-0">
