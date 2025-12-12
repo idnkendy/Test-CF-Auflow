@@ -518,7 +518,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         const textNotes = annotations.filter(a => a.type === 'text');
         
         // Let's create specific instructions
-        // FIX: Explicit type definition to resolve TS error
         let promptInstructions: string[] = [];
         
         if (arrows.length > 0) {
@@ -883,20 +882,24 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                                 value={note.text}
                                                 onChange={(e) => handleTextChange(note.id, e.target.value)}
                                                 placeholder="Nhập..."
+                                                // Auto-resize logic via ref
+                                                ref={(el) => {
+                                                    if (el) {
+                                                        el.style.height = 'auto'; // Reset to calculate shrink
+                                                        el.style.height = `${el.scrollHeight}px`; // Set to content height
+                                                    }
+                                                }}
                                                 style={{ 
                                                     color: note.color, 
                                                     fontSize: `${note.fontSize}px`,
                                                     minWidth: '100px',
-                                                    minHeight: '40px'
+                                                    lineHeight: '1.3',
+                                                    padding: '4px'
                                                 }}
                                                 className={`
-                                                    bg-transparent border-none outline-none font-bold text-center placeholder-gray-500/50 resize-none overflow-hidden
+                                                    bg-transparent border-none outline-none font-bold text-center placeholder-gray-500/50 resize-none overflow-hidden block
                                                 `}
                                                 onMouseDown={(e) => e.stopPropagation()} // Allow text selection
-                                                // Simple auto-expand logic via rows, or let user type. 
-                                                // Using CSS resize-none + content-based size is tricky without refs per item.
-                                                // Simple approach: Use rows based on line breaks
-                                                rows={(note.text?.match(/\n/g) || []).length + 1}
                                             />
                                             {isSelected && (
                                                 <button 
