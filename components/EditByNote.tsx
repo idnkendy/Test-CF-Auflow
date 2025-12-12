@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FileData, ImageResolution, Tool, AspectRatio } from '../types';
@@ -518,28 +517,9 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         const arrows = annotations.filter(a => a.type === 'arrow');
         const textNotes = annotations.filter(a => a.type === 'text');
         
-        // Calculate image dimensions for relative coordinates
-        const imgEl = document.createElement('img');
-        imgEl.src = sourceImage.objectURL;
-        await new Promise(r => imgEl.onload = r);
-        const naturalWidth = imgEl.naturalWidth;
-        const naturalHeight = imgEl.naturalHeight;
-        
-        // If image not loaded correctly, fallback to client dim
-        const safeWidth = naturalWidth || 1000;
-        const safeHeight = naturalHeight || 1000;
-
-        // Scale factor: internal coordinate (from editor) to natural image coordinate
-        // Editor coordinates are stored relative to image display size * zoom.
-        // But flattenVisualsToImage calculates positions based on scaling `img.naturalWidth / clientWidth`.
-        // To be safe, let's assume the annotations array holds the raw editor coordinates.
-        // We need to know the ratio of the editor's "natural" coordinate space vs actual image.
-        // Actually, simpler: Let's assume the user visualizes the arrows on the screen.
-        // The most robust way is to just use the text content and general "arrow tip" concept.
-        // But if we can provide coordinates, it helps.
-        
         // Let's create specific instructions
-        let promptInstructions = [];
+        // FIX: Explicit type definition to resolve TS error
+        let promptInstructions: string[] = [];
         
         if (arrows.length > 0) {
             // Find closest text for each arrow
