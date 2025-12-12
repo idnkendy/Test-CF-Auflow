@@ -15,6 +15,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import MaskingModal from './MaskingModal';
 import ResolutionSelector from './common/ResolutionSelector';
+import MultiImageUpload from './common/MultiImageUpload';
 
 
 const renovationSuggestions = [
@@ -34,7 +35,7 @@ interface RenovationProps {
 }
 
 const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { prompt, sourceImage, referenceImage, maskImage, isLoading, error, renovatedImages, numberOfImages, aspectRatio, resolution } = state;
+    const { prompt, sourceImage, referenceImages, maskImage, isLoading, error, renovatedImages, numberOfImages, aspectRatio, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
 
@@ -85,7 +86,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
             // High Quality (Pro) Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                if (referenceImage) finalPrompt += " Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image.";
+                if (referenceImages && referenceImages.length > 0) finalPrompt += " Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).";
 
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     // Pass maskImage here to generateHighQualityImage
@@ -95,7 +96,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                         resolution, 
                         sourceImage || undefined,
                         undefined,
-                        undefined,
+                        referenceImages,
                         maskImage || undefined
                     );
                     return { imageUrl: images[0] };
@@ -104,14 +105,17 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
             } 
             // Standard (Flash) Logic
             else {
-                if (maskImage && referenceImage) {
-                    finalPrompt = `${finalPrompt} Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image for the masked area.`;
-                    results = await geminiService.editImageWithMaskAndReference(finalPrompt, sourceImage, maskImage, referenceImage, numberOfImages);
+                if (referenceImages && referenceImages.length > 0) {
+                    finalPrompt = `${finalPrompt} Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`;
+                    
+                    if (maskImage) {
+                        results = await geminiService.editImageWithMaskAndMultipleReferences(finalPrompt, sourceImage, maskImage, referenceImages, numberOfImages);
+                    } else {
+                        // We use the new multi-ref function here as well
+                        results = await geminiService.editImageWithMultipleReferences(finalPrompt, sourceImage, referenceImages, numberOfImages);
+                    }
                 } else if (maskImage) {
                      results = await geminiService.editImageWithMask(finalPrompt, sourceImage, maskImage, numberOfImages);
-                } else if (referenceImage) {
-                    finalPrompt = `${finalPrompt} Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image.`;
-                    results = await geminiService.editImageWithReference(finalPrompt, sourceImage, referenceImage, numberOfImages);
                 } else {
                     results = await geminiService.editImage(finalPrompt, sourceImage, numberOfImages);
                 }
@@ -149,9 +153,9 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         onStateChange({ sourceImage: fileData, renovatedImages: [], maskImage: null });
     }
 
-    const handleReferenceFileSelect = (fileData: FileData | null) => {
-        onStateChange({ referenceImage: fileData });
-    }
+    const handleReferenceFilesChange = (files: FileData[]) => {
+        onStateChange({ referenceImages: files });
+    };
 
     const handleSuggestionSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const selectedPrompt = e.target.value;
@@ -180,6 +184,15 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
     const handleRemoveMask = (e?: React.MouseEvent) => {
         if (e) e.preventDefault();
         onStateChange({ maskImage: null });
+    };
+
+    const scrollToTop = () => {
+        const mainContainer = document.querySelector('main');
+        if (mainContainer) {
+            mainContainer.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     };
 
     return (
@@ -213,7 +226,11 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                         <div className="flex gap-2">
                                             <button
                                                 type="button"
-                                                onClick={(e) => { e.preventDefault(); setIsMaskingModalOpen(true); }}
+                                                onClick={(e) => { 
+                                                    e.preventDefault(); 
+                                                    setIsMaskingModalOpen(true); 
+                                                    scrollToTop(); // Force scroll to top
+                                                }}
                                                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
                                                 title="Vẽ vùng chọn"
                                             >
@@ -237,7 +254,8 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu Phong Cách (Tùy chọn)</label>
-                                <ImageUpload onFileSelect={handleReferenceFileSelect} previewUrl={referenceImage?.objectURL}/>
+                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                                <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo.</p>
                             </div>
                         </div>
                         <div className="space-y-4 flex flex-col h-full">

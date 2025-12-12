@@ -10,7 +10,7 @@ export interface ImageGeneratorState {
     weather: string;
     buildingType: string;
     customPrompt: string;
-    referenceImage: FileData | null;
+    referenceImages: FileData[]; // Updated to array
     sourceImage: FileData | null;
     isLoading: boolean;
     isUpscaling: boolean;
@@ -32,7 +32,7 @@ export interface UrbanPlanningState {
     density: string;
     lighting: string;
     customPrompt: string;
-    referenceImage: FileData | null;
+    referenceImages: FileData[]; // Updated to array
     sourceImage: FileData | null;
     isLoading: boolean;
     isUpscaling: boolean;
@@ -49,7 +49,7 @@ export interface LandscapeRenderingState {
     timeOfDay: string;
     features: string;
     customPrompt: string;
-    referenceImage: FileData | null;
+    referenceImages: FileData[]; // Updated to array
     sourceImage: FileData | null;
     isLoading: boolean;
     isUpscaling: boolean;
@@ -129,7 +129,7 @@ export interface VirtualTourState {
 export interface RenovationState {
     prompt: string;
     sourceImage: FileData | null;
-    referenceImage: FileData | null;
+    referenceImages: FileData[];
     maskImage: FileData | null;
     isLoading: boolean;
     error: string | null;
@@ -143,7 +143,7 @@ export interface FloorPlanState {
     prompt: string;
     layoutPrompt: string;
     sourceImage: FileData | null;
-    referenceImage: FileData | null;
+    referenceImages: FileData[]; // Updated to array
     isLoading: boolean;
     error: string | null;
     resultImages: string[];
@@ -332,7 +332,7 @@ export const initialToolStates = {
         weather: 'none',
         buildingType: 'none',
         customPrompt: 'Biến thành ảnh chụp thực tế nhà ở',
-        referenceImage: null,
+        referenceImages: [], // Updated
         sourceImage: null,
         isLoading: false,
         isUpscaling: false,
@@ -349,7 +349,7 @@ export const initialToolStates = {
         lighting: 'none',
         colorPalette: 'none',
         customPrompt: 'Biến thành ảnh chụp thực tế không gian nội thất',
-        referenceImage: null,
+        referenceImages: [], // Updated
         sourceImage: null,
         isLoading: false,
         isUpscaling: false,
@@ -365,7 +365,7 @@ export const initialToolStates = {
         density: 'none',
         lighting: 'none',
         customPrompt: 'Render một khu đô thị ven sông, có nhiều cây xanh, các toà nhà hiện đại và một cây cầu đi bộ.',
-        referenceImage: null,
+        referenceImages: [], // Updated
         sourceImage: null,
         isLoading: false,
         isUpscaling: false,
@@ -381,7 +381,7 @@ export const initialToolStates = {
         timeOfDay: 'none',
         features: 'none',
         customPrompt: 'Render một sân vườn nhỏ phía sau nhà, có lối đi bằng đá, nhiều hoa và một bộ bàn ghế nhỏ.',
-        referenceImage: null,
+        referenceImages: [], // Updated
         sourceImage: null,
         isLoading: false,
         isUpscaling: false,
@@ -396,7 +396,7 @@ export const initialToolStates = {
         prompt: 'Render theo phong cách Scandinavian với nội thất gỗ sồi, tường trắng và nhiều ánh sáng tự nhiên.',
         layoutPrompt: '',
         sourceImage: null,
-        referenceImage: null,
+        referenceImages: [], // Updated
         isLoading: false,
         error: null,
         resultImages: [],
@@ -409,7 +409,7 @@ export const initialToolStates = {
     [Tool.Renovation]: {
         prompt: 'Cải tạo mặt tiền ngôi nhà này theo phong cách hiện đại, tối giản. Sử dụng vật liệu gỗ, kính và bê tông. Thêm nhiều cây xanh xung quanh.',
         sourceImage: null,
-        referenceImage: null,
+        referenceImages: [],
         maskImage: null,
         isLoading: false,
         error: null,

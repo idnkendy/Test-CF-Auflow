@@ -6,6 +6,7 @@ import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { UrbanPlanningState } from '../state/toolState';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
+import MultiImageUpload from './common/MultiImageUpload';
 import ImageComparator from './ImageComparator';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
@@ -49,7 +50,7 @@ interface UrbanPlanningProps {
 
 const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
     const { 
-        viewType, density, lighting, customPrompt, referenceImage, 
+        viewType, density, lighting, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
         numberOfImages, aspectRatio, resolution
     } = state;
@@ -123,8 +124,8 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
         });
     }
 
-    const handleReferenceFileSelect = (fileData: FileData | null) => {
-        onStateChange({ referenceImage: fileData });
+    const handleReferenceFilesChange = (files: FileData[]) => {
+        onStateChange({ referenceImages: files });
     };
 
     // Calculate cost based on resolution
@@ -163,8 +164,8 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             let promptForService = "";
             if (sourceImage) {
                 promptForService = `Generate a photorealistic urban planning render with a strict aspect ratio of ${aspectRatio}. Develop the provided 2D site plan into a 3D environment. Adapt the composition to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${customPrompt}`;
-                if (referenceImage) {
-                    promptForService += ` Also, take aesthetic inspiration (architectural style, materials, atmosphere) from the provided reference image.`;
+                if (referenceImages && referenceImages.length > 0) {
+                    promptForService += ` Also, take aesthetic inspiration (architectural style, materials, atmosphere) from the provided reference image(s).`;
                 }
             } else {
                 promptForService = `${customPrompt}, photorealistic urban planning, master plan rendering, high detail, masterpiece`;
@@ -173,14 +174,19 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             // High Quality Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined);
+                    const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, undefined, referenceImages);
                     return images[0];
                 });
                 imageUrls = await Promise.all(promises);
             } 
             // Standard Logic
             else {
-                imageUrls = await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined);
+                if (sourceImage && referenceImages && referenceImages.length > 0) {
+                    const results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
+                    imageUrls = results.map(r => r.imageUrl);
+                } else {
+                    imageUrls = await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined);
+                }
             }
             
             onStateChange({ resultImages: imageUrls });
@@ -279,8 +285,8 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                                 <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
                             </div>
                              <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tùy chọn)</label>
-                                <ImageUpload onFileSelect={handleReferenceFileSelect} previewUrl={referenceImage?.objectURL}/>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tối đa 5 ảnh)</label>
+                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
                             </div>
                         </div>
 

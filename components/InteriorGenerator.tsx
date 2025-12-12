@@ -8,6 +8,7 @@ import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { InteriorGeneratorState } from '../state/toolState';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
+import MultiImageUpload from './common/MultiImageUpload';
 import ImageComparator from './ImageComparator';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
@@ -67,7 +68,7 @@ interface InteriorGeneratorProps {
 
 const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
     const { 
-        style, roomType, lighting, colorPalette, customPrompt, referenceImage, sourceImage, 
+        style, roomType, lighting, colorPalette, customPrompt, referenceImages, sourceImage, 
         isLoading, isUpscaling, error, resultImages, upscaledImage, numberOfImages, aspectRatio, resolution
     } = state;
 
@@ -146,8 +147,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         });
     }
     
-    const handleReferenceFileSelect = (fileData: FileData | null) => {
-        onStateChange({ referenceImage: fileData });
+    const handleReferenceFilesChange = (files: FileData[]) => {
+        onStateChange({ referenceImages: files });
     };
 
     const getCostPerImage = () => {
@@ -181,8 +182,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
         let promptForService = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition of the interior scene from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${customPrompt}. Make it photorealistic interior design.`;
         
-        if (referenceImage) {
-             promptForService += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image.`;
+        if (referenceImages && referenceImages.length > 0) {
+             promptForService += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`;
         }
         
         let jobId: string | null = null;
@@ -210,13 +211,18 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
             
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId || undefined);
+                    const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId || undefined, referenceImages);
                     return images[0];
                 });
                 imageUrls = await Promise.all(promises);
             } 
             else {
-                imageUrls = await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId || undefined);
+                if (sourceImage && referenceImages && referenceImages.length > 0) {
+                    const results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
+                    imageUrls = results.map(r => r.imageUrl);
+                } else {
+                    imageUrls = await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId || undefined);
+                }
             }
             
             onStateChange({ resultImages: imageUrls });
@@ -313,8 +319,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                 <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
                             </div>
                              <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tùy chọn)</label>
-                                <ImageUpload onFileSelect={handleReferenceFileSelect} previewUrl={referenceImage?.objectURL}/>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tối đa 5 ảnh)</label>
+                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
                             </div>
                         </div>
 

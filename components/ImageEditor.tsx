@@ -182,6 +182,14 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         document.body.removeChild(link);
     };
 
+    const scrollToTop = () => {
+        const mainContainer = document.querySelector('main');
+        if (mainContainer) {
+            mainContainer.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    };
 
     return (
         <div>
@@ -213,7 +221,11 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                 <div className="flex gap-2">
                                     <button
                                         type="button"
-                                        onClick={(e) => { e.preventDefault(); setIsMaskingModalOpen(true); }}
+                                        onClick={(e) => { 
+                                            e.preventDefault(); 
+                                            setIsMaskingModalOpen(true); 
+                                            scrollToTop(); // Force scroll to top
+                                        }}
                                         className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
                                         title="Vẽ vùng chọn"
                                     >
@@ -238,8 +250,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Ảnh Tham Chiếu (Tùy chọn)</label>
-                        <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={3} />
-                        <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 3 ảnh để AI tham khảo phong cách hoặc chi tiết.</p>
+                        <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                        <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo phong cách hoặc chi tiết.</p>
                     </div>
                 </div>
 

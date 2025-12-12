@@ -8,6 +8,7 @@ import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { ImageGeneratorState } from '../state/toolState';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
+import MultiImageUpload from './common/MultiImageUpload';
 import ImageComparator from './ImageComparator';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
@@ -76,7 +77,7 @@ interface ImageGeneratorProps {
 
 const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
     const { 
-        style, context, lighting, weather, buildingType, customPrompt, referenceImage, 
+        style, context, lighting, weather, buildingType, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
         numberOfImages, aspectRatio, resolution 
     } = state;
@@ -191,8 +192,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         });
     }
 
-    const handleReferenceFileSelect = (fileData: FileData | null) => {
-        onStateChange({ referenceImage: fileData });
+    const handleReferenceFilesChange = (files: FileData[]) => {
+        onStateChange({ referenceImages: files });
     };
 
     const getCostPerImage = () => {
@@ -210,7 +211,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const performGeneration = async (
         prompt: string, 
         sourceImage: FileData | null, 
-        referenceImage: FileData | null, 
+        referenceImages: FileData[], 
         numberOfImages: number, 
         aspectRatio: AspectRatio, 
         resolution: ImageResolution,
@@ -220,8 +221,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         let promptForService = "";
         if (sourceImage) {
              promptForService = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${prompt}`;
-             if (referenceImage) {
-                 promptForService += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image.`;
+             if (referenceImages && referenceImages.length > 0) {
+                 promptForService += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`;
              }
         } else {
              promptForService = `${prompt}, photorealistic architectural rendering, high detail, masterpiece`;
@@ -229,13 +230,22 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
         if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
             const promises = Array.from({ length: numberOfImages }).map(async () => {
-                const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId);
+                // Pass array of reference images
+                const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId, referenceImages);
                 return images[0];
             });
             return await Promise.all(promises);
+        } else {
+            // Standard resolution
+            if (sourceImage && referenceImages && referenceImages.length > 0) {
+                // If standard has both source and references, use the multi-ref editor
+                const results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
+                return results.map(r => r.imageUrl);
+            } else {
+                // Otherwise use standard generation
+                return await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId);
+            }
         }
-
-        return await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId);
     };
 
     const handleGenerate = async () => {
@@ -283,7 +293,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             const imageUrls = await performGeneration(
                 customPrompt, 
                 sourceImage, 
-                referenceImage, 
+                referenceImages, 
                 numberOfImages, 
                 aspectRatio, 
                 resolution, 
@@ -402,8 +412,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                             <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
                         </div>
                          <div>
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tùy chọn)</label>
-                            <ImageUpload onFileSelect={handleReferenceFileSelect} previewUrl={referenceImage?.objectURL}/>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tối đa 5 ảnh)</label>
+                            <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
                         </div>
                     </div>
 

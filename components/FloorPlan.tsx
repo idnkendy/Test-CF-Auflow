@@ -14,6 +14,7 @@ import ResultGrid from './common/ResultGrid';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
+import MultiImageUpload from './common/MultiImageUpload';
 
 interface FloorPlanProps {
     state: FloorPlanState;
@@ -23,7 +24,7 @@ interface FloorPlanProps {
 }
 
 const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { prompt, layoutPrompt, sourceImage, referenceImage, isLoading, error, resultImages, numberOfImages, renderMode, planType, resolution, aspectRatio } = state;
+    const { prompt, layoutPrompt, sourceImage, referenceImages, isLoading, error, resultImages, numberOfImages, renderMode, planType, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
 
     // Calculate cost based on resolution
@@ -86,13 +87,13 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                 
                  if (planType === 'interior') {
                     fullPrompt = `Dựa vào hình ảnh mặt bằng được cung cấp, hãy tạo ra một góc nhìn phối cảnh 3D nội thất chân thực, tầm nhìn ngang mắt người. Vui lòng thực hiện theo mô tả chi tiết về góc nhìn và phong cách sau: "${layoutPrompt}".`;
-                    if (referenceImage) {
+                    if (referenceImages && referenceImages.length > 0) {
                         fullPrompt += ` Đồng thời, hãy lấy cảm hứng về phong cách, vật liệu và không khí từ ảnh tham chiếu được cung cấp.`;
                     }
                 } else { // exterior
                     fullPrompt = `From this 2D architectural floor plan, generate a photorealistic 3D exterior perspective view (eye-level). Adhere strictly to the floor plan's layout for the building's shape. Apply the following style for materials, context, and lighting: "${layoutPrompt}".`;
-                    if (referenceImage) {
-                        fullPrompt += ` Also, take aesthetic inspiration from the provided reference image.`;
+                    if (referenceImages && referenceImages.length > 0) {
+                        fullPrompt += ` Also, take aesthetic inspiration from the provided reference image(s).`;
                     }
                 }
             }
@@ -105,15 +106,16 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     // We map sourceImage to be the primary image input for generateHighQualityImage
-                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage || undefined);
+                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage || undefined, undefined, referenceImages);
                     return { imageUrl: images[0] };
                 });
                 results = await Promise.all(promises);
             } 
             // Standard (Flash) Logic
             else {
-                if (referenceImage && renderMode === 'perspective') {
-                     results = await geminiService.editImageWithReference(fullPrompt, sourceImage, referenceImage, numberOfImages);
+                if (referenceImages && referenceImages.length > 0 && renderMode === 'perspective') {
+                     // Use editImageWithMultipleReferences for perspective mode with references
+                     results = await geminiService.editImageWithMultipleReferences(fullPrompt, sourceImage, referenceImages, numberOfImages);
                 } else {
                      // Use generateStandardImage instead of editImage wrapper to pass aspectRatio explicitly if supported, 
                      // or ensure prompt handles it. Currently editImage wrapper is limited, but prompt contains instruction.
@@ -152,11 +154,11 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
     };
     
     const handleFileSelect = (fileData: FileData | null) => {
-        onStateChange({ sourceImage: fileData, resultImages: [], referenceImage: null });
+        onStateChange({ sourceImage: fileData, resultImages: [], referenceImages: [] });
     }
     
-    const handleReferenceFileSelect = (fileData: FileData | null) => {
-        onStateChange({ referenceImage: fileData });
+    const handleReferenceFilesChange = (files: FileData[]) => {
+        onStateChange({ referenceImages: files });
     };
 
     const handleDownload = () => {
@@ -263,8 +265,8 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                                         />
                                     </div>
                                     <div>
-                                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">5. Tải Ảnh Tham Chiếu Phong Cách (Tùy chọn)</label>
-                                        <ImageUpload onFileSelect={handleReferenceFileSelect} previewUrl={referenceImage?.objectURL} />
+                                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">5. Tải Ảnh Tham Chiếu Phong Cách (Tối đa 5 ảnh)</label>
+                                        <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
                                     </div>
                                 </div>
                             )}
