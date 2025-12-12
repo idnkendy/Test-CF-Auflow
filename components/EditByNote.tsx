@@ -888,7 +888,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                     className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
                                 >
                                     <span className="material-symbols-outlined">draw</span>
-                                    Thực Hiện Chỉnh Sửa
+                                    Chỉnh Sửa
                                 </button>
                             </div>
                         )}
