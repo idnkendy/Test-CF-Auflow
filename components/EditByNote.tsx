@@ -569,9 +569,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const imageUrls = results.map(r => r.imageUrl);
             onStateChange({ resultImages: imageUrls });
 
-            // Clear annotations after success
-            setAnnotations([]);
-            setAnnotatedPreview(null);
+            // Note: We deliberately do NOT clear annotations here, so user can refine further.
             setSelectedId(null);
 
             imageUrls.forEach(url => {
@@ -934,7 +932,27 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 {/* RIGHT: CONTROLS & RESULT */}
                 <div className="flex flex-col gap-6">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 h-full flex flex-col">
-                        <h3 className="text-lg font-bold text-text-primary dark:text-white mb-4">2. Kết Quả</h3>
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-lg font-bold text-text-primary dark:text-white">2. Kết Quả</h3>
+                             {resultImages.length > 0 && (
+                                <div className="flex items-center gap-2">
+                                    <button
+                                        onClick={() => setPreviewImage(resultImages[0])}
+                                        className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
+                                        title="Phóng to"
+                                    >
+                                        <span className="material-symbols-outlined text-lg">zoom_in</span>
+                                    </button>
+                                    <button 
+                                        onClick={handleDownload} 
+                                        className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
+                                    >
+                                        <span className="material-symbols-outlined text-lg">download</span>
+                                        <span>Tải xuống</span>
+                                    </button>
+                                </div>
+                            )}
+                        </div>
                         
                         <div className="flex-grow w-full bg-black/5 dark:bg-black/20 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden min-h-[300px] relative">
                             {isLoading && (
@@ -945,14 +963,10 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             )}
                             
                             {!isLoading && resultImages.length > 0 ? (
-                                <div className="relative w-full h-full group" onClick={() => setPreviewImage(resultImages[0])}>
-                                    <img src={resultImages[0]} alt="Result" className="w-full h-full object-contain cursor-pointer" />
-                                    <div className="absolute bottom-4 right-4 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button onClick={handleDownload} className="bg-white text-black px-4 py-2 rounded-lg font-bold shadow-lg text-sm flex items-center gap-2">
-                                            <span className="material-symbols-outlined text-lg">download</span> Tải xuống
-                                        </button>
-                                    </div>
-                                </div>
+                                 <ImageComparator 
+                                    originalImage={sourceImage?.objectURL || ''}
+                                    resultImage={resultImages[0]}
+                                 />
                             ) : (
                                 <div className="text-center text-text-secondary dark:text-gray-500 p-8">
                                     <div className="w-16 h-16 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
