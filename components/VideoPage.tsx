@@ -536,7 +536,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     // --- GENERAL GENERATION LOGIC (Used by Arch Film clips) ---
     const handleGenerateClip = async (item: VideoContextItem) => {
         const cost = 5;
-        if (props.onDeductCredits && (props.userStatus?.credits || 0) < cost) {
+        if ((props.userStatus?.credits || 0) < cost) {
              setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
              return;
         }
@@ -556,7 +556,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         let logId: string | null = null;
 
         try {
-            if (props.onDeductCredits) logId = await props.onDeductCredits(cost, `Tạo Video Clip (${activeItem})`);
+            logId = await props.onDeductCredits(cost, `Tạo Video Clip (${activeItem})`);
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) { 
                  jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.VideoGeneration, prompt: item.prompt, cost: cost, usage_log_id: logId });
@@ -629,7 +629,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     // --- SINGLE GENERATION LOGIC (Img2Vid, Text2Vid, Transition) ---
     const handleSingleGeneration = async () => {
         const cost = 5;
-        if (props.onDeductCredits && (props.userStatus?.credits || 0) < cost) {
+        if ((props.userStatus?.credits || 0) < cost) {
              setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
              return;
         }
@@ -650,7 +650,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         let logId: string | null = null;
 
         try {
-            if (props.onDeductCredits) logId = await props.onDeductCredits(cost, `Tạo Video (${activeItem})`);
+            logId = await props.onDeductCredits(cost, `Tạo Video (${activeItem})`);
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) { 
                  jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.VideoGeneration, prompt: singlePrompt, cost: cost, usage_log_id: logId });

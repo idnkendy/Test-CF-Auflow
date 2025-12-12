@@ -334,7 +334,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                         </div>
                         <button
                             onClick={handleGenerate}
-                            disabled={isLoading || !customPrompt.trim() || isUpscaling || (userCredits && userCredits < cost)}
+                            disabled={isLoading || !customPrompt.trim() || isUpscaling || ((userCredits || 0) < cost)}
                             className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                         >
                            {isLoading ? <><Spinner /> Đang Render...</> : 'Bắt đầu Render'}

@@ -1,3 +1,4 @@
+
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { FileData } from '../../types';
 
@@ -134,8 +135,9 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
 
   const handleClearMask = () => {
     const canvas = canvasRef.current;
-    const ctx = canvas?.getContext('2d');
-    if (ctx && canvas) {
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       onMaskChange(null);
     }
