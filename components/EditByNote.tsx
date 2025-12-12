@@ -397,6 +397,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
     const handleCloseEditor = async () => {
         if (sourceImage) {
+            // Include background for preview
             const previewUrl = await flattenVisualsToImage(true); 
             setAnnotatedPreview(previewUrl ? `data:image/png;base64,${previewUrl}` : null);
         }
@@ -539,19 +540,11 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 });
 
                 if (closestText) {
-                    // Normalize coordinates to % to be resolution independent
-                    // Note: This relies on 'imageRef' being available and having size
-                    const clientW = imageRef.current?.width || 1;
-                    const clientH = imageRef.current?.height || 1;
-                    const relativeX = Math.round((arrow.toX / clientW) * 100);
-                    const relativeY = Math.round((arrow.toY / clientH) * 100);
-                    
-                    promptInstructions.push(`- Edit ${index + 1}: At position [X:${relativeX}%, Y:${relativeY}%], change to: "${closestText}".`);
+                    promptInstructions.push(`- Note ${index + 1}: The arrow pointing to this location has the note: "${closestText}". Apply this change to the object pointed at.`);
                 }
             });
         } 
         
-        // Fallback if no arrows but text exists, or just combine all text
         const generalText = textNotes.map(t => t.text).join('. ');
         
         if (promptInstructions.length === 0 && !generalText) {
@@ -566,35 +559,46 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
         try {
-            // WORKAROUND: Create offscreen image
+            // --- CRITICAL CHANGE: COMPOSITE IMAGE GENERATION ---
+            // Instead of passing a mask, we bake the annotations into the source image.
+            // This creates a "Visual Instruction" workflow.
+            
+            // 1. Create Offscreen Image from Source
             const tempImg = new Image();
             tempImg.src = sourceImage.objectURL;
             await new Promise(r => tempImg.onload = r);
             
+            // 2. Temporarily swap ref to perform drawing (hacky but reuses logic)
             const originalRef = imageRef.current;
             // @ts-ignore
             imageRef.current = tempImg; 
-            const guideBase64 = await flattenVisualsToImage(false); 
+            
+            // 3. Flatten Visuals WITH Background (True) -> Creates the merged input image
+            const compositeBase64 = await flattenVisualsToImage(true); 
+            
             // @ts-ignore
-            imageRef.current = originalRef; 
+            imageRef.current = originalRef; // Restore ref
 
-            const guideImage: FileData | undefined = guideBase64 ? {
-                base64: guideBase64,
+            if (!compositeBase64) throw new Error("Failed to create composite image.");
+
+            // 4. Create the Input FileData from the Composite
+            const compositeImage: FileData = {
+                base64: compositeBase64,
                 mimeType: 'image/png',
-                objectURL: '' 
-            } : undefined;
+                objectURL: '' // Not needed for API call
+            };
 
             const fullPrompt = `
-                I have provided an image with overlaid visual annotations (RED ARROWS and TEXT boxes).
+                I have provided an image that contains visual instructions overlayed on it (Arrows and Text Notes).
                 
                 YOUR TASK:
-                1. Identify the RED ARROWS. The TIP of each arrow points to the EXACT location that needs editing.
-                2. Read the text note nearest to the tail of each arrow.
-                3. Apply the edit described in the text note specifically to the area indicated by the ARROW TIP.
-                4. Do NOT modify the rest of the image. Keep the original style, lighting, and context.
-                5. The final output must be clean: REMOVE all arrows and text boxes.
+                1. Look at the image and identify the arrows and text notes.
+                2. Read the text notes to understand the requested edits.
+                3. Follow the arrows to find the target objects for those edits.
+                4. Apply the edits described in the notes to the target objects.
+                5. IMPORTANT: In the final output, REMOVE all arrows and text notes, restoring the background behind them to look natural. The result should be a clean, edited image without any UI overlays.
                 
-                SPECIFIC INSTRUCTIONS & COORDINATES:
+                SPECIFIC INSTRUCTIONS:
                 ${structuredPrompt}
             `;
 
@@ -605,14 +609,15 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             let results: { imageUrl: string }[] = [];
 
             const promises = Array.from({ length: numberOfImages }).map(async () => {
+                // PASS COMPOSITE IMAGE AS SOURCE, NO MASK
                 const images = await geminiService.generateHighQualityImage(
                     fullPrompt, 
-                    detectedAspectRatio, // Auto detected aspect ratio 
+                    detectedAspectRatio, 
                     resolution, 
-                    sourceImage, 
+                    compositeImage, // Use the merged image as source
                     undefined, 
                     undefined,
-                    guideImage 
+                    undefined // No mask image
                 );
                 return { imageUrl: images[0] };
             });
