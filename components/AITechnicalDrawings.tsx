@@ -20,6 +20,7 @@ interface AITechnicalDrawingsProps {
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
 }
 
+// Keeping options for UI consistency, though prompt overrides specific view selection for now based on user request for composite view
 const drawingTypeOptions = [
     { value: 'floor-plan', label: 'Mặt bằng (Floor Plan)' },
     { value: 'elevation', label: 'Mặt đứng (Elevation)' },
@@ -105,21 +106,18 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
         }
         onStateChange({ isLoading: true, error: null, resultImage: null });
 
-        // Prompt construction
-        const drawingTypeMap: Record<string, string> = {
-            'floor-plan': 'a professional 2D floor plan',
-            'elevation': 'a professional 2D front elevation drawing',
-            'section': 'a professional 2D cross-section drawing'
-        };
+        // Prompt construction based on user request:
+        // "Tạo một bản vẽ chiếu vuông góc mô tả công trình này theo mặt bằng, mặt cắt và 2 mặt đứng trái – phải, nền xanh blue, nét kỹ thuật màu trắng"
+        
+        let detailInstruction = "";
+        switch (detailLevel) {
+            case 'basic': detailInstruction = "Nét vẽ đơn giản, rõ ràng, tập trung vào bố cục chính."; break;
+            case 'detailed': detailInstruction = "Thể hiện chi tiết vật liệu, cấu tạo và nội thất."; break;
+            case 'annotated': detailInstruction = "Bao gồm các chú thích, kích thước và tên phòng."; break;
+            case 'terrain': detailInstruction = "Thể hiện công trình trong bối cảnh địa hình và cảnh quan xung quanh."; break;
+        }
 
-        const detailLevelMap: Record<string, string> = {
-            'basic': 'Use simple, clean lines to show the main architectural layout, walls, doors, and windows.',
-            'detailed': 'Include more details such as furniture layout, fixtures, structural elements, and material indications (hatching for concrete, wood grain patterns, etc.).',
-            'annotated': 'Include all details from the "detailed" level, and add text annotations for room names (e.g., "Living Room", "Bedroom 1") and overall dimensions.',
-            'terrain': 'Show the building in context with its surrounding terrain, including contour lines, major landscaping features, and pathways.'
-        };
-
-        const prompt = `From this photorealistic 3D architectural rendering, generate ${drawingTypeMap[drawingType]}. The drawing must be strictly orthographic (no perspective), with clean, thin black lines on a white background, in the style of a technical architectural drawing. ${detailLevelMap[detailLevel]}`;
+        const prompt = `Tạo một bản vẽ chiếu vuông góc mô tả công trình này theo mặt bằng, mặt cắt và 2 mặt đứng trái – phải, nền xanh blue, nét kỹ thuật màu trắng. ${detailInstruction}`;
 
         let logId: string | null = null;
 
@@ -195,7 +193,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                         
                         <OptionSelector 
                             id="drawing-type"
-                            label="2. Loại bản vẽ"
+                            label="2. Loại bản vẽ (Tham khảo)"
                             options={drawingTypeOptions}
                             value={drawingType}
                             onChange={(val) => onStateChange({ drawingType: val as any })}

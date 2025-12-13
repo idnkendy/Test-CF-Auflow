@@ -140,7 +140,8 @@ async function getAllAccounts(env) {
     const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
 
     try {
-        const response = await fetch(`${sbUrl}/rest/v1/video_accounts?select=id,access_token,auth_cookies,project_id,usage_count,usage_limit&is_active=eq.true&access_token=not.is.null`, {
+        // UPDATE: Thêm order=updated_at.desc để ưu tiên lấy các tài khoản mới được bot cập nhật
+        const response = await fetch(`${sbUrl}/rest/v1/video_accounts?select=id,access_token,auth_cookies,project_id,usage_count,usage_limit&is_active=eq.true&access_token=not.is.null&order=updated_at.desc`, {
             method: 'GET',
             headers: {
                 'apikey': sbKey,
@@ -168,6 +169,15 @@ async function getAllAccounts(env) {
             await resetAllUsageCounts(env);
             accounts = accounts.map(acc => ({ ...acc, usage_count: 0 }));
             availableAccounts = accounts; 
+        }
+
+        // UPDATE: Không random hoàn toàn nữa, mà giữ nguyên thứ tự ưu tiên (mới nhất trước)
+        // Tuy nhiên, để tránh "Hotspot" (tất cả user cùng dùng 1 acc mới nhất), ta lấy Top 5 acc mới nhất và random trong đó.
+        
+        if (availableAccounts.length > 5) {
+             const topFresh = availableAccounts.slice(0, 5).sort(() => Math.random() - 0.5);
+             const others = availableAccounts.slice(5).sort(() => Math.random() - 0.5);
+             return [...topFresh, ...others];
         }
 
         return availableAccounts.sort(() => Math.random() - 0.5);
@@ -227,10 +237,11 @@ async function executeWithFailover(env, accounts, operationName, callback) {
 
 // --- CORE LOGIC: INTERNAL UPLOAD HELPER ---
 async function performUpload(authData, base64Data, imageAspectRatio) {
-    const { access_token: token, auth_cookies: cookies } = authData;
+    const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
     const aspectRatioEnum = imageAspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE";
 
+    // UPDATED: Use 'PINHOLE' tool to match the Veo session context
     const payload = {
         "imageInput": { 
             "aspectRatio": aspectRatioEnum, 
@@ -238,7 +249,12 @@ async function performUpload(authData, base64Data, imageAspectRatio) {
             "mimeType": "image/jpeg", 
             "rawImageBytes": cleanBase64 
         },
-        "clientContext": { "sessionId": ";" + Date.now(), "tool": "ASSET_MANAGER" }
+        "clientContext": { 
+            "sessionId": ";" + Date.now(), 
+            "tool": "PINHOLE", 
+            "projectId": projectId,
+            "userPaygateTier": "PAYGATE_TIER_TWO"
+        }
     };
 
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1:uploadUserImage', {

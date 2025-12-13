@@ -46,9 +46,9 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
-        const fullPrompt = `Generate a functional 2D architectural layout plan (top-down view) based on the following requirements: "${prompt}". 
-        ${sourceImage ? 'Use the provided image as a base for the building footprint/outline.' : 'Create a layout from scratch.'}
-        The layout should clearly show room zoning, walls, doors, and furniture arrangement. Use a clean, professional diagrammatic style.`;
+        const fullPrompt = `Architectural Layout & Presentation Task: "${prompt}". 
+        ${sourceImage ? 'Use the provided image as the primary visual reference/design base.' : ''}
+        Ensure the final output has a professional graphic composition, clear linework, and coherent layout style.`;
 
         let logId: string | null = null;
 
@@ -69,7 +69,6 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                 if (sourceImage) {
                     results = await geminiService.editImage(fullPrompt, sourceImage, numberOfImages);
                 } else {
-                    // Fallback to standard generation if no source image provided, though editImage was called in previous logic which would fail types
                     const imageUrls = await geminiService.generateStandardImage(fullPrompt, '4:3', numberOfImages, undefined);
                     results = imageUrls.map(url => ({ imageUrl: url }));
                 }
@@ -106,21 +105,21 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
 
     return (
         <div className="flex flex-col gap-8">
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Layout</h2>
-            <p className="text-text-secondary dark:text-gray-300 -mt-8 mb-6">Tạo bố cục mặt bằng chức năng từ ý tưởng hoặc hình ảnh phác thảo.</p>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Layout & Presentation</h2>
+            <p className="text-text-secondary dark:text-gray-300 -mt-8 mb-6">Tạo bảng trình bày (presentation board), sơ đồ phân tích, hoặc bố cục mặt bằng từ ý tưởng.</p>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Phác Thảo (Tùy chọn)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Phác Thảo / Render (Tùy chọn)</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
                     <div>
                         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả yêu cầu Layout</label>
                         <textarea
-                            rows={4}
+                            rows={6}
                             className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                            placeholder="VD: Căn hộ 2 phòng ngủ, 1 phòng khách rộng, bếp mở, phong cách hiện đại..."
+                            placeholder="VD: Tạo bảng trình bày kiến trúc gồm mặt bằng, mặt cắt và phối cảnh trục đo..."
                             value={prompt}
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />

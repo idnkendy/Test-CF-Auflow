@@ -1,7 +1,8 @@
 
+// ... (imports remain same)
 import { FileData, AspectRatio, Tool, ImageResolution } from '../types';
 
-// Định nghĩa cấu trúc trạng thái cho từng công cụ
+// ... (interfaces remain same)
 
 export interface ImageGeneratorState {
     style: string;
@@ -300,7 +301,7 @@ export interface DiagramGeneratorState {
     error: string | null;
     resultImages: string[];
     numberOfImages: number;
-    diagramType: 'exploded' | 'circulation' | 'massing' | 'environmental';
+    diagramType: string; // Changed to string to support custom preset values
     resolution: ImageResolution;
 }
 
@@ -586,8 +587,8 @@ export const initialToolStates = {
         checkDimension: 'width',
     } as LuBanRulerState,
     [Tool.LayoutGenerator]: {
-        prompt: 'Bố cục mặt bằng nội thất hiện đại cho căn hộ 2 phòng ngủ, tối ưu không gian.',
-        sourceImage: null,
+        prompt: 'Tạo một bảng trình bày kiến trúc (architectural presentation board) sử dụng thiết kế của tòa nhà này. Tạo các bản vẽ đặc trưng gồm: mặt bằng, mặt cắt, phối cảnh trục đo axonometric và 5 sơ đồ diễn tiến khối (massing evolution) từng bước. Tạo thêm các cảnh khác, nội thất, mặt đứng và khiến bảng trình bày trở nên mạch lạc và thu hút bằng bố cục và phần chữ được sắp xếp hợp lý.',
+        sourceImage: null, // Sketch
         isLoading: false,
         error: null,
         resultImages: [],
@@ -595,7 +596,7 @@ export const initialToolStates = {
         resolution: 'Standard',
     } as LayoutGeneratorState,
     [Tool.DrawingGenerator]: {
-        prompt: 'Tạo bản vẽ kỹ thuật chi tiết mặt đứng với kích thước chuẩn.',
+        prompt: 'Tạo một bản vẽ chiếu vuông góc mô tả công trình này theo mặt bằng, mặt cắt và 2 mặt đứng trái – phải, nền xanh blue, nét kỹ thuật màu trắng',
         sourceImage: null,
         isLoading: false,
         error: null,
@@ -604,17 +605,17 @@ export const initialToolStates = {
         resolution: 'Standard',
     } as DrawingGeneratorState,
     [Tool.DiagramGenerator]: {
-        prompt: 'Phân tích hình khối và luồng giao thông (circulation) của công trình.',
+        prompt: "Exploded axonometric architectural diagram, showing functional layers, flow arrows, analytical style, clean lines, pastel colors.",
         sourceImage: null,
         isLoading: false,
         error: null,
         resultImages: [],
         numberOfImages: 1,
-        diagramType: 'exploded',
+        diagramType: '',
         resolution: 'Standard',
     } as DiagramGeneratorState,
     [Tool.RealEstatePoster]: {
-        prompt: 'Poster bán biệt thự cao cấp, phong cách sang trọng, tối giản, có chỗ cho tiêu đề.',
+        prompt: 'Thiết kế poster bất động sản sang trọng, hiện đại. Bao gồm tiêu đề lớn, thông tin nổi bật, bố cục tạp chí. Giữ hình ảnh công trình làm chủ đạo.',
         sourceImage: null,
         isLoading: false,
         error: null,

@@ -45,9 +45,9 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
-        const fullPrompt = `Convert this 3D architectural render into a 2D technical line drawing (CAD style). 
-        Strictly black lines on white background. Show accurate details, contours, and proportions. 
-        Focus on: ${prompt || 'general elevation/section view'}.`;
+        // More flexible prompt construction to allow custom styles (like blue background)
+        const fullPrompt = `Architectural Technical Drawing Task: ${prompt || 'general elevation/section view'}.
+        Convert the source image into a technical drawing style as described. Maintain accurate proportions and details.`;
 
         let logId: string | null = null;
 
