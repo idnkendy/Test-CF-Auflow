@@ -108,7 +108,8 @@ export const utilityToolsGroup = {
             icon: <FloorPlanIcon />, 
             desc: 'Chuyển đổi bản vẽ 2D thành phối cảnh 3D ấn tượng',
             gradient: 'from-blue-500/20 to-cyan-500/20 hover:border-blue-500/50',
-            image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=600&auto=format&fit=crop'
+            // Thay link Supabase của bạn vào đây
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render-mat-bang.png'
         },
         { 
             tool: Tool.PromptSuggester, 
@@ -116,7 +117,8 @@ export const utilityToolsGroup = {
             icon: <LightBulbIcon />, 
             desc: 'AI phân tích ảnh và gợi ý prompt cho Đồng bộ View.',
             gradient: 'from-yellow-500/20 to-orange-500/20 hover:border-yellow-500/50',
-            image: 'https://images.unsplash.com/photo-1555421689-3f034debb7a6?q=80&w=600&auto=format&fit=crop'
+            // Thay link Supabase của bạn vào đây
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/prompt-recommend.png'
         },
         { 
             tool: Tool.EditByNote, 
@@ -124,7 +126,8 @@ export const utilityToolsGroup = {
             icon: <NoteEditIcon />, 
             desc: 'Chỉnh sửa ảnh trực tiếp bằng các câu lệnh ngôn ngữ tự nhiên.',
             gradient: 'from-purple-500/20 to-pink-500/20 hover:border-purple-500/50',
-            image: 'https://images.unsplash.com/photo-1586281380349-632531db7ed4?q=80&w=600&auto=format&fit=crop'
+            // Thay link Supabase của bạn vào đây
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/edit-by-note.png'
         },
         { 
             tool: Tool.LayoutGenerator, 
@@ -132,7 +135,8 @@ export const utilityToolsGroup = {
             icon: <TemplateIcon />, 
             desc: 'Tạo bố cục kiến trúc từ ý tưởng.',
             gradient: 'from-indigo-500/20 to-blue-500/20 hover:border-indigo-500/50',
-            image: 'https://images.unsplash.com/photo-1507089947368-19c1da9775ae?q=80&w=600&auto=format&fit=crop'
+            // Thay link Supabase của bạn vào đây
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/layout.png'
         },
         { 
             tool: Tool.DrawingGenerator, 
@@ -140,7 +144,8 @@ export const utilityToolsGroup = {
             icon: <BlueprintIcon />, 
             desc: 'Tạo các bản vẽ kỹ thuật chiếu vuông góc.',
             gradient: 'from-cyan-500/20 to-teal-500/20 hover:border-cyan-500/50',
-            image: 'https://images.unsplash.com/photo-1564501049412-61c2a3083791?q=80&w=600&auto=format&fit=crop'
+            // Thay link Supabase của bạn vào đây
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/tao-ban-ve.png'
         },
         { 
             tool: Tool.DiagramGenerator, 
@@ -148,7 +153,8 @@ export const utilityToolsGroup = {
             icon: <DiagramIcon />, 
             desc: 'Tạo sơ đồ phân tích kiến trúc.',
             gradient: 'from-orange-500/20 to-amber-500/20 hover:border-orange-500/50',
-            image: 'https://images.unsplash.com/photo-1555421689-d68471e189f2?q=80&w=600&auto=format&fit=crop'
+            // Thay link Supabase của bạn vào đây
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/diagram.png'
         },
         { 
             tool: Tool.RealEstatePoster, 
@@ -156,6 +162,7 @@ export const utilityToolsGroup = {
             icon: <PosterIcon />, 
             desc: 'Tạo poster quảng cáo bất động sản chuyên nghiệp.',
             gradient: 'from-slate-500/20 to-gray-500/20 hover:border-slate-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -164,7 +171,8 @@ export const utilityToolsGroup = {
             icon: <UrbanPlanningIcon />, 
             desc: 'Phối cảnh tổng thể cho khu đô thị và dự án lớn',
             gradient: 'from-green-500/20 to-emerald-500/20 hover:border-green-500/50',
-            image: 'https://images.unsplash.com/photo-1486325212027-8081e485255e?q=80&w=600&auto=format&fit=crop'
+            // Thay link Supabase của bạn vào đây
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render-quy-hoach.png'
         },
         { 
             tool: Tool.LandscapeRendering, 
@@ -172,6 +180,7 @@ export const utilityToolsGroup = {
             icon: <LandscapeIcon />, 
             desc: 'Thiết kế cảnh quan, sân vườn và tiểu cảnh',
             gradient: 'from-lime-500/20 to-green-500/20 hover:border-lime-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1558293842-c0fd3db86157?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -180,6 +189,7 @@ export const utilityToolsGroup = {
             icon: <VirtualTourIcon />, 
             desc: 'Tạo video panorama và tour 360 độ từ ảnh tĩnh',
             gradient: 'from-indigo-500/20 to-purple-500/20 hover:border-indigo-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -188,6 +198,7 @@ export const utilityToolsGroup = {
             icon: <MoodboardIcon />, 
             desc: 'Sắp xếp ý tưởng, màu sắc và vật liệu',
             gradient: 'from-pink-500/20 to-rose-500/20 hover:border-pink-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -196,6 +207,7 @@ export const utilityToolsGroup = {
             icon: <UpscaleIcon />, 
             desc: 'Nâng cao chất lượng và độ phân giải ảnh',
             gradient: 'from-yellow-500/20 to-orange-500/20 hover:border-yellow-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -204,6 +216,7 @@ export const utilityToolsGroup = {
             icon: <FilmIcon />, 
             desc: 'Biến ảnh tĩnh thành video chuyển động sống động',
             gradient: 'from-red-500/20 to-orange-500/20 hover:border-red-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -212,6 +225,7 @@ export const utilityToolsGroup = {
             icon: <ColorSwatchIcon />, 
             desc: 'Thử nghiệm các loại vật liệu khác nhau trên bề mặt',
             gradient: 'from-teal-500/20 to-cyan-500/20 hover:border-teal-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1615529182904-14819c35db37?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -220,6 +234,7 @@ export const utilityToolsGroup = {
             icon: <CubeIcon />, 
             desc: 'Thêm đồ nội thất vào phòng trống tự động',
             gradient: 'from-violet-500/20 to-fuchsia-500/20 hover:border-violet-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1631679706909-1844bbd07221?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -228,6 +243,7 @@ export const utilityToolsGroup = {
             icon: <PencilAltIcon />, 
             desc: 'Chuyển ảnh render hoặc chụp thành tranh vẽ tay',
             gradient: 'from-gray-500/20 to-slate-500/20 hover:border-gray-500/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1513364776144-60967b0f800f?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -236,6 +252,7 @@ export const utilityToolsGroup = {
             icon: <RulerIcon />, 
             desc: 'Tạo mặt bằng, mặt đứng từ ảnh phối cảnh',
             gradient: 'from-cyan-600/20 to-blue-600/20 hover:border-cyan-600/50',
+            // Thay link Supabase của bạn vào đây
             image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=600&auto=format&fit=crop'
         },
         { 
@@ -244,7 +261,8 @@ export const utilityToolsGroup = {
             icon: <FengShuiIcon />, 
             desc: 'Phân tích phong thủy bát trạch và huyền không',
             gradient: 'from-amber-500/20 to-yellow-500/20 hover:border-amber-500/50',
-            image: 'https://images.unsplash.com/photo-1587586062323-836089e60d52?q=80&w=600&auto=format&fit=crop'
+            // Thay link Supabase của bạn vào đây
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/phong-thuy.png'
         },
     ]
 };
