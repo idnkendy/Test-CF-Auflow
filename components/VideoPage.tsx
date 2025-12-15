@@ -14,25 +14,8 @@ import * as jobService from '../services/jobService';
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 
-// --- CONFIGURATION ---
 const API_BASE_URL = "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
 
-interface VideoPageProps {
-    session: { user: User } | null;
-    userStatus: UserStatus | null;
-    onGoHome: () => void;
-    onThemeToggle: () => void;
-    theme: 'light' | 'dark';
-    onSignOut: () => void;
-    onOpenGallery: () => void;
-    onUpgrade: () => void;
-    onOpenProfile: () => void;
-    onToggleNav: () => void;
-    onDeductCredits: (amount: number, description: string) => Promise<string>;
-    onRefreshCredits: () => Promise<void>;
-}
-
-// --- HELPER COMPONENT FOR ASPECT RATIO ---
 const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'default', onChange: (val: '16:9' | '9:16' | 'default') => void }) => {
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
@@ -119,7 +102,6 @@ const AspectRatioSelector = ({ value, onChange }: { value: '16:9' | '9:16' | 'de
     );
 };
 
-// --- CONFIRMATION MODAL COMPONENT ---
 interface ConfirmationModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -202,7 +184,6 @@ const sidebarItems = [
     }
 ];
 
-// Placeholder for text-to-video dummy file
 const DUMMY_FILE: FileData = {
     base64: '',
     mimeType: 'image/png',
@@ -244,11 +225,9 @@ const mapFriendlyErrorMessage = (errorMsg: string): string => {
         return "Lỗi Thanh Toán: Bạn không đủ credits." + suffix;
     }
 
-    // Default for unknown errors with truncated message
     return `Lỗi Kỹ Thuật: ${errorMsg.substring(0, 40)}...` + suffix;
 };
 
-// --- MAINTENANCE COMPONENT ---
 const MaintenanceView = ({ title }: { title: string }) => (
     <div className="bg-white/80 dark:bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#302839] p-5 shadow-lg flex flex-col gap-6 h-full overflow-hidden items-center justify-center text-center animate-fade-in">
         <div className="w-20 h-20 bg-yellow-500/10 rounded-full flex items-center justify-center mb-2 shadow-inner border border-yellow-500/20">
@@ -269,7 +248,23 @@ const MaintenanceView = ({ title }: { title: string }) => (
     </div>
 );
 
+interface VideoPageProps {
+    session: { user: User } | null;
+    userStatus: UserStatus | null;
+    onGoHome: () => void;
+    onThemeToggle: () => void;
+    theme: 'light' | 'dark';
+    onSignOut: () => void;
+    onOpenGallery: () => void;
+    onUpgrade: () => void;
+    onOpenProfile: () => void;
+    onToggleNav: () => void;
+    onDeductCredits: (amount: number, description: string) => Promise<string>;
+    onRefreshCredits: () => Promise<void>;
+}
+
 const VideoPage: React.FC<VideoPageProps> = (props) => {
+    // ... (state defs) ...
     const [activeItem, setActiveItem] = useState('arch-film');
     // Ensure default state starts with '16:9' if it was 'default' before
     const [videoState, setVideoState] = useState<VideoGeneratorState>({
@@ -308,6 +303,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const videoInputRef = useRef<HTMLInputElement>(null);
     const timelineContainerRef = useRef<HTMLDivElement>(null);
 
+    // ... (useEffect hooks for prompt, sync playback, etc.) ...
     // Initialize prompt
     useEffect(() => {
         const defaultItem = sidebarItems.find(item => item.id === activeItem);
@@ -359,7 +355,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         };
     }, [videoState.isLoading, isSingleGenerating, videoState.contextItems, videoState.loadingMessage]);
 
-    // --- TIMELINE CONTROLS ---
+    // ... (Timeline controls: handleTimeUpdate, seekToPercent, handleSeek, handleTimelineClick, togglePlayPause, handleVideoEnded) ...
     const handleTimeUpdate = () => {
         if (!mainVideoRef.current) return;
         const currentClipTime = mainVideoRef.current.currentTime;
@@ -449,7 +445,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     };
 
-    // --- SIDEBAR & MODE SWITCH ---
+    // ... (Sidebar, AspectRatio, Arch Film logic) ...
     const handleSidebarClick = (item: typeof sidebarItems[0]) => {
         setActiveItem(item.id);
         setSinglePrompt(item.prompt);
@@ -459,27 +455,20 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setIsSingleGenerating(false);
     };
 
-    // --- ASPECT RATIO CHANGE HANDLER ---
     const handleAspectRatioChange = async (newRatio: '16:9' | '9:16' | 'default') => {
         if (videoState.aspectRatio === newRatio) return;
 
-        // 1. Update ratio state
         setVideoState(prev => ({ ...prev, aspectRatio: newRatio }));
 
-        // 2. If there are existing image items, re-crop them to match the new ratio
         if (videoState.contextItems.length > 0) {
             const updatedItems = await Promise.all(videoState.contextItems.map(async (item) => {
-                if (item.isUploaded) return item; // Skip uploaded videos
-
-                // Re-crop using originalFile
+                if (item.isUploaded) return item; 
                 const croppedBase64 = await externalVideoService.resizeAndCropImage(item.originalFile, newRatio);
                 const croppedFile: FileData = { 
                     base64: croppedBase64.split(',')[1], 
                     mimeType: 'image/jpeg', 
                     objectURL: croppedBase64 
                 };
-                
-                // Return updated item
                 return { ...item, file: croppedFile };
             }));
 
@@ -487,7 +476,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     };
 
-    // --- ARCH FILM (BATCH) LOGIC ---
     const handleFilesChange = async (files: FileData[]) => {
         const newItemsPromises = files
             .filter(f => !videoState.contextItems.some(item => item.originalFile.objectURL === f.objectURL))
@@ -557,24 +545,37 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
         try {
             logId = await props.onDeductCredits(cost, `Tạo Video Clip (${activeItem})`);
+            
+            // --- PROTECTIVE MARKER ---
+            if (logId) {
+                localStorage.setItem('opzen_pending_tx', JSON.stringify({
+                    logId: logId,
+                    amount: cost,
+                    reason: `Tạo Video Clip - ${item.prompt.substring(0, 20)}...`,
+                    timestamp: Date.now()
+                }));
+            }
+            // ------------------------
+
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) { 
                  jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.VideoGeneration, prompt: item.prompt, cost: cost, usage_log_id: logId });
                  
-                 // SAFETY CHECK: If createJob failed (returned null) but money taken
+                 // SAFETY CHECK
                  if (!jobId && logId) {
                      throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
                  }
+                 
+                 // Job created, safe to remove
+                 localStorage.removeItem('opzen_pending_tx');
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             const result = await externalVideoService.generateVideoExternal(item.prompt, "", item.file, videoState.aspectRatio);
             
-            // Keep the same ID for the item but update its URL. Important: Do not automatically add to timeline.
             setVideoState(prev => ({
                 ...prev,
                 contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, videoUrl: result.videoUrl, isGeneratingVideo: false } : i),
-                // removed generatedVideoUrl update to prevent auto-preview
             }));
 
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', result.videoUrl);
@@ -588,15 +589,19 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
-                await props.onRefreshCredits(); // Refresh UI
+                await props.onRefreshCredits(); 
                 friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            // Cleanup marker
+            localStorage.removeItem('opzen_pending_tx');
 
             setVideoState(prev => ({ ...prev, error: friendlyMsg, contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, isGeneratingVideo: false } : i) }));
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         }
     };
 
+    // ... (rest of timeline logic: AddToTimeline, Delete, SingleGeneration, Merge, Download ...) ...
     const handleAddToTimeline = (id: string) => {
         setVideoState(prev => ({
             ...prev,
@@ -604,7 +609,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }));
     };
 
-    // --- NEW: DELETE HANDLERS ---
     const handleDeleteItem = (id: string) => {
         setDeleteModalState({ isOpen: true, itemId: id });
     };
@@ -637,7 +641,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             setVideoState(prev => ({ ...prev, error: 'Vui lòng nhập mô tả.' }));
             return;
         }
-        // Validation per mode
         if (activeItem === 'img-to-video' && !singleSourceImage) {
             setVideoState(prev => ({ ...prev, error: 'Vui lòng tải lên ảnh.' }));
             return;
@@ -651,6 +654,18 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
         try {
             logId = await props.onDeductCredits(cost, `Tạo Video (${activeItem})`);
+            
+            // --- PROTECTIVE MARKER ---
+            if (logId) {
+                localStorage.setItem('opzen_pending_tx', JSON.stringify({
+                    logId: logId,
+                    amount: cost,
+                    reason: `Tạo Single Video - ${activeItem}`,
+                    timestamp: Date.now()
+                }));
+            }
+            // ------------------------
+
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) { 
                  jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.VideoGeneration, prompt: singlePrompt, cost: cost, usage_log_id: logId });
@@ -659,29 +674,28 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                  if (!jobId && logId) {
                      throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
                  }
+                 
+                 // Safe to remove
+                 localStorage.removeItem('opzen_pending_tx');
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            // Handle Image Processing if needed
+            // Handle Image Processing
             let startImageToUse: FileData | null | undefined = singleSourceImage;
             if (activeItem === 'text-to-video') {
                 startImageToUse = undefined; 
             } else if (singleSourceImage) {
-                // Crop
                 const croppedBase64 = await externalVideoService.resizeAndCropImage(singleSourceImage, videoState.aspectRatio);
                 startImageToUse = { base64: croppedBase64.split(',')[1], mimeType: 'image/jpeg', objectURL: croppedBase64 };
             }
 
             const result = await externalVideoService.generateVideoExternal(singlePrompt, "", startImageToUse || undefined, videoState.aspectRatio);
             
-            // For single modes, we just update the generatedVideoUrl directly
             setVideoState(prev => ({
                 ...prev,
                 generatedVideoUrl: result.videoUrl
             }));
 
-            // NEW: Auto Download Trigger
-            // Note: We use handleSimpleDownload but pass the URL directly to ensure it works even before state update propagates
             handleSimpleDownload(result.videoUrl);
 
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', result.videoUrl);
@@ -696,13 +710,15 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const rawMsg = err.message || "";
             let friendlyMsg = mapFriendlyErrorMessage(rawMsg);
             
-            // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
-                await props.onRefreshCredits(); // Refresh UI
+                await props.onRefreshCredits();
                 friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            // Cleanup
+            localStorage.removeItem('opzen_pending_tx');
 
             setVideoState(prev => ({ ...prev, error: friendlyMsg }));
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
@@ -711,9 +727,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     };
 
-    
-    
-    // --- MERGE AND EXPORT ---
+    // ... (Merge, Export, Download logic remains same) ...
     const handleMergeAndExport = async () => {
         const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         if (playableItems.length === 0) {
@@ -978,17 +992,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }, 500);
     };
 
-
-
-    // --- COMMON DOWNLOAD/UPLOAD ---
     const handleDownloadSingle = (url: string, index: number) => {
-        // Cập nhật: Mở trực tiếp trong tab mới theo yêu cầu
-        // Việc này giúp tránh lỗi CORS khi fetch Blob và cho phép người dùng tải trực tiếp từ trình duyệt
         const link = document.createElement('a');
         link.href = url;
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        // Thuộc tính download gợi ý tên file (có thể bị trình duyệt bỏ qua nếu khác domain)
         link.download = `Canh_${index + 1}.mp4`; 
         document.body.appendChild(link);
         link.click();
@@ -999,10 +1007,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         const playableItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         if (playableItems.length === 0) return;
 
-        // Simple sequential download trigger
         for (let i = 0; i < playableItems.length; i++) {
             if (playableItems[i].videoUrl) {
-                // Short delay to prevent browser blocking excessive downloads
                 setTimeout(() => {
                     handleDownloadSingle(playableItems[i].videoUrl!, i);
                 }, i * 1000); 
@@ -1010,7 +1016,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     };
     
-    // Updated to accept optional URL override for immediate post-generation download
     const handleSimpleDownload = async (urlOverride?: string) => {
         const targetUrl = urlOverride || videoState.generatedVideoUrl;
         
@@ -1018,8 +1023,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const filename = `opzen-video-${Date.now()}.mp4`;
             try {
                 const response = await fetch(targetUrl);
-                const arrayBuffer = await response.arrayBuffer(); // Get raw data
-                // Force create MP4 Blob
+                const arrayBuffer = await response.arrayBuffer(); 
                 const blob = new Blob([arrayBuffer], { type: 'video/mp4' });
                 const blobUrl = URL.createObjectURL(blob);
                 
@@ -1031,7 +1035,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 document.body.removeChild(link);
                 URL.revokeObjectURL(blobUrl);
             } catch (e) {
-                // Fallback: Open in new tab if blob fetch fails
                 const link = document.createElement('a');
                 link.href = targetUrl;
                 link.download = filename;
@@ -1056,17 +1059,14 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         if (videoInputRef.current) videoInputRef.current.value = '';
     };
 
-    // --- CLIP EXTENSION ---
     const handleExtendClip = (item: VideoContextItem) => {
         setActiveItem('extend-video');
         setSinglePrompt("Nối tiếp cảnh quay hiện tại, giữ nguyên phong cách và ánh sáng, camera di chuyển mượt mà.");
     };
 
-    // --- DRAG AND DROP HANDLERS ---
     const handleDragStart = (e: React.DragEvent<HTMLDivElement>, index: number) => {
         setDraggedItemIndex(index);
         e.dataTransfer.effectAllowed = "move";
-        // Ghost image transparency if needed
     };
 
     const handleDragOver = (e: React.DragEvent<HTMLDivElement>, index: number) => {
@@ -1078,7 +1078,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         e.preventDefault();
         if (draggedItemIndex === null || draggedItemIndex === index) return;
 
-        // Find actual indices in contextItems list
         const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
         const draggedItem = timelineItems[draggedItemIndex];
         const targetItem = timelineItems[index];
@@ -1096,13 +1095,12 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setDraggedItemIndex(null);
     };
 
-
     const creationItems = videoState.contextItems.filter(item => !item.isUploaded); 
     const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
     const activeMainVideoUrl = isPlayingAll ? timelineItems[currentPlayingIndex]?.videoUrl : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl);
 
-    // --- RENDER CONTENT SECTIONS ---
     const renderContentInput = () => {
+        // ... (existing renderContentInput code) ...
         switch (activeItem) {
             case 'arch-film': // BATCH MODE
                 return (

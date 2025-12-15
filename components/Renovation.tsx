@@ -4,6 +4,7 @@ import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { RenovationState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import * as jobService from '../services/jobService'; // Added jobService import
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -74,12 +75,47 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         onStateChange({ isLoading: true, error: null, renovatedImages: [] });
 
         let logId: string | null = null;
+        let jobId: string | null = null; // Defined for consistency
 
         try {
             // Deduct credits
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Cải tạo thiết kế (${numberOfImages} ảnh) - ${resolution}`);
             }
+
+            // --- PROTECTIVE MARKER ---
+            if (logId) {
+                localStorage.setItem('opzen_pending_tx', JSON.stringify({
+                    logId: logId,
+                    amount: cost,
+                    reason: `Cải tạo thiết kế (${numberOfImages} ảnh) - ${resolution}`,
+                    timestamp: Date.now()
+                }));
+            }
+            // ------------------------
+
+            // Since renovation might not strictly use jobService.createJob in previous versions, we ensure it does now
+            // Or if it processes directly, we simulate job tracking or remove marker upon success.
+            // Assuming standard flow using jobService based on imports:
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                 jobId = await jobService.createJob({
+                    user_id: user.id,
+                    tool_id: Tool.Renovation,
+                    prompt: prompt,
+                    cost: cost,
+                    usage_log_id: logId
+                });
+
+                if (!jobId && logId) {
+                    throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
+                }
+                
+                // Safe to remove
+                localStorage.removeItem('opzen_pending_tx');
+            }
+
+            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             let results: { imageUrl: string }[] = [];
             let finalPrompt = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame while performing the renovation. Do not add black bars or letterbox. The renovation instruction is: ${prompt}`;
@@ -95,7 +131,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                         aspectRatio, 
                         resolution, 
                         sourceImage || undefined,
-                        undefined,
+                        jobId || undefined,
                         referenceImages,
                         maskImage || undefined
                     );
@@ -124,6 +160,10 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
             const imageUrls = results.map(r => r.imageUrl);
             onStateChange({ renovatedImages: imageUrls });
 
+            if (jobId && imageUrls.length > 0) {
+                await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
+            }
+
             imageUrls.forEach(url => {
                  historyService.addToHistory({
                     tool: Tool.Renovation,
@@ -139,16 +179,25 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
             }
             onStateChange({ error: errorMessage });
 
+            if (jobId) {
+                await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
+            }
+
             // Refund Logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi cải tạo (${err.message})`);
             }
+            
+            // Clean up marker
+            localStorage.removeItem('opzen_pending_tx');
+
         } finally {
             onStateChange({ isLoading: false });
         }
     };
     
+    // ... (rest of component) ...
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, renovatedImages: [], maskImage: null });
     }

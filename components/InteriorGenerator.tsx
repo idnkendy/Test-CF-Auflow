@@ -194,6 +194,17 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 logId = await onDeductCredits(cost, `Render nội thất (${numberOfImages} ảnh) - ${resolution || 'Standard'}`);
             }
 
+            // --- PROTECTIVE MARKER ---
+            if (logId) {
+                localStorage.setItem('opzen_pending_tx', JSON.stringify({
+                    logId: logId,
+                    amount: cost,
+                    reason: `Render nội thất (${numberOfImages} ảnh) - ${resolution}`,
+                    timestamp: Date.now()
+                }));
+            }
+            // ------------------------
+
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                  jobId = await jobService.createJob({
@@ -203,6 +214,13 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                     cost: cost,
                     usage_log_id: logId
                 });
+
+                if (!jobId && logId) {
+                    throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
+                }
+                
+                // Job created successfully, safe to remove marker
+                localStorage.removeItem('opzen_pending_tx');
             }
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
@@ -254,11 +272,16 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
              if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi khi render nội thất (${errorMessage})`);
              }
+             
+             // Clear marker in case of error (since we handled refund)
+             localStorage.removeItem('opzen_pending_tx');
+
         } finally {
             onStateChange({ isLoading: false });
         }
     };
 
+    // ... (rest of the file remains same)
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
         const resultImage = resultImages[0];
