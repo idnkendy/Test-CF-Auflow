@@ -269,42 +269,59 @@ export const cleanupStaleJobs = async (userId: string) => {
 };
 
 /**
- * RECOVER ORPHANED TRANSACTIONS (Server-Side Check via Client)
- * Scans 'usage_log' for deductions that have NO matching 'generation_jobs'.
- * This catches cases where the app crashed/closed exactly after deduction but before job creation.
+ * RECOVER ORPHANED TRANSACTIONS
+ * Scans both LocalStorage (Immediate client crash) AND Database (Server logic gaps)
+ * Includes Double-Spending Protection.
  */
 export const recoverOrphanedTransactions = async (userId: string) => {
-    // 1. LocalStorage Cleanup (Legacy/Immediate)
+    // 1. LocalStorage Recovery (Client-Side Crash)
     const rawPending = localStorage.getItem('opzen_pending_tx');
     if (rawPending) {
         try {
             const pendingTx = JSON.parse(rawPending);
             const now = Date.now();
+            
+            // Only act if > 1 minute old to avoid race condition with active process
             if (pendingTx && pendingTx.timestamp && (now - pendingTx.timestamp > 60000)) {
-                if (pendingTx.amount > 0) {
-                    console.log("[JobService] Recovering from LocalStorage marker...");
-                    await refundCredits(userId, pendingTx.amount, `Hoàn tiền: Lỗi hệ thống (Crash Recovery) - ${pendingTx.reason || 'Unknown'}`);
+                if (pendingTx.amount > 0 && pendingTx.logId) {
+                    // CRITICAL CHECK: Verify against DB before refunding
+                    // Ensure a job wasn't actually created for this logId
+                    const { data: existingJob } = await supabase
+                        .from('generation_jobs')
+                        .select('id')
+                        .eq('usage_log_id', pendingTx.logId)
+                        .maybeSingle();
+
+                    if (!existingJob) {
+                        console.log("[JobService] Recovering crashed client transaction (No Job Found)...");
+                        await refundCredits(userId, pendingTx.amount, `Hoàn tiền: Lỗi Client Crash - ${pendingTx.reason || 'Unknown'}`);
+                    } else {
+                        console.log("[JobService] Marker found but Job exists. Cleaning up marker only.");
+                    }
                 }
+                // Cleanup marker regardless of outcome (Refunded OR Job exists)
                 localStorage.removeItem('opzen_pending_tx');
             }
-        } catch(e) { localStorage.removeItem('opzen_pending_tx'); }
+        } catch(e) { 
+            console.error("Error parsing pending tx", e);
+            localStorage.removeItem('opzen_pending_tx'); 
+        }
     }
 
-    // 2. Database Scan (Robust)
+    // 2. Database Scan (Server-Side Orphans)
+    // Find deductions in usage_log that have NO corresponding entry in generation_jobs
     try {
         const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString(); // Grace period
+        const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString(); // Grace period 20 mins
 
         // A. Fetch recent deductions (credits_used > 0) excluding refunds
-        // Note: Assuming table name is 'usage_log' or 'usage_logs'. Supabase usually exposes this.
-        // We filter logs created in the last 24h but OLDER than 5 minutes.
         const { data: deductions, error: logError } = await supabase
-            .from('usage_log') // Ensure this matches your DB table name
+            .from('usage_log') 
             .select('id, credits_used, description, created_at')
             .eq('user_id', userId)
             .gt('credits_used', 0) // Only deductions
             .gt('created_at', oneDayAgo)
-            .lt('created_at', fiveMinutesAgo) // Must be older than 5 mins to be safe
+            .lt('created_at', twentyMinutesAgo) // Must be older than 20 mins
             .not('description', 'ilike', '%Hoàn tiền%'); // Ignore refund logs
 
         if (logError || !deductions || deductions.length === 0) return;
@@ -319,7 +336,6 @@ export const recoverOrphanedTransactions = async (userId: string) => {
         if (jobError) return;
 
         // C. Find Orphans: Deductions that are NOT in the job list
-        // Create a Set of valid usage_log_ids from existing jobs
         const existingJobLogIds = new Set(jobs?.map(j => j.usage_log_id).filter(id => id !== null));
         
         const orphans = deductions.filter(log => !existingJobLogIds.has(log.id));
@@ -334,7 +350,6 @@ export const recoverOrphanedTransactions = async (userId: string) => {
         }
 
     } catch (e) {
-        // Silent fail to not disrupt app start
         console.error("[JobService] Error scanning for orphaned transactions:", e);
     }
 };
