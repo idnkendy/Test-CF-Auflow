@@ -18,7 +18,6 @@ import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
 
-// ... (options constants remain the same) ...
 const buildingTypeOptions = [
     { value: 'none', label: 'Tự động' },
     { value: 'nhà phố', label: 'Nhà phố' },
@@ -77,7 +76,6 @@ interface ImageGeneratorProps {
 }
 
 const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
-    // ... (state destructing and standard hooks remain same) ...
     const { 
         style, context, lighting, weather, buildingType, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
@@ -232,15 +230,19 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
         if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
             const promises = Array.from({ length: numberOfImages }).map(async () => {
+                // Pass array of reference images
                 const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId, referenceImages);
                 return images[0];
             });
             return await Promise.all(promises);
         } else {
+            // Standard resolution
             if (sourceImage && referenceImages && referenceImages.length > 0) {
+                // If standard has both source and references, use the multi-ref editor
                 const results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
                 return results.map(r => r.imageUrl);
             } else {
+                // Otherwise use standard generation
                 return await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId);
             }
         }
@@ -268,17 +270,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 logId = await onDeductCredits(cost, `Render kiến trúc (${numberOfImages} ảnh) - ${resolution}`);
             }
             
-            // --- CRITICAL FIX: Set LocalStorage marker for crash recovery ---
-            if (logId) {
-                localStorage.setItem('opzen_pending_tx', JSON.stringify({
-                    logId: logId,
-                    amount: cost,
-                    reason: `Render kiến trúc (${numberOfImages} ảnh) - ${resolution}`,
-                    timestamp: Date.now()
-                }));
-            }
-            // -------------------------------------------------------------
-            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                  jobId = await jobService.createJob({
@@ -289,15 +280,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     usage_log_id: logId
                 });
                 
+                // CRITICAL SAFETY CHECK: If credits were deducted but job creation failed
                 if (!jobId && logId) {
                     throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
                 }
                 
                 setActiveJobId(jobId);
-                
-                // --- Job Created Successfully: Safe to remove marker ---
-                localStorage.removeItem('opzen_pending_tx');
-                // -------------------------------------------------------
             }
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
@@ -352,9 +340,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
              if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi khi render kiến trúc (${err.message})`);
              }
-             
-             // Clean up marker if error was caught (since we refunded)
-             localStorage.removeItem('opzen_pending_tx');
 
         } finally {
             onStateChange({ isLoading: false });
@@ -364,7 +349,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         }
     };
 
-    // ... (rest of handleUpscale, etc.) ...
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
         const resultImage = resultImages[0];
