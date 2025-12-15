@@ -196,17 +196,17 @@ async function executeWithFailover(env, accounts, operationName, callback) {
         if (!account.project_id) continue;
 
         try {
-            // MOVED: Update usage BEFORE executing the request
-            // This ensures we count the attempt immediately.
+            // EXECUTE FIRST
+            const result = await callback(account);
+
+            // SUCCESS -> INCREMENT USAGE (Only for quota-consuming actions)
             if (operationName !== 'CheckStatus' && operationName !== 'UploadImage') {
-                 try {
-                     await incrementAccountUsage(env, account.id, account.usage_count);
-                 } catch (usageError) {
-                     console.error("Failed to increment usage but continuing:", usageError);
-                 }
+                 // Fire and forget update to speed up response
+                 incrementAccountUsage(env, account.id, account.usage_count).catch(err => 
+                     console.error("Failed to increment usage post-success:", err)
+                 );
             }
 
-            const result = await callback(account);
             return result; 
         } catch (e) {
             lastError = e;

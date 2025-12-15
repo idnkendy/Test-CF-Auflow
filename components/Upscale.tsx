@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { UpscaleState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
@@ -78,9 +80,11 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         }
         onStateChange({ isLoading: true, error: null, upscaledImages: [] });
 
+        let logId: string | null = null;
+
         try {
              if (onDeductCredits) {
-                await onDeductCredits(cost, `Upscale ảnh (${numberOfImages} ảnh) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Upscale ảnh (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             let results: { imageUrl: string }[] = [];
@@ -110,7 +114,17 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                 });
             });
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi upscale (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

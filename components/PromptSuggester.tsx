@@ -205,7 +205,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                         )}
                         {!isLoading && suggestions && (
                             <div className="w-full space-y-4 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                                {Object.entries(suggestions).map(([title, prompts]) => (
+                                {Object.entries(suggestions as Record<string, string[]>).map(([title, prompts]) => (
                                     <SuggestionCard 
                                         key={title} 
                                         title={title} 

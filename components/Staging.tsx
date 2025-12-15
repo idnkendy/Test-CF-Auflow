@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { StagingState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService'; // Import refundCredits
+import { supabase } from '../services/supabaseClient'; // Import supabase
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import MultiImageUpload from './common/MultiImageUpload';
@@ -12,6 +14,7 @@ import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
+import AspectRatioSelector from './common/AspectRatioSelector';
 
 interface StagingProps {
     state: StagingState;
@@ -44,9 +47,8 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 };
 
 const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { prompt, sceneImage, objectImages, isLoading, error, resultImages, numberOfImages, resolution } = state;
+    const { prompt, sceneImage, objectImages, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
-    const [detectedAspectRatio, setDetectedAspectRatio] = useState<AspectRatio>('1:1');
 
     // Calculate cost based on resolution
     const getCostPerImage = () => {
@@ -86,13 +88,18 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
+        let logId: string | null = null;
+
         try {
              if (onDeductCredits) {
-                await onDeductCredits(cost, `AI Staging (${numberOfImages} ảnh) - ${resolution}`);
+                logId = await onDeductCredits(cost, `AI Staging (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             let results: { imageUrl: string }[] = [];
-            const fullPrompt = `Integrate the objects from the provided reference images into the main scene image. Follow these instructions for placement and style: ${prompt}. Ensure the objects are realistically scaled, lit, and shadowed to match the environment of the main scene.`;
+            
+            // Build prompt with aspect ratio instruction
+            const ratioInstruction = `The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally.`;
+            const fullPrompt = `Integrate the objects from the provided reference images into the main scene image. Follow these instructions for placement and style: ${prompt}. Ensure the objects are realistically scaled, lit, and shadowed to match the environment of the main scene. ${ratioInstruction}`;
 
             // High Quality (Pro) Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
@@ -100,7 +107,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                     // Pass objectImages as referenceImages to generateHighQualityImage
                     const images = await geminiService.generateHighQualityImage(
                         fullPrompt, 
-                        detectedAspectRatio, // Use detected ratio
+                        aspectRatio, 
                         resolution, 
                         sceneImage, 
                         undefined, 
@@ -128,7 +135,17 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Staging (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }
@@ -138,11 +155,13 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
         if (fileData?.objectURL) {
             const img = new Image();
             img.onload = () => {
-                setDetectedAspectRatio(getClosestAspectRatio(img.width, img.height));
+                const detected = getClosestAspectRatio(img.width, img.height);
+                onStateChange({ sceneImage: fileData, resultImages: [], aspectRatio: detected });
             };
             img.src = fileData.objectURL;
+        } else {
+            onStateChange({ sceneImage: fileData, resultImages: [] });
         }
-        onStateChange({ sceneImage: fileData, resultImages: [] });
     };
     
     const handleObjectsFileChange = (files: FileData[]) => {
@@ -187,7 +206,15 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
                     </div>
-                     <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                        </div>
+                        <div>
+                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                        </div>
+                    </div>
                      
                      <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
                     

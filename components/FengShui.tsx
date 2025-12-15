@@ -4,6 +4,8 @@ import { FengShuiState } from '../state/toolState';
 import { FileData, Tool, ImageResolution } from '../types';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService'; // Import refundCredits
+import { supabase } from '../services/supabaseClient'; // Import supabase
 import ImageUpload from './common/ImageUpload';
 import Spinner from './Spinner';
 import ImageComparator from './ImageComparator';
@@ -115,11 +117,12 @@ const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits =
         onStateChange({ isLoading: true, error: null, resultImage: null, analysisText: null });
     
         let prompt = '';
+        let logId: string | null = null;
 
         try {
             // Deduct credits first
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Phân tích Phong thủy: ${analysisType} - ${resolution || 'Standard'}`);
+                logId = await onDeductCredits(cost, `Phân tích Phong thủy: ${analysisType} - ${resolution || 'Standard'}`);
             }
 
             // Helper to process image (Standard or High Quality)
@@ -131,9 +134,9 @@ const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits =
                 // High Quality Logic (for drawing detailed diagrams)
                 if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                     const images = await geminiService.generateHighQualityImage(p, '1:1', resolution, floorPlanImage);
-                    results = [{ imageUrl: images[0], text: '' }]; // Note: High Quality doesn't return text in same response usually, might need separate call for text
+                    results = [{ imageUrl: images[0], text: '' }]; 
                     
-                    // Separate text generation for analysis
+                    // Separate text generation for analysis because HQ model might not return text description in same call
                     const analysis = await geminiService.generateText(p + "\n\nCung cấp bài phân tích chi tiết bằng văn bản.");
                     results[0].text = analysis;
                 } else {
@@ -282,7 +285,19 @@ const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits =
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || "Đã xảy ra lỗi khi phân tích." });
+            let errorMessage = err.message || "Đã xảy ra lỗi khi phân tích.";
+            
+            // Logic hoàn tiền nếu có lỗi và đã trừ tiền
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+                // Refund logic
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user && onDeductCredits) {
+                    await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Phong Thủy (${err.message})`);
+                }
+            }
+            
+            onStateChange({ error: errorMessage });
         } finally {
             onStateChange({ isLoading: false });
         }

@@ -4,6 +4,8 @@ import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { LandscapeRenderingState } from '../state/toolState';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import MultiImageUpload from './common/MultiImageUpload';
@@ -157,10 +159,12 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
         }
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
         
+        let logId: string | null = null;
+
         try {
             // Deduct credits
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Render sân vườn (${numberOfImages} ảnh) - ${resolution || 'Standard'}`);
+                logId = await onDeductCredits(cost, `Render sân vườn (${numberOfImages} ảnh) - ${resolution || 'Standard'}`);
             }
 
             let imageUrls: string[] = [];
@@ -206,7 +210,17 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi render sân vườn (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

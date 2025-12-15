@@ -4,6 +4,8 @@ import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { MoodboardGeneratorState } from '../state/toolState';
+import { refundCredits } from '../services/paymentService'; // Import refundCredits
+import { supabase } from '../services/supabaseClient'; // Import supabase
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
@@ -59,9 +61,11 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
         }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
+        let logId: string | null = null;
+
         try {
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Tạo Moodboard (${numberOfImages} ảnh) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Tạo Moodboard (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             let fullPrompt = '';
@@ -115,7 +119,17 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                 });
             });
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo moodboard (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

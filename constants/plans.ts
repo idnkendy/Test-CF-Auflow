@@ -29,7 +29,7 @@ export const plans: PricingPlan[] = [
         currency: 'đ',
         features: [
             'Tổng 7,000 Credits',
-            'Hạn sử dụng: 2 Tháng',
+            'Hạn sử dụng: 3 Tháng', // Updated to 3 months
             'Tối ưu chi phí & hiệu năng',
             'Truy cập tất cả công cụ AI',
             'Render tốc độ cao',
@@ -39,7 +39,7 @@ export const plans: PricingPlan[] = [
         type: 'subscription',
         credits: 7000,
         highlight: true,
-        durationMonths: 2,
+        durationMonths: 3, // Updated to 3 months
         description: 'Lựa chọn tốt nhất cho Kiến trúc sư & Freelancer.'
     },
     {
@@ -50,7 +50,7 @@ export const plans: PricingPlan[] = [
         currency: 'đ',
         features: [
             'Tổng 25,000 Credits',
-            'Hạn sử dụng: 3 Tháng',
+            'Hạn sử dụng: 6 Tháng', // Updated to 6 months
             'Chi phí rẻ nhất/credit',
             'Truy cập tất cả công cụ AI',
             'Render tốc độ siêu tốc',
@@ -59,7 +59,7 @@ export const plans: PricingPlan[] = [
         ],
         type: 'subscription',
         credits: 25000,
-        durationMonths: 3,
+        durationMonths: 6, // Updated to 6 months
         description: 'Giải pháp tối ưu cho Studio và Doanh nghiệp.'
     }
 ];

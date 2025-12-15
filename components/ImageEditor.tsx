@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { ImageEditorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService'; // Import refundCredits
+import { supabase } from '../services/supabaseClient'; // Import supabase
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ResultGrid from './common/ResultGrid';
@@ -105,9 +107,11 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
+        let logId: string | null = null;
+
         try {
             if (onDeductCredits) {
-                await onDeductCredits(cost, `Chỉnh sửa ảnh (${numberOfImages} ảnh) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Chỉnh sửa ảnh (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             let results: { imageUrl: string }[] = [];
@@ -156,7 +160,17 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 });
             });
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ảnh (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

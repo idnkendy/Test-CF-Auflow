@@ -12,6 +12,7 @@ import ImageComparator from './ImageComparator';
 import OptionSelector from './common/OptionSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
+import AspectRatioSelector from './common/AspectRatioSelector';
 
 interface AITechnicalDrawingsProps {
     state: AITechnicalDrawingsState;
@@ -58,8 +59,7 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 };
 
 const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { sourceImage, isLoading, error, resultImage, drawingType, detailLevel, resolution } = state;
-    const [detectedAspectRatio, setDetectedAspectRatio] = useState<AspectRatio>('1:1');
+    const { sourceImage, isLoading, error, resultImage, drawingType, detailLevel, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     
     // Calculate cost based on resolution
@@ -83,15 +83,17 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
         if (fileData?.objectURL) {
             const img = new Image();
             img.onload = () => {
-                setDetectedAspectRatio(getClosestAspectRatio(img.width, img.height));
+                const detected = getClosestAspectRatio(img.width, img.height);
+                onStateChange({ sourceImage: fileData, resultImage: null, error: null, aspectRatio: detected });
             };
             img.src = fileData.objectURL;
+        } else {
+            onStateChange({
+                sourceImage: fileData,
+                resultImage: null,
+                error: null,
+            });
         }
-        onStateChange({
-            sourceImage: fileData,
-            resultImage: null,
-            error: null,
-        });
     };
 
     const handleGenerate = async () => {
@@ -117,7 +119,8 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             case 'terrain': detailInstruction = "Thể hiện công trình trong bối cảnh địa hình và cảnh quan xung quanh."; break;
         }
 
-        const prompt = `Tạo một bản vẽ chiếu vuông góc mô tả công trình này theo mặt bằng, mặt cắt và 2 mặt đứng trái – phải, nền xanh blue, nét kỹ thuật màu trắng. ${detailInstruction}`;
+        const ratioInstruction = `The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally.`;
+        const prompt = `Tạo một bản vẽ chiếu vuông góc mô tả công trình này theo mặt bằng, mặt cắt và 2 mặt đứng trái – phải, nền xanh blue, nét kỹ thuật màu trắng. ${detailInstruction}. ${ratioInstruction}`;
 
         let logId: string | null = null;
 
@@ -130,7 +133,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
             // High Quality (Pro) Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                const images = await geminiService.generateHighQualityImage(prompt, detectedAspectRatio, resolution, sourceImage || undefined);
+                const images = await geminiService.generateHighQualityImage(prompt, aspectRatio, resolution, sourceImage || undefined);
                 results = [{ imageUrl: images[0] }];
             }
             // Standard (Flash) Logic
@@ -210,6 +213,10 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                             variant="grid"
                         />
                         
+                        <div>
+                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                        </div>
+
                         <div>
                             <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
                         </div>

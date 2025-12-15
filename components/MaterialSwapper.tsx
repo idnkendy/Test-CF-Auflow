@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { MaterialSwapperState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
@@ -11,6 +13,7 @@ import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
+import AspectRatioSelector from './common/AspectRatioSelector';
 
 interface MaterialSwapperProps {
     state: MaterialSwapperState;
@@ -43,9 +46,8 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 };
 
 const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { prompt, sceneImage, materialImage, isLoading, error, resultImages, numberOfImages, resolution } = state;
+    const { prompt, sceneImage, materialImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
-    const [detectedAspectRatio, setDetectedAspectRatio] = useState<AspectRatio>('1:1');
 
     // Calculate cost based on resolution
     const getCostPerImage = () => {
@@ -85,20 +87,26 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
 
+        let logId: string | null = null;
+
         try {
              if (onDeductCredits) {
-                await onDeductCredits(cost, `Thay vật liệu (${numberOfImages} ảnh) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Thay vật liệu (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             let results: { imageUrl: string }[] = [];
+            
+            // Build prompt to enforce aspect ratio
+            const ratioInstruction = `The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally.`;
+            const fullPrompt = `${prompt}. ${ratioInstruction}`;
 
             // High Quality (Pro) Logic
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     // Use materialImage as referenceImage
                     const images = await geminiService.generateHighQualityImage(
-                        prompt, 
-                        detectedAspectRatio, // Use detected ratio
+                        fullPrompt, 
+                        aspectRatio, 
                         resolution, 
                         sceneImage, 
                         undefined, 
@@ -110,7 +118,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             }
             // Standard (Flash) Logic
             else {
-                results = await geminiService.editImageWithReference(prompt, sceneImage, materialImage, numberOfImages);
+                results = await geminiService.editImageWithReference(fullPrompt, sceneImage, materialImage, numberOfImages);
             }
 
             const imageUrls = results.map(r => r.imageUrl);
@@ -119,28 +127,41 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             imageUrls.forEach(url => {
                  historyService.addToHistory({
                     tool: Tool.MaterialSwap,
-                    prompt: prompt,
+                    prompt: fullPrompt,
                     sourceImageURL: sceneImage.objectURL,
                     resultImageURL: url,
                 });
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi thay vật liệu (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }
     };
 
     const handleSceneFileSelect = (fileData: FileData | null) => {
+        let newRatio = aspectRatio;
         if (fileData?.objectURL) {
             const img = new Image();
             img.onload = () => {
-                setDetectedAspectRatio(getClosestAspectRatio(img.width, img.height));
+                const detected = getClosestAspectRatio(img.width, img.height);
+                onStateChange({ sceneImage: fileData, resultImages: [], aspectRatio: detected });
             };
             img.src = fileData.objectURL;
+        } else {
+            onStateChange({ sceneImage: fileData, resultImages: [] });
         }
-        onStateChange({ sceneImage: fileData, resultImages: [] });
     };
     
     const handleMaterialFileSelect = (fileData: FileData | null) => {
@@ -185,7 +206,15 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
                     </div>
-                     <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                        </div>
+                        <div>
+                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                        </div>
+                    </div>
                      
                      <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
                     

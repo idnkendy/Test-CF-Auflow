@@ -4,6 +4,8 @@ import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import { FileData, Tool, ImageResolution } from '../types';
 import { VirtualTourState } from '../state/toolState';
+import { refundCredits } from '../services/paymentService';
+import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ResolutionSelector from './common/ResolutionSelector';
@@ -83,9 +85,11 @@ const VirtualTour: React.FC<VirtualTourProps> = ({ state, onStateChange, userCre
                 return;
         }
 
+        let logId: string | null = null;
+
         try {
              if (onDeductCredits) {
-                await onDeductCredits(costPerStep, `Virtual Tour (${action}) - ${resolution}`);
+                logId = await onDeductCredits(costPerStep, `Virtual Tour (${action}) - ${resolution}`);
             }
 
             let results: { imageUrl: string }[] = [];
@@ -121,7 +125,17 @@ const VirtualTour: React.FC<VirtualTourProps> = ({ state, onStateChange, userCre
             });
 
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
+            onStateChange({ error: errorMessage });
+
+            // Refund logic
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, costPerStep, `Hoàn tiền: Lỗi tour (${err.message})`);
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

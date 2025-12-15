@@ -1,8 +1,74 @@
 
-// ... (imports remain same)
 import { FileData, AspectRatio, Tool, ImageResolution } from '../types';
 
-// ... (interfaces remain same)
+export interface LuBanRulerState {
+    width: string;
+    height: string;
+    checkDimension: 'width' | 'height';
+}
+
+export interface LayoutGeneratorState {
+    prompt: string;
+    sourceImage: FileData | null;
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    aspectRatio: AspectRatio;
+    resolution: ImageResolution;
+}
+
+export interface DrawingGeneratorState {
+    prompt: string;
+    sourceImage: FileData | null;
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    aspectRatio: AspectRatio;
+    resolution: ImageResolution;
+}
+
+export interface DiagramGeneratorState {
+    prompt: string;
+    sourceImage: FileData | null;
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    aspectRatio: AspectRatio;
+    diagramType: string;
+    resolution: ImageResolution;
+}
+
+export interface RealEstatePosterState {
+    prompt: string;
+    sourceImage: FileData | null;
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    aspectRatio: AspectRatio;
+    posterStyle: 'luxury' | 'modern' | 'minimalist' | 'commercial';
+    resolution: ImageResolution;
+}
+
+export interface EditByNoteState {
+    prompt: string;
+    sourceImage: FileData | null;
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    resolution: ImageResolution;
+}
+
+export interface PricingState {
+}
+
+export interface ProfileState {
+    activeTab: 'profile' | 'history';
+}
 
 export interface ImageGeneratorState {
     style: string;
@@ -11,7 +77,7 @@ export interface ImageGeneratorState {
     weather: string;
     buildingType: string;
     customPrompt: string;
-    referenceImages: FileData[]; // Updated to array
+    referenceImages: FileData[];
     sourceImage: FileData | null;
     isLoading: boolean;
     isUpscaling: boolean;
@@ -23,9 +89,22 @@ export interface ImageGeneratorState {
     resolution: ImageResolution;
 }
 
-export interface InteriorGeneratorState extends Omit<ImageGeneratorState, 'buildingType' | 'context' | 'weather'> {
+export interface InteriorGeneratorState {
+    style: string;
     roomType: string;
+    lighting: string;
     colorPalette: string;
+    customPrompt: string;
+    referenceImages: FileData[];
+    sourceImage: FileData | null;
+    isLoading: boolean;
+    isUpscaling: boolean;
+    error: string | null;
+    resultImages: string[];
+    upscaledImage: string | null;
+    numberOfImages: number;
+    aspectRatio: AspectRatio;
+    resolution: ImageResolution;
 }
 
 export interface UrbanPlanningState {
@@ -33,7 +112,7 @@ export interface UrbanPlanningState {
     density: string;
     lighting: string;
     customPrompt: string;
-    referenceImages: FileData[]; // Updated to array
+    referenceImages: FileData[];
     sourceImage: FileData | null;
     isLoading: boolean;
     isUpscaling: boolean;
@@ -50,7 +129,7 @@ export interface LandscapeRenderingState {
     timeOfDay: string;
     features: string;
     customPrompt: string;
-    referenceImages: FileData[]; // Updated to array
+    referenceImages: FileData[];
     sourceImage: FileData | null;
     isLoading: boolean;
     isUpscaling: boolean;
@@ -62,41 +141,31 @@ export interface LandscapeRenderingState {
     resolution: ImageResolution;
 }
 
-// Interface cho một item trong danh sách bối cảnh video
-export interface VideoContextItem {
-    id: string;
-    file: FileData; // Used for display and generation (cropped)
-    originalFile: FileData; // Used for re-cropping when aspect ratio changes
+export interface FloorPlanState {
     prompt: string;
-    isGeneratingPrompt: boolean;
-    videoUrl?: string;          // URL video kết quả cho clip này
-    isGeneratingVideo?: boolean; // Trạng thái đang tạo video cho clip này
-    isUploaded?: boolean; // New flag to identify manually uploaded videos
-    isInTimeline?: boolean; // Determines if this clip is currently on the editing timeline
-}
-
-export interface VideoGeneratorState {
-    prompt: string;
-    startImage: FileData | null;
-    contextItems: VideoContextItem[]; // Danh sách các bối cảnh đã tải lên và phân tích
-    selectedContextId: string | null; // ID của bối cảnh đang được chọn để tạo video
-    isLoading: boolean;
-    loadingMessage: string;
-    error: string | null;
-    generatedVideoUrl: string | null;
-    mode: 'exterior' | 'interior';
-    aspectRatio: '16:9' | '9:16' | 'default'; // Updated to include 'default'
-}
-
-export interface ImageEditorState {
-    prompt: string;
+    layoutPrompt: string;
     sourceImage: FileData | null;
-    maskImage: FileData | null;
     referenceImages: FileData[];
     isLoading: boolean;
     error: string | null;
     resultImages: string[];
     numberOfImages: number;
+    renderMode: 'top-down' | 'perspective';
+    planType: 'interior' | 'exterior';
+    aspectRatio: AspectRatio;
+    resolution: ImageResolution;
+}
+
+export interface RenovationState {
+    prompt: string;
+    sourceImage: FileData | null;
+    referenceImages: FileData[];
+    maskImage: FileData | null;
+    isLoading: boolean;
+    error: string | null;
+    renovatedImages: string[];
+    numberOfImages: number;
+    aspectRatio: AspectRatio;
     resolution: ImageResolution;
 }
 
@@ -127,32 +196,22 @@ export interface VirtualTourState {
     resolution: ImageResolution;
 }
 
-export interface RenovationState {
-    prompt: string;
+export interface PromptSuggesterState {
     sourceImage: FileData | null;
-    referenceImages: FileData[];
-    maskImage: FileData | null;
     isLoading: boolean;
     error: string | null;
-    renovatedImages: string[];
-    numberOfImages: number;
-    aspectRatio: AspectRatio;
-    resolution: ImageResolution;
+    suggestions: any | null;
+    selectedSubject: string;
+    numberOfSuggestions: number;
+    customInstruction: string;
 }
 
-export interface FloorPlanState {
-    prompt: string;
-    layoutPrompt: string;
+export interface PromptEnhancerState {
     sourceImage: FileData | null;
-    referenceImages: FileData[]; // Updated to array
+    customNeeds: string;
     isLoading: boolean;
     error: string | null;
-    resultImages: string[];
-    numberOfImages: number;
-    renderMode: 'top-down' | 'perspective';
-    planType: 'interior' | 'exterior';
-    aspectRatio: AspectRatio;
-    resolution: ImageResolution;
+    resultPrompt: string | null;
 }
 
 export interface MaterialSwapperState {
@@ -163,6 +222,7 @@ export interface MaterialSwapperState {
     error: string | null;
     resultImages: string[];
     numberOfImages: number;
+    aspectRatio: AspectRatio; // Added
     resolution: ImageResolution;
 }
 
@@ -187,6 +247,43 @@ export interface MoodboardGeneratorState {
     resolution: ImageResolution;
 }
 
+export interface VideoContextItem {
+    id: string;
+    file: FileData;
+    originalFile: FileData;
+    prompt: string;
+    isGeneratingPrompt: boolean;
+    videoUrl?: string;
+    isGeneratingVideo: boolean;
+    isUploaded: boolean;
+    isInTimeline: boolean;
+}
+
+export interface VideoGeneratorState {
+    prompt: string;
+    startImage: FileData | null;
+    contextItems: VideoContextItem[];
+    selectedContextId: string | null;
+    isLoading: boolean;
+    loadingMessage: string;
+    error: string | null;
+    generatedVideoUrl: string | null;
+    mode: 'exterior' | 'interior';
+    aspectRatio: '16:9' | '9:16' | 'default';
+}
+
+export interface ImageEditorState {
+    prompt: string;
+    sourceImage: FileData | null;
+    maskImage: FileData | null;
+    referenceImages: FileData[];
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    resolution: ImageResolution;
+}
+
 export interface StagingState {
     prompt: string;
     sceneImage: FileData | null;
@@ -195,25 +292,8 @@ export interface StagingState {
     error: string | null;
     resultImages: string[];
     numberOfImages: number;
+    aspectRatio: AspectRatio; // Added
     resolution: ImageResolution;
-}
-
-export interface PromptSuggesterState {
-    sourceImage: FileData | null;
-    isLoading: boolean;
-    error: string | null;
-    suggestions: Record<string, string[]> | null;
-    selectedSubject: string;
-    numberOfSuggestions: number;
-    customInstruction: string;
-}
-
-export interface PromptEnhancerState {
-    sourceImage: FileData | null;
-    customNeeds: string;
-    isLoading: boolean;
-    error: string | null;
-    resultPrompt: string | null;
 }
 
 export interface AITechnicalDrawingsState {
@@ -223,6 +303,7 @@ export interface AITechnicalDrawingsState {
     resultImage: string | null;
     drawingType: 'floor-plan' | 'elevation' | 'section';
     detailLevel: 'basic' | 'detailed' | 'annotated' | 'terrain';
+    aspectRatio: AspectRatio; // Added
     resolution: ImageResolution;
 }
 
@@ -232,7 +313,7 @@ export interface SketchConverterState {
     error: string | null;
     resultImage: string | null;
     sketchStyle: 'pencil' | 'charcoal' | 'watercolor';
-    detailLevel: 'medium' | 'high';
+    detailLevel: 'low' | 'medium' | 'high';
     resolution: ImageResolution;
 }
 
@@ -268,72 +349,6 @@ export interface FengShuiState {
     resolution: ImageResolution;
 }
 
-export interface LuBanRulerState {
-    width: string;
-    height: string;
-    checkDimension: 'width' | 'height';
-}
-
-export interface LayoutGeneratorState {
-    prompt: string;
-    sourceImage: FileData | null; // Sketch
-    isLoading: boolean;
-    error: string | null;
-    resultImages: string[];
-    numberOfImages: number;
-    resolution: ImageResolution;
-}
-
-export interface DrawingGeneratorState {
-    prompt: string;
-    sourceImage: FileData | null; // Render
-    isLoading: boolean;
-    error: string | null;
-    resultImages: string[];
-    numberOfImages: number;
-    resolution: ImageResolution;
-}
-
-export interface DiagramGeneratorState {
-    prompt: string;
-    sourceImage: FileData | null; // Model view
-    isLoading: boolean;
-    error: string | null;
-    resultImages: string[];
-    numberOfImages: number;
-    diagramType: string; // Changed to string to support custom preset values
-    resolution: ImageResolution;
-}
-
-export interface RealEstatePosterState {
-    prompt: string;
-    sourceImage: FileData | null; // Property Photo
-    isLoading: boolean;
-    error: string | null;
-    resultImages: string[];
-    numberOfImages: number;
-    posterStyle: 'luxury' | 'modern' | 'minimalist' | 'commercial';
-    resolution: ImageResolution;
-}
-
-export interface EditByNoteState {
-    prompt: string;
-    sourceImage: FileData | null;
-    isLoading: boolean;
-    error: string | null;
-    resultImages: string[];
-    numberOfImages: number;
-    resolution: ImageResolution;
-}
-
-export interface PricingState {
-    // Now mostly unused but kept for compatibility if needed
-}
-
-export interface ProfileState {
-    activeTab: 'profile' | 'history';
-}
-
 // Khởi tạo giá trị mặc định cho trạng thái của tất cả công cụ
 export const initialToolStates = {
     [Tool.ArchitecturalRendering]: {
@@ -343,7 +358,7 @@ export const initialToolStates = {
         weather: 'none',
         buildingType: 'none',
         customPrompt: 'Biến thành ảnh chụp thực tế nhà ở',
-        referenceImages: [], // Updated
+        referenceImages: [], 
         sourceImage: null,
         isLoading: false,
         isUpscaling: false,
@@ -360,7 +375,7 @@ export const initialToolStates = {
         lighting: 'none',
         colorPalette: 'none',
         customPrompt: 'Biến thành ảnh chụp thực tế không gian nội thất',
-        referenceImages: [], // Updated
+        referenceImages: [], 
         sourceImage: null,
         isLoading: false,
         isUpscaling: false,
@@ -376,7 +391,7 @@ export const initialToolStates = {
         density: 'none',
         lighting: 'none',
         customPrompt: 'Render một khu đô thị ven sông, có nhiều cây xanh, các toà nhà hiện đại và một cây cầu đi bộ.',
-        referenceImages: [], // Updated
+        referenceImages: [], 
         sourceImage: null,
         isLoading: false,
         isUpscaling: false,
@@ -392,7 +407,7 @@ export const initialToolStates = {
         timeOfDay: 'none',
         features: 'none',
         customPrompt: 'Render một sân vườn nhỏ phía sau nhà, có lối đi bằng đá, nhiều hoa và một bộ bàn ghế nhỏ.',
-        referenceImages: [], // Updated
+        referenceImages: [], 
         sourceImage: null,
         isLoading: false,
         isUpscaling: false,
@@ -407,7 +422,7 @@ export const initialToolStates = {
         prompt: 'Render theo phong cách Scandinavian với nội thất gỗ sồi, tường trắng và nhiều ánh sáng tự nhiên.',
         layoutPrompt: '',
         sourceImage: null,
-        referenceImages: [], // Updated
+        referenceImages: [], 
         isLoading: false,
         error: null,
         resultImages: [],
@@ -478,6 +493,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
+        aspectRatio: '4:3', // Added default
         resolution: 'Standard',
     } as MaterialSwapperState,
     [Tool.Upscale]: {
@@ -530,6 +546,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
+        aspectRatio: '4:3', // Added default
         resolution: 'Standard',
     } as StagingState,
     [Tool.AITechnicalDrawings]: {
@@ -539,6 +556,7 @@ export const initialToolStates = {
         resultImage: null,
         drawingType: 'floor-plan',
         detailLevel: 'basic',
+        aspectRatio: '4:3', // Added default
         resolution: 'Standard',
     } as AITechnicalDrawingsState,
     [Tool.SketchConverter]: {
@@ -588,11 +606,12 @@ export const initialToolStates = {
     } as LuBanRulerState,
     [Tool.LayoutGenerator]: {
         prompt: 'Tạo một bảng trình bày kiến trúc (architectural presentation board) sử dụng thiết kế của tòa nhà này. Tạo các bản vẽ đặc trưng gồm: mặt bằng, mặt cắt, phối cảnh trục đo axonometric và 5 sơ đồ diễn tiến khối (massing evolution) từng bước. Tạo thêm các cảnh khác, nội thất, mặt đứng và khiến bảng trình bày trở nên mạch lạc và thu hút bằng bố cục và phần chữ được sắp xếp hợp lý.',
-        sourceImage: null, // Sketch
+        sourceImage: null, 
         isLoading: false,
         error: null,
         resultImages: [],
         numberOfImages: 1,
+        aspectRatio: '4:3',
         resolution: 'Standard',
     } as LayoutGeneratorState,
     [Tool.DrawingGenerator]: {
@@ -602,6 +621,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
+        aspectRatio: '16:9',
         resolution: 'Standard',
     } as DrawingGeneratorState,
     [Tool.DiagramGenerator]: {
@@ -611,6 +631,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
+        aspectRatio: '4:3',
         diagramType: '',
         resolution: 'Standard',
     } as DiagramGeneratorState,
@@ -621,6 +642,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
+        aspectRatio: '3:4',
         posterStyle: 'luxury',
         resolution: 'Standard',
     } as RealEstatePosterState,
@@ -636,6 +658,7 @@ export const initialToolStates = {
     [Tool.Pricing]: {} as PricingState,
     [Tool.Profile]: { activeTab: 'profile' } as ProfileState,
     [Tool.History]: {},
+    [Tool.ExtendedFeaturesDashboard]: {},
 };
 
 export type ToolStates = typeof initialToolStates;

@@ -1,6 +1,6 @@
 
-import React from 'react';
-import { FileData, Tool, ImageResolution } from '../types';
+import React, { useState } from 'react';
+import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { DrawingGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -11,6 +11,8 @@ import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResolutionSelector from './common/ResolutionSelector';
+import ImagePreviewModal from './common/ImagePreviewModal';
+import AspectRatioSelector from './common/AspectRatioSelector';
 
 interface DrawingGeneratorProps {
     state: DrawingGeneratorState;
@@ -20,7 +22,8 @@ interface DrawingGeneratorProps {
 }
 
 const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution } = state;
+    const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
+    const [previewImage, setPreviewImage] = useState<string | null>(null);
     
     const cost = numberOfImages * 5; 
 
@@ -47,7 +50,8 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
         // More flexible prompt construction to allow custom styles (like blue background)
         const fullPrompt = `Architectural Technical Drawing Task: ${prompt || 'general elevation/section view'}.
-        Convert the source image into a technical drawing style as described. Maintain accurate proportions and details.`;
+        Convert the source image into a technical drawing style as described. Maintain accurate proportions and details.
+        The final generated image must strictly have a ${aspectRatio} aspect ratio.`;
 
         let logId: string | null = null;
 
@@ -60,7 +64,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(fullPrompt, '1:1', resolution, sourceImage);
+                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage);
                     return { imageUrl: images[0] };
                 });
                 results = await Promise.all(promises);
@@ -97,8 +101,20 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
         }
     };
 
+    const handleDownload = () => {
+        if (resultImages.length === 0) return;
+        const link = document.createElement('a');
+        link.href = resultImages[0];
+        link.download = `technical-drawing-${Date.now()}.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
     return (
         <div className="flex flex-col gap-8">
+            {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
+            
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Bản Vẽ Kỹ Thuật</h2>
             <p className="text-text-secondary dark:text-gray-300 -mt-8 mb-6">Biến ảnh phối cảnh 3D thành bản vẽ nét (Line drawing) phục vụ kỹ thuật.</p>
 
@@ -119,8 +135,13 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                         />
                     </div>
                     
-                    <div>
-                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                        </div>
+                        <div>
+                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                        </div>
                     </div>
                     
                     <div>
@@ -140,6 +161,28 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                 <div>
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Bản vẽ</h3>
+                        {resultImages.length > 0 && (
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => setPreviewImage(resultImages[0])}
+                                    className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
+                                    title="Phóng to"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                    </svg>
+                                </button>
+                                <button 
+                                    onClick={handleDownload} 
+                                    className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                    <span>Tải xuống</span>
+                                </button>
+                            </div>
+                        )}
                     </div>
                     <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
                         {isLoading && <Spinner />}
