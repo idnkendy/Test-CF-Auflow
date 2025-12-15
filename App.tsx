@@ -39,8 +39,10 @@ import Spinner from './components/Spinner';
 import PublicPricing from './components/PublicPricing';
 import TermsOfServicePage from './components/TermsOfServicePage'; 
 import VideoPage from './components/VideoPage';
+import LuBanRuler from './components/LuBanRuler';
+import PromptEnhancer from './components/PromptEnhancer';
 import { getUserStatus, deductCredits } from './services/paymentService';
-import { cleanupStaleJobs } from './services/jobService'; // Import cleanup service
+import { cleanupStaleJobs, recoverOrphanedTransactions } from './services/jobService';
 import { plans } from './constants/plans';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
@@ -277,7 +279,10 @@ const App: React.FC = () => {
   // Define fetchUserStatus using useCallback to be stable
   const fetchUserStatus = useCallback(async () => {
     if (session?.user) {
-      // Clean up zombie jobs (> 8 mins) to free queue and return credits
+      // 1. Recover any orphaned transactions from browser crash (localStorage check)
+      await recoverOrphanedTransactions(session.user.id);
+      
+      // 2. Clean up zombie jobs (> 8 mins) to free queue and return credits
       await cleanupStaleJobs(session.user.id);
       
       const status = await getUserStatus(session.user.id, session.user.email);
@@ -298,531 +303,217 @@ const App: React.FC = () => {
       return logId;
   };
 
-  const handleThemeToggle = () => {
-    setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light'));
-  };
-  
-  const handleAuthNavigate = () => {
-    // Mode argument is intentionally ignored as we now only support one auth method
-    setView('auth');
-  };
-
-  const handleStartDesigning = () => {
-    if (session) {
-        setView('app');
-        safeHistoryPush('/feature');
-    } else {
-        handleAuthNavigate();
+  const renderToolContent = () => {
+    switch (activeTool) {
+      case Tool.ArchitecturalRendering:
+        return <ImageGenerator state={toolStates[Tool.ArchitecturalRendering]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.ArchitecturalRendering]: {...prev[Tool.ArchitecturalRendering], ...s}}))} onSendToViewSync={(img) => { setToolStates(prev => ({...prev, [Tool.ViewSync]: {...prev[Tool.ViewSync], sourceImage: img}})); setActiveTool(Tool.ViewSync); }} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.InteriorRendering:
+        return <InteriorGenerator state={toolStates[Tool.InteriorRendering]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.InteriorRendering]: {...prev[Tool.InteriorRendering], ...s}}))} onSendToViewSync={(img) => { setToolStates(prev => ({...prev, [Tool.ViewSync]: {...prev[Tool.ViewSync], sourceImage: img}})); setActiveTool(Tool.ViewSync); }} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.Renovation:
+        return <Renovation state={toolStates[Tool.Renovation]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.Renovation]: {...prev[Tool.Renovation], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.ViewSync:
+        return <ViewSync state={toolStates[Tool.ViewSync]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.ViewSync]: {...prev[Tool.ViewSync], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.ImageEditing:
+        return <ImageEditor state={toolStates[Tool.ImageEditing]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.ImageEditing]: {...prev[Tool.ImageEditing], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.UrbanPlanning:
+        return <UrbanPlanning state={toolStates[Tool.UrbanPlanning]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.UrbanPlanning]: {...prev[Tool.UrbanPlanning], ...s}}))} onSendToViewSync={(img) => { setToolStates(prev => ({...prev, [Tool.ViewSync]: {...prev[Tool.ViewSync], sourceImage: img}})); setActiveTool(Tool.ViewSync); }} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.LandscapeRendering:
+        return <LandscapeRendering state={toolStates[Tool.LandscapeRendering]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.LandscapeRendering]: {...prev[Tool.LandscapeRendering], ...s}}))} onSendToViewSync={(img) => { setToolStates(prev => ({...prev, [Tool.ViewSync]: {...prev[Tool.ViewSync], sourceImage: img}})); setActiveTool(Tool.ViewSync); }} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.FloorPlan:
+        return <FloorPlan state={toolStates[Tool.FloorPlan]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.FloorPlan]: {...prev[Tool.FloorPlan], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.VirtualTour:
+        return <VirtualTour state={toolStates[Tool.VirtualTour]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.VirtualTour]: {...prev[Tool.VirtualTour], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.PromptSuggester:
+        return <PromptSuggester state={toolStates[Tool.PromptSuggester]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.PromptSuggester]: {...prev[Tool.PromptSuggester], ...s}}))} onSendToViewSyncWithPrompt={(img, prompt) => { setToolStates(prev => ({...prev, [Tool.ViewSync]: {...prev[Tool.ViewSync], sourceImage: img, customPrompt: prompt}})); setActiveTool(Tool.ViewSync); }} />;
+      case Tool.PromptEnhancer:
+        return <PromptEnhancer state={toolStates[Tool.PromptEnhancer]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.PromptEnhancer]: {...prev[Tool.PromptEnhancer], ...s}}))} />;
+      case Tool.MaterialSwap:
+        return <MaterialSwapper state={toolStates[Tool.MaterialSwap]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.MaterialSwap]: {...prev[Tool.MaterialSwap], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.VideoGeneration:
+        return <VideoGenerator state={toolStates[Tool.VideoGeneration]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.VideoGeneration]: {...prev[Tool.VideoGeneration], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.Upscale:
+        return <Upscale state={toolStates[Tool.Upscale]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.Upscale]: {...prev[Tool.Upscale], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.Moodboard:
+        return <MoodboardGenerator state={toolStates[Tool.Moodboard]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.Moodboard]: {...prev[Tool.Moodboard], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.Staging:
+        return <Staging state={toolStates[Tool.Staging]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.Staging]: {...prev[Tool.Staging], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.AITechnicalDrawings:
+        return <AITechnicalDrawings state={toolStates[Tool.AITechnicalDrawings]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.AITechnicalDrawings]: {...prev[Tool.AITechnicalDrawings], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.SketchConverter:
+        return <SketchConverter state={toolStates[Tool.SketchConverter]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.SketchConverter]: {...prev[Tool.SketchConverter], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.FengShui:
+        return <FengShui state={toolStates[Tool.FengShui]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.FengShui]: {...prev[Tool.FengShui], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.LuBanRuler:
+        return <LuBanRuler state={toolStates[Tool.LuBanRuler]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.LuBanRuler]: {...prev[Tool.LuBanRuler], ...s}}))} />;
+      case Tool.LayoutGenerator:
+        return <LayoutGenerator state={toolStates[Tool.LayoutGenerator]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.LayoutGenerator]: {...prev[Tool.LayoutGenerator], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.DrawingGenerator:
+        return <DrawingGenerator state={toolStates[Tool.DrawingGenerator]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.DrawingGenerator]: {...prev[Tool.DrawingGenerator], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.DiagramGenerator:
+        return <DiagramGenerator state={toolStates[Tool.DiagramGenerator]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.DiagramGenerator]: {...prev[Tool.DiagramGenerator], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.RealEstatePoster:
+        return <RealEstatePoster state={toolStates[Tool.RealEstatePoster]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.RealEstatePoster]: {...prev[Tool.RealEstatePoster], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.EditByNote:
+        return <EditByNote state={toolStates[Tool.EditByNote]} onStateChange={(s) => setToolStates(prev => ({...prev, [Tool.EditByNote]: {...prev[Tool.EditByNote], ...s}}))} userCredits={userStatus?.credits} onDeductCredits={handleDeductCredits} />;
+      case Tool.History:
+        return <HistoryPanel />;
+      case Tool.Pricing:
+        return <Checkout onPlanSelect={(plan) => { setSelectedPlan(plan); setView('payment'); }} />;
+      case Tool.Profile:
+        return <UserProfile session={session!} onTabChange={() => {}} onPurchaseSuccess={fetchUserStatus} />;
+      case Tool.ExtendedFeaturesDashboard:
+         return (
+             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                 {utilityToolsGroup.tools.map(t => (
+                     <div key={t.tool} onClick={() => setActiveTool(t.tool)} className="cursor-pointer bg-surface dark:bg-dark-bg p-4 rounded-xl border border-border-color dark:border-gray-700 hover:border-accent transition-all flex flex-col items-center text-center gap-3 shadow-sm hover:shadow-md">
+                         <div className={`p-3 rounded-full bg-gradient-to-br ${t.gradient || 'from-gray-500 to-gray-600'} text-white shadow-inner`}>
+                             {t.icon}
+                         </div>
+                         <div>
+                             <h3 className="font-bold text-text-primary dark:text-white text-sm">{t.label}</h3>
+                             <p className="text-xs text-text-secondary dark:text-gray-400 mt-1 line-clamp-2">{t.desc}</p>
+                         </div>
+                     </div>
+                 ))}
+             </div>
+         );
+      default:
+        return null;
     }
   };
-
-  const handleNavigateToTool = (tool: Tool) => {
-      // If user selects VideoGeneration from homepage, go to /video
-      if (tool === Tool.VideoGeneration) {
-          if (session) {
-              setView('video');
-              safeHistoryPush('/video');
-          } else {
-              // Remember where we wanted to go? 
-              // Simplest is just redirect login, then default logic kicks in.
-              handleAuthNavigate();
-          }
-          return;
-      }
-
-      setActiveTool(tool);
-      if (session) {
-          setView('app');
-          safeHistoryPush('/feature');
-      } else {
-          handleAuthNavigate();
-      }
-  };
-
-  const handleSignOut = async () => {
-    try {
-        await supabase.auth.signOut();
-    } catch (error) {
-        console.error("Sign out error:", error);
-    } finally {
-        localStorage.removeItem('activeTool');
-        localStorage.removeItem('pendingPlanId');
-        
-        setSession(null);
-        setUserStatus(null);
-        setSelectedPlan(null);
-        setActiveTool(Tool.ArchitecturalRendering);
-        
-        setView('homepage');
-        safeHistoryReplace('/'); 
-    }
-  };
-  
-  const handleGoHome = () => {
-    setView('homepage');
-    safeHistoryPush('/');
-  }
-
-  const handleOpenGallery = () => {
-      if (session) {
-          setView('app');
-          setActiveTool(Tool.History);
-          safeHistoryPush('/feature');
-      }
-  }
-
-  const handleToolStateChange = <T extends keyof ToolStates>(
-    tool: T,
-    newState: Partial<ToolStates[T]>
-  ) => {
-    setToolStates(prev => ({
-      ...prev,
-      [tool]: {
-        ...prev[tool],
-        ...newState,
-      },
-    }));
-  };
-
-  const handleNavigateToPricing = () => {
-      setView('pricing');
-      safeHistoryPush('/pricing');
-  }
-  
-  const handleOpenProfile = () => {
-      if (session) {
-          setView('app');
-          setActiveTool(Tool.Profile);
-          handleToolStateChange(Tool.Profile, { activeTab: 'profile' });
-          safeHistoryPush('/feature');
-      }
-  }
-
-  const handleSelectPlanForPayment = (plan: PricingPlan) => {
-      if (session) {
-          setSelectedPlan(plan);
-          setView('payment');
-          safeHistoryPush(`/payment?plan=${plan.id}`);
-      } else {
-          setPendingPlan(plan);
-          localStorage.setItem('pendingPlanId', plan.id);
-          handleAuthNavigate(); 
-      }
-  };
-
-  const handlePaymentBack = () => {
-      setView('pricing');
-      safeHistoryPush('/pricing');
-  }
-
-  const handlePaymentSuccess = () => {
-      fetchUserStatus();
-      setView('app');
-      setActiveTool(Tool.ArchitecturalRendering);
-      safeHistoryPush('/feature');
-  };
-
-  const handleSendToViewSync = (image: FileData) => {
-     handleToolStateChange(Tool.ViewSync, {
-        sourceImage: image,
-        resultImages: [],
-        error: null,
-        customPrompt: '',
-     });
-    setActiveTool(Tool.ViewSync);
-  };
-
-  const handleSendToViewSyncWithPrompt = (image: FileData, prompt: string) => {
-    handleToolStateChange(Tool.ViewSync, {
-        sourceImage: image,
-        resultImages: [],
-        error: null,
-        customPrompt: prompt,
-        // Reset direction image when coming from prompt suggester
-        directionImage: null 
-    });
-    setActiveTool(Tool.ViewSync);
-  };
-  
-  const userCredits = userStatus?.credits || 0;
-
-  // --- RENDER LOGIC ---
-
-  if (window.location.pathname === '/terms-of-service') {
-      return <TermsOfServicePage />;
-  }
 
   if (loadingSession) {
     return (
-      <div className="min-h-[100dvh] bg-main-bg dark:bg-[#121212] flex items-center justify-center">
+      <div className="flex items-center justify-center min-h-screen bg-main-bg dark:bg-[#121212]">
         <Spinner />
       </div>
     );
   }
-  
-  if (view === 'payment' && selectedPlan && session) {
-      return (
-          <div className="min-h-screen bg-main-bg dark:bg-[#121212] font-sans">
-              <Header 
-                  onGoHome={handleGoHome} 
-                  onThemeToggle={handleThemeToggle} 
-                  theme={theme} 
-                  onSignOut={handleSignOut} 
-                  userStatus={userStatus}
-                  user={session.user}
-                  onToggleNav={() => {}}
-              />
-              <PaymentPage 
-                  plan={selectedPlan}
-                  user={session.user}
-                  onBack={handlePaymentBack}
-                  onSuccess={handlePaymentSuccess}
-              />
-          </div>
-      );
+
+  // Routing render logic
+  if (view === 'homepage') {
+    return (
+      <Homepage 
+        onStart={() => {
+            if (session) setView('app');
+            else setView('auth');
+        }}
+        onAuthNavigate={(mode) => setView('auth')}
+        session={session}
+        onGoToGallery={() => { setActiveTool(Tool.History); setView('app'); }}
+        onUpgrade={() => setView('pricing')}
+        onOpenProfile={() => { setActiveTool(Tool.Profile); setView('app'); }}
+        userStatus={userStatus}
+        onNavigateToTool={(tool) => { setActiveTool(tool); setView('app'); }}
+        onNavigateToPricing={() => setView('pricing')}
+        onSignOut={() => supabase.auth.signOut()}
+      />
+    );
+  }
+
+  if (view === 'auth') {
+    return <AuthPage onGoHome={() => setView('homepage')} />;
   }
 
   if (view === 'pricing') {
-      return (
-        <div className="relative">
-            <PublicPricing 
-                onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} 
-                onAuthNavigate={handleAuthNavigate} 
-                onPlanSelect={handleSelectPlanForPayment}
-                session={session}
-                userStatus={userStatus}
-                onDashboardNavigate={() => { setView('app'); safeHistoryPush('/feature'); }}
-                onSignOut={handleSignOut}
-            />
-        </div>
-      );
+    return (
+        <PublicPricing 
+            onGoHome={() => setView('homepage')}
+            onAuthNavigate={() => setView('auth')}
+            onPlanSelect={(plan) => {
+                setSelectedPlan(plan);
+                if (session) setView('payment');
+                else {
+                    setPendingPlan(plan);
+                    localStorage.setItem('pendingPlanId', plan.id);
+                    setView('auth');
+                }
+            }}
+            session={session}
+            userStatus={userStatus}
+            onDashboardNavigate={() => setView('app')}
+            onSignOut={() => supabase.auth.signOut()}
+        />
+    );
   }
 
-  if (session && view === 'video') {
+  if (view === 'payment' && selectedPlan && session) {
       return (
-          <VideoPage 
-              session={session}
-              userStatus={userStatus}
-              onGoHome={handleGoHome}
-              onThemeToggle={handleThemeToggle}
-              theme={theme}
-              onSignOut={handleSignOut}
-              onOpenGallery={handleOpenGallery}
-              onUpgrade={handleNavigateToPricing}
-              onOpenProfile={handleOpenProfile}
-              onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
-              onDeductCredits={handleDeductCredits}
-              onRefreshCredits={async () => { await fetchUserStatus() }}
-          />
-      );
-  }
-
-  if (session && view === 'app') {
-      const isExtendedTool = utilityToolsGroup.tools.some(t => t.tool === activeTool);
-
-      return (
-          <div className="h-[100dvh] bg-main-bg dark:bg-[#121212] font-sans text-text-primary dark:text-[#EAEAEA] flex flex-col transition-colors duration-300 overflow-hidden relative">
-              
+          <div className="min-h-screen bg-main-bg dark:bg-[#121212] text-text-primary dark:text-white">
               <Header 
-                  onGoHome={handleGoHome} 
-                  onThemeToggle={handleThemeToggle} 
-                  theme={theme} 
-                  onSignOut={handleSignOut} 
-                  onOpenGallery={handleOpenGallery} 
-                  onUpgrade={handleNavigateToPricing} 
-                  onOpenProfile={handleOpenProfile} 
+                  onGoHome={() => setView('homepage')} 
+                  onThemeToggle={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')} 
+                  theme={theme}
+                  onSignOut={() => supabase.auth.signOut()}
                   userStatus={userStatus}
                   user={session.user}
-                  onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
               />
-              
-              <Navigation 
-                  activeTool={activeTool} 
-                  setActiveTool={(tool) => {
-                      if (tool === Tool.VideoGeneration) {
-                          setView('video');
-                          safeHistoryPush('/video');
-                      } else {
-                          setActiveTool(tool);
-                      }
-                      setIsMobileNavOpen(false);
-                  }} 
-                  isMobileOpen={isMobileNavOpen}
-                  onCloseMobile={() => setIsMobileNavOpen(false)}
-                  onGoHome={handleGoHome}
-              />
-
-              <div className="relative flex flex-col flex-grow overflow-hidden">
-                  <main 
-                      ref={mainContentRef}
-                      className="flex-1 bg-surface/90 dark:bg-[#191919]/90 backdrop-blur-md overflow-y-auto scrollbar-hide p-3 sm:p-6 lg:p-8 relative z-0 transition-colors duration-300"
-                      style={{ WebkitOverflowScrolling: 'touch' }}
-                  >
-                      {/* Back Button for Extended Tools */}
-                      {isExtendedTool && (
-                          <button 
-                              onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)}
-                              className="flex items-center gap-2 text-text-secondary dark:text-gray-400 hover:text-[#7f13ec] dark:hover:text-[#7f13ec] mb-6 transition-colors font-medium text-sm group"
-                          >
-                              <div className="p-1.5 rounded-full bg-gray-100 dark:bg-gray-800 group-hover:bg-[#7f13ec]/10 transition-colors">
-                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
-                                  </svg>
-                              </div>
-                              Quay lại tiện ích
-                          </button>
-                      )}
-
-                      <ErrorBoundary>
-                        {/* Extended Features Dashboard Grid */}
-                        {activeTool === Tool.ExtendedFeaturesDashboard && (
-                            <div className="max-w-7xl mx-auto pb-10">
-                                <div className="mb-10 text-center animate-fade-in-up">
-                                    <h2 className="text-3xl font-extrabold text-text-primary dark:text-white mb-3">Kho Tiện Ích Mở Rộng</h2>
-                                    <p className="text-text-secondary dark:text-gray-400 max-w-2xl mx-auto text-base">Khám phá các công cụ AI chuyên sâu hỗ trợ mọi giai đoạn thiết kế, quy hoạch và hoàn thiện ý tưởng.</p>
-                                </div>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                                    {utilityToolsGroup.tools.map((item, index) => (
-                                        <button
-                                            key={item.tool}
-                                            onClick={() => setActiveTool(item.tool)}
-                                            className={`group relative flex flex-col h-64 rounded-2xl border border-gray-200 dark:border-white/5 overflow-hidden transition-all duration-300 hover:-translate-y-1 hover:shadow-2xl shadow-lg`}
-                                            style={{ animationDelay: `${index * 50}ms` }}
-                                        >
-                                            {/* Background Image with Zoom Effect */}
-                                            {item.image && (
-                                                <img 
-                                                    src={item.image} 
-                                                    alt={item.label} 
-                                                    className="absolute inset-0 w-full h-full object-cover transition-transform duration-700 group-hover:scale-110"
-                                                />
-                                            )}
-                                            
-                                            {/* Gradient Overlay for Text Readability */}
-                                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-transparent dark:from-black/90 dark:via-black/60 dark:to-black/20"></div>
-                                            
-                                            {/* Content */}
-                                            <div className="relative z-10 flex flex-col h-full p-6 justify-end text-left">
-                                                <div className="flex items-center gap-3 mb-2">
-                                                    <div className="p-2 rounded-lg bg-white/10 backdrop-blur-md text-white border border-white/20 group-hover:bg-[#7f13ec] group-hover:border-[#7f13ec] transition-colors duration-300">
-                                                        {React.cloneElement(item.icon, { className: "h-6 w-6" })}
-                                                    </div>
-                                                    <h3 className="text-lg font-bold text-white group-hover:text-[#E0E0E0] transition-colors">{item.label}</h3>
-                                                </div>
-                                                
-                                                <p className="text-sm text-gray-300 line-clamp-2 leading-relaxed opacity-90 group-hover:opacity-100 transition-opacity">
-                                                    {item.desc || "Công cụ hỗ trợ thiết kế chuyên nghiệp."}
-                                                </p>
-                                            </div>
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        )}
-
-                        {/* Tools Rendering */}
-                        {activeTool === Tool.Pricing ? (
-                            <Checkout onPlanSelect={handleSelectPlanForPayment} />
-                        ) : activeTool === Tool.FloorPlan ? (
-                            <FloorPlan 
-                                state={toolStates.FloorPlan}
-                                onStateChange={(newState) => handleToolStateChange(Tool.FloorPlan, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.Renovation ? (
-                            <Renovation 
-                                state={toolStates.Renovation}
-                                onStateChange={(newState) => handleToolStateChange(Tool.Renovation, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.ArchitecturalRendering ? (
-                            <ImageGenerator 
-                                state={toolStates.ArchitecturalRendering}
-                                onStateChange={(newState) => handleToolStateChange(Tool.ArchitecturalRendering, newState)}
-                                onSendToViewSync={handleSendToViewSync} 
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.InteriorRendering ? (
-                            <InteriorGenerator
-                                state={toolStates.InteriorRendering}
-                                onStateChange={(newState) => handleToolStateChange(Tool.InteriorRendering, newState)}
-                                onSendToViewSync={handleSendToViewSync} 
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.UrbanPlanning ? (
-                            <UrbanPlanning
-                                state={toolStates.UrbanPlanning}
-                                onStateChange={(newState) => handleToolStateChange(Tool.UrbanPlanning, newState)}
-                                onSendToViewSync={handleSendToViewSync}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.LandscapeRendering ? (
-                            <LandscapeRendering
-                                state={toolStates.LandscapeRendering}
-                                onStateChange={(newState) => handleToolStateChange(Tool.LandscapeRendering, newState)}
-                                onSendToViewSync={handleSendToViewSync}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.AITechnicalDrawings ? (
-                            <AITechnicalDrawings
-                                state={toolStates.AITechnicalDrawings}
-                                onStateChange={(newState) => handleToolStateChange(Tool.AITechnicalDrawings, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.SketchConverter ? (
-                            <SketchConverter
-                                state={toolStates.SketchConverter}
-                                onStateChange={(newState) => handleToolStateChange(Tool.SketchConverter, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.FengShui ? (
-                            <FengShui
-                                state={toolStates.FengShui}
-                                onStateChange={(newState) => handleToolStateChange(Tool.FengShui, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.ViewSync ? (
-                            <ViewSync 
-                                state={toolStates.ViewSync}
-                                onStateChange={(newState) => handleToolStateChange(Tool.ViewSync, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.VirtualTour ? (
-                            <VirtualTour
-                                state={toolStates.VirtualTour}
-                                onStateChange={(newState) => handleToolStateChange(Tool.VirtualTour, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.MaterialSwap ? (
-                            <MaterialSwapper 
-                                state={toolStates.MaterialSwap}
-                                onStateChange={(newState) => handleToolStateChange(Tool.MaterialSwap, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.Staging ? (
-                            <Staging 
-                                state={toolStates.Staging}
-                                onStateChange={(newState) => handleToolStateChange(Tool.Staging, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.Upscale ? (
-                            <Upscale 
-                                state={toolStates.Upscale}
-                                onStateChange={(newState) => handleToolStateChange(Tool.Upscale, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.Moodboard ? (
-                            <MoodboardGenerator 
-                                state={toolStates.Moodboard}
-                                onStateChange={(newState) => handleToolStateChange(Tool.Moodboard, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.VideoGeneration ? (
-                            <VideoGenerator 
-                                state={toolStates.VideoGeneration}
-                                onStateChange={(newState) => handleToolStateChange(Tool.VideoGeneration, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.ImageEditing ? (
-                            <ImageEditor 
-                                state={toolStates.ImageEditing}
-                                onStateChange={(newState) => handleToolStateChange(Tool.ImageEditing, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.History ? (
-                            <HistoryPanel />
-                        ) : activeTool === Tool.Profile ? (
-                            <UserProfile 
-                                session={session} 
-                                initialTab={toolStates.Profile.activeTab || 'profile'}
-                                onTabChange={(tab) => handleToolStateChange(Tool.Profile, { activeTab: tab })}
-                                onPurchaseSuccess={fetchUserStatus}
-                            /> 
-                        ) : activeTool === Tool.LayoutGenerator ? (
-                            <LayoutGenerator
-                                state={toolStates.LayoutGenerator}
-                                onStateChange={(newState) => handleToolStateChange(Tool.LayoutGenerator, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.DrawingGenerator ? (
-                            <DrawingGenerator
-                                state={toolStates.DrawingGenerator}
-                                onStateChange={(newState) => handleToolStateChange(Tool.DrawingGenerator, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.DiagramGenerator ? (
-                            <DiagramGenerator
-                                state={toolStates.DiagramGenerator}
-                                onStateChange={(newState) => handleToolStateChange(Tool.DiagramGenerator, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.RealEstatePoster ? (
-                            <RealEstatePoster
-                                state={toolStates.RealEstatePoster}
-                                onStateChange={(newState) => handleToolStateChange(Tool.RealEstatePoster, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.EditByNote ? (
-                            <EditByNote
-                                state={toolStates.EditByNote}
-                                onStateChange={(newState) => handleToolStateChange(Tool.EditByNote, newState)}
-                                userCredits={userCredits}
-                                onDeductCredits={handleDeductCredits}
-                            />
-                        ) : activeTool === Tool.PromptSuggester ? (
-                            <PromptSuggester
-                                state={toolStates.PromptSuggester}
-                                onStateChange={(newState) => handleToolStateChange(Tool.PromptSuggester, newState)}
-                                onSendToViewSyncWithPrompt={handleSendToViewSyncWithPrompt}
-                            />
-                        ) : null}
-                      </ErrorBoundary>
-                  </main>
+              <div className="container mx-auto py-8">
+                  <PaymentPage 
+                      plan={selectedPlan} 
+                      user={session.user} 
+                      onBack={() => setView('app')} 
+                      onSuccess={() => {
+                          fetchUserStatus(); // Refresh credits
+                          setView('app');
+                      }} 
+                  />
               </div>
           </div>
       );
   }
 
-  // PUBLIC VIEW (Homepage or Auth)
-  if (view === 'auth') {
-    return <AuthPage onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} />;
+  if (view === 'video') {
+      return (
+          <VideoPage 
+              session={session ? { user: session.user } : null}
+              userStatus={userStatus}
+              onGoHome={() => setView('homepage')}
+              onThemeToggle={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+              theme={theme}
+              onSignOut={() => supabase.auth.signOut()}
+              onOpenGallery={() => { setActiveTool(Tool.History); setView('app'); }}
+              onUpgrade={() => setView('pricing')}
+              onOpenProfile={() => { setActiveTool(Tool.Profile); setView('app'); }}
+              onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
+              onDeductCredits={handleDeductCredits}
+              onRefreshCredits={async () => { await fetchUserStatus(); }}
+          />
+      );
   }
-  
-  // Homepage View
+
+  // Default: App View (Dashboard)
   return (
-    <div className="relative">
-        <Homepage 
-            onStart={handleStartDesigning} 
-            onAuthNavigate={handleAuthNavigate} 
-            onNavigateToPricing={handleNavigateToPricing} 
-            session={session}
-            userStatus={userStatus}
-            onGoToGallery={handleOpenGallery}
-            onOpenProfile={handleOpenProfile}
-            onNavigateToTool={handleNavigateToTool}
-            onSignOut={handleSignOut}
-        />
+    <div className="min-h-screen bg-main-bg dark:bg-[#121212] text-text-primary dark:text-white font-sans transition-colors duration-300 flex flex-col">
+      <Header 
+        onGoHome={() => setView('homepage')} 
+        onThemeToggle={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')} 
+        theme={theme}
+        onSignOut={() => supabase.auth.signOut()}
+        onOpenGallery={() => setActiveTool(Tool.History)}
+        onUpgrade={() => setView('pricing')}
+        onOpenProfile={() => setActiveTool(Tool.Profile)}
+        userStatus={userStatus}
+        user={session?.user || null}
+        onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)}
+      />
+      
+      <Navigation 
+        activeTool={activeTool} 
+        setActiveTool={setActiveTool} 
+        isMobileOpen={isMobileNavOpen}
+        onCloseMobile={() => setIsMobileNavOpen(false)}
+        onGoHome={() => setView('homepage')}
+      />
+
+      <main 
+        ref={mainContentRef}
+        className="flex-grow container mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 overflow-y-auto scrollbar-hide"
+      >
+        <ErrorBoundary>
+            {renderToolContent()} 
+        </ErrorBoundary>
+      </main>
     </div>
   );
 };

@@ -70,18 +70,15 @@ const compressImage = async (blob: Blob): Promise<Blob> => {
 };
 
 // Helper: Smartly persist any data (Base64 or Remote URL) to Supabase Storage
-// This prevents saving massive Base64 strings to the DB and handles temporary external URLs
 const persistResultToStorage = async (userId: string, data: string): Promise<string | null> => {
     try {
-        // 1. Check if it's already a Supabase URL (Don't re-upload)
         if (data.includes('supabase.co') && data.includes(BUCKET_NAME)) {
             return data;
         }
 
         let blob: Blob;
-        let extension = 'webp'; // Default to webp
+        let extension = 'webp';
 
-        // 2. Handle Base64 String
         if (data.startsWith('data:')) {
             const arr = data.split(',');
             const mimeMatch = arr[0].match(/:(.*?);/);
@@ -94,14 +91,10 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
             }
             blob = new Blob([u8arr], { type: mime });
         } 
-        // 3. Handle Blob URL (IMPORTANT for preventing data loss from React Blob URLs)
         else if (data.startsWith('blob:')) {
             try {
-                // Fetch the actual data from the browser's internal blob registry
                 const response = await fetch(data);
                 blob = await response.blob();
-                
-                // Determine extension based on blob type
                 if (blob.type === 'image/jpeg') extension = 'jpg';
                 else if (blob.type === 'image/png') extension = 'png';
                 else if (blob.type === 'image/webp') extension = 'webp';
@@ -110,42 +103,36 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
                 return null;
             }
         }
-        // 4. Handle Remote URL (Google/Veo Temporary URLs)
         else if (data.startsWith('http')) {
             try {
                 const response = await fetch(data);
                 if (!response.ok) throw new Error('Failed to fetch remote URL');
                 blob = await response.blob();
-                // We will convert everything to webp for consistency, unless it's video
                 if (blob.type.startsWith('video')) {
                     extension = 'mp4';
                 }
             } catch (fetchError) {
                 console.warn("Could not fetch remote URL for persistence (keeping original):", fetchError);
-                return data; // Fallback to original URL if fetch fails
+                return data;
             }
         } 
         else {
             return data;
         }
 
-        // 5. Compress/Convert Image (Optimize storage usage and format)
         if (blob.type.startsWith('image/')) {
             blob = await compressImage(blob);
             extension = 'webp';
         }
 
-        // 6. Generate Path
-        // Format: userId/jobs/timestamp_random.ext
         const fileName = `${userId}/jobs/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${extension}`;
 
-        // 7. Upload to Supabase Storage
         const { error: uploadError } = await supabase.storage
             .from(BUCKET_NAME)
             .upload(fileName, blob, {
-                cacheControl: '31536000', // Cache for 1 year
+                cacheControl: '31536000',
                 upsert: false,
-                contentType: blob.type // Should be image/webp now
+                contentType: blob.type
             });
 
         if (uploadError) {
@@ -153,7 +140,6 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
             return null;
         }
 
-        // 8. Get Public URL
         const { data: publicData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
         return publicData.publicUrl;
 
@@ -178,13 +164,11 @@ export const createJob = async (jobData: Partial<GenerationJob>): Promise<string
 
         if (error) {
             console.error("Error creating generation job:", error.message || JSON.stringify(error));
-            // CRITICAL FIX: Throw error instead of returning null so the frontend catch block triggers refund
             throw new Error(`Lỗi tạo Job: ${error.message}`);
         }
         return data.id;
     } catch (e: any) {
         console.error("Exception creating job:", e.message || e);
-        // CRITICAL FIX: Re-throw error to ensure refund logic works
         throw new Error(e.message || "Không thể tạo bản ghi công việc (Job Creation Failed)");
     }
 };
@@ -196,9 +180,7 @@ export const updateJobStatus = async (jobId: string, status: 'pending' | 'proces
             updated_at: new Date().toISOString()
         };
 
-        // --- OPTIMIZATION: Persist Media ---
         if (resultUrl) {
-            // We need userId to organize folder structure. Fetch it first.
             const { data: jobData } = await supabase
                 .from('generation_jobs')
                 .select('user_id')
@@ -206,10 +188,8 @@ export const updateJobStatus = async (jobId: string, status: 'pending' | 'proces
                 .single();
             
             if (jobData && jobData.user_id) {
-                // Automatically upload Base64, Blob URL or External URLs to Supabase Storage
-                // This ensures DB stays light and links don't expire
                 const persistentUrl = await persistResultToStorage(jobData.user_id, resultUrl);
-                updates.result_url = persistentUrl || resultUrl; // Fallback to original if upload fails
+                updates.result_url = persistentUrl || resultUrl;
             } else {
                  updates.result_url = resultUrl;
             }
@@ -233,8 +213,6 @@ export const updateJobStatus = async (jobId: string, status: 'pending' | 'proces
 export const getQueuePosition = async (jobId: string, knownCreatedAt?: string): Promise<number> => {
     try {
         let createdAt = knownCreatedAt;
-
-        // Step 1: If we don't know the created_at, fetch it (Costs 1 DB call)
         if (!createdAt) {
             const { data: currentJob, error: fetchError } = await supabase
                 .from('generation_jobs')
@@ -246,15 +224,13 @@ export const getQueuePosition = async (jobId: string, knownCreatedAt?: string): 
             createdAt = currentJob.created_at;
         }
 
-        // Step 2: Count jobs ahead (Costs 1 DB call - optimized with index)
         const { count, error } = await supabase
             .from('generation_jobs')
             .select('*', { count: 'exact', head: true })
             .in('status', ['pending', 'processing'])
-            .lt('created_at', createdAt!); // '!' asserted because we handled null above
+            .lt('created_at', createdAt!);
 
         if (error) return 0;
-        
         return (count || 0) + 1;
     } catch (e) {
         return 0;
@@ -264,14 +240,11 @@ export const getQueuePosition = async (jobId: string, knownCreatedAt?: string): 
 /**
  * Checks for "zombie" jobs (stuck in pending/processing for > 8 mins) for the current user.
  * Marks them as failed and refunds credits.
- * This runs client-side as a fail-safe since we don't have a server-side cron job.
  */
 export const cleanupStaleJobs = async (userId: string) => {
     try {
-        // 8 minutes ago
         const timeoutThreshold = new Date(Date.now() - 8 * 60 * 1000).toISOString();
 
-        // 1. Find stuck jobs for this user
         const { data: stuckJobs, error } = await supabase
             .from('generation_jobs')
             .select('id, cost, tool_id')
@@ -286,12 +259,8 @@ export const cleanupStaleJobs = async (userId: string) => {
 
         if (stuckJobs && stuckJobs.length > 0) {
             console.log(`[JobService] Found ${stuckJobs.length} stuck jobs. Cleaning up...`);
-
             for (const job of stuckJobs) {
-                // 2. Mark as failed
                 await updateJobStatus(job.id, 'failed', undefined, 'Timeout: Hệ thống tự động hủy do quá thời gian chờ (8 phút).');
-                
-                // 3. Refund credits if cost > 0
                 if (job.cost > 0) {
                     await refundCredits(userId, job.cost, `Hoàn tiền: Job ${job.id} bị treo quá 8 phút`);
                 }
@@ -300,5 +269,39 @@ export const cleanupStaleJobs = async (userId: string) => {
         }
     } catch (e) {
         console.error("Exception in cleanupStaleJobs:", e);
+    }
+};
+
+/**
+ * NEW: Checks localStorage for transaction markers that were paid but never created a job (Crashed).
+ * This fixes "Usage log exists but no Job exists".
+ */
+export const recoverOrphanedTransactions = async (userId: string) => {
+    try {
+        const rawPending = localStorage.getItem('opzen_pending_tx');
+        if (!rawPending) return;
+
+        const pendingTx = JSON.parse(rawPending);
+        const now = Date.now();
+        
+        // If the pending transaction is older than 60 seconds, assume the app crashed/closed
+        if (pendingTx && pendingTx.timestamp && (now - pendingTx.timestamp > 60000)) {
+            console.log("[JobService] Found orphaned transaction (Crash Recovery). Refunding...", pendingTx);
+            
+            // Refund
+            if (pendingTx.amount > 0) {
+                await refundCredits(userId, pendingTx.amount, `Hoàn tiền: Lỗi hệ thống (Crash Recovery) - ${pendingTx.reason || 'Unknown'}`);
+            }
+            
+            // Clean up
+            localStorage.removeItem('opzen_pending_tx');
+            console.log("[JobService] Recovery complete.");
+            
+            // Optional: You could show a toast here to notify user
+        }
+    } catch (e) {
+        console.error("Error in recoverOrphanedTransactions:", e);
+        // Clean up corrupt data
+        localStorage.removeItem('opzen_pending_tx');
     }
 };
