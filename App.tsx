@@ -40,6 +40,7 @@ import PublicPricing from './components/PublicPricing';
 import TermsOfServicePage from './components/TermsOfServicePage'; 
 import VideoPage from './components/VideoPage';
 import { getUserStatus, deductCredits } from './services/paymentService';
+import { cleanupStaleJobs } from './services/jobService'; // Import cleanup service
 import { plans } from './constants/plans';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
@@ -276,8 +277,9 @@ const App: React.FC = () => {
   // Define fetchUserStatus using useCallback to be stable
   const fetchUserStatus = useCallback(async () => {
     if (session?.user) {
-      // PERFORMANCE FIX: Removed client-side cleanupStaleJobs to prevent DB CPU spikes.
-      // This should be handled by a scheduled server-side task (pg_cron or Edge Function).
+      // Clean up zombie jobs (> 8 mins) to free queue and return credits
+      await cleanupStaleJobs(session.user.id);
+      
       const status = await getUserStatus(session.user.id, session.user.email);
       setUserStatus(status);
     } else {

@@ -261,8 +261,44 @@ export const getQueuePosition = async (jobId: string, knownCreatedAt?: string): 
     }
 };
 
+/**
+ * Checks for "zombie" jobs (stuck in pending/processing for > 8 mins) for the current user.
+ * Marks them as failed and refunds credits.
+ * This runs client-side as a fail-safe since we don't have a server-side cron job.
+ */
 export const cleanupStaleJobs = async (userId: string) => {
-    // This function is deliberately empty on the client side.
-    // Cleanup tasks are handled by Supabase pg_cron to prevent client-side DB load spikes.
-    return; 
+    try {
+        // 8 minutes ago
+        const timeoutThreshold = new Date(Date.now() - 8 * 60 * 1000).toISOString();
+
+        // 1. Find stuck jobs for this user
+        const { data: stuckJobs, error } = await supabase
+            .from('generation_jobs')
+            .select('id, cost, tool_id')
+            .eq('user_id', userId)
+            .in('status', ['pending', 'processing'])
+            .lt('updated_at', timeoutThreshold);
+
+        if (error) {
+            console.error("Error finding stale jobs:", error);
+            return;
+        }
+
+        if (stuckJobs && stuckJobs.length > 0) {
+            console.log(`[JobService] Found ${stuckJobs.length} stuck jobs. Cleaning up...`);
+
+            for (const job of stuckJobs) {
+                // 2. Mark as failed
+                await updateJobStatus(job.id, 'failed', undefined, 'Timeout: Hệ thống tự động hủy do quá thời gian chờ (8 phút).');
+                
+                // 3. Refund credits if cost > 0
+                if (job.cost > 0) {
+                    await refundCredits(userId, job.cost, `Hoàn tiền: Job ${job.id} bị treo quá 8 phút`);
+                }
+            }
+            console.log(`[JobService] Cleanup complete. Refunded credits for stuck jobs.`);
+        }
+    } catch (e) {
+        console.error("Exception in cleanupStaleJobs:", e);
+    }
 };
