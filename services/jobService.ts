@@ -248,29 +248,47 @@ export const getQueuePosition = async (jobId: string, knownCreatedAt?: string): 
 
 export const cleanupStaleJobs = async (userId: string) => {
     try {
-        const timeoutThreshold = new Date(Date.now() - 8 * 60 * 1000).toISOString();
+        // Thiết lập ngưỡng an toàn: 15 phút.
+        // Video gen lâu nhất khoảng 3-5 phút. 15 phút là chắc chắn đã lỗi.
+        const TIMEOUT_MINUTES = 15;
+        const threshold = new Date(Date.now() - TIMEOUT_MINUTES * 60 * 1000).toISOString();
 
+        // 1. Tìm các job đang treo (pending/processing) quá thời gian này
         const { data: stuckJobs, error } = await supabase
             .from('generation_jobs')
-            .select('id, cost, tool_id')
+            .select('id, cost, usage_log_id, created_at')
             .eq('user_id', userId)
             .in('status', ['pending', 'processing'])
-            .lt('updated_at', timeoutThreshold);
+            .lt('created_at', threshold);
 
         if (error) {
-            console.error("Error finding stale jobs:", error);
+            console.error("Error finding stuck jobs:", error);
             return;
         }
 
         if (stuckJobs && stuckJobs.length > 0) {
-            console.log(`[JobService] Found ${stuckJobs.length} stuck jobs. Cleaning up...`);
+            console.log(`[JobService] Found ${stuckJobs.length} stuck jobs (> ${TIMEOUT_MINUTES} mins). Cleaning up...`);
+            
             for (const job of stuckJobs) {
-                await updateJobStatus(job.id, 'failed', undefined, 'Timeout: Hệ thống tự động hủy do quá thời gian chờ (8 phút).');
+                console.log(`[JobService] Refunding stuck job: ${job.id}`);
+                
+                // 2. Đánh dấu là Failed trong DB để không quét lại lần sau
+                await updateJobStatus(
+                    job.id, 
+                    'failed', 
+                    undefined, 
+                    `Timeout: Hệ thống tự động hủy do treo quá ${TIMEOUT_MINUTES} phút.`
+                );
+
+                // 3. Hoàn tiền
                 if (job.cost > 0) {
-                    await refundCredits(userId, job.cost, `Hoàn tiền: Job ${job.id} bị treo quá 8 phút`);
+                    await refundCredits(
+                        userId, 
+                        job.cost, 
+                        `Hoàn tiền: Job ${job.id.substring(0, 8)}... bị treo quá lâu`
+                    );
                 }
             }
-            console.log(`[JobService] Cleanup complete. Refunded credits for stuck jobs.`);
         }
     } catch (e) {
         console.error("Exception in cleanupStaleJobs:", e);
@@ -316,49 +334,5 @@ export const recoverOrphanedTransactions = async (userId: string) => {
             localStorage.removeItem('opzen_pending_tx'); 
         }
     }
-
-    // 2. Database Scan (Server-Side Orphans)
-    // Find deductions in usage_log that have NO corresponding entry in generation_jobs
-    try {
-        const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const twentyMinutesAgo = new Date(Date.now() - 20 * 60 * 1000).toISOString(); // Grace period 20 mins
-
-        // A. Fetch recent deductions (credits_used > 0) excluding refunds
-        const { data: deductions, error: logError } = await supabase
-            .from('usage_log') 
-            .select('id, credits_used, description, created_at')
-            .eq('user_id', userId)
-            .gt('credits_used', 0) // Only deductions
-            .gt('created_at', oneDayAgo)
-            .lt('created_at', twentyMinutesAgo) // Must be older than 20 mins
-            .not('description', 'ilike', '%Hoàn tiền%'); // Ignore refund logs
-
-        if (logError || !deductions || deductions.length === 0) return;
-
-        // B. Fetch all jobs created in that timeframe
-        const { data: jobs, error: jobError } = await supabase
-            .from('generation_jobs')
-            .select('usage_log_id')
-            .eq('user_id', userId)
-            .gt('created_at', oneDayAgo);
-
-        if (jobError) return;
-
-        // C. Find Orphans: Deductions that are NOT in the job list
-        const existingJobLogIds = new Set(jobs?.map(j => j.usage_log_id).filter(id => id !== null));
-        
-        const orphans = deductions.filter(log => !existingJobLogIds.has(log.id));
-
-        if (orphans.length > 0) {
-            console.log(`[JobService] Found ${orphans.length} orphaned DB logs. Refunding...`);
-            
-            for (const orphan of orphans) {
-                console.log(`[JobService] Refunding orphan log: ${orphan.id} (${orphan.credits_used} credits)`);
-                await refundCredits(userId, orphan.credits_used, `Hoàn tiền tự động: Job missing for log ${orphan.id}`);
-            }
-        }
-
-    } catch (e) {
-        console.error("[JobService] Error scanning for orphaned transactions:", e);
-    }
+    // Server-side orphan scan is kept disabled to prioritize client-side safety.
 };
