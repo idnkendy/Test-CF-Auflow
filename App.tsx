@@ -40,7 +40,7 @@ import PublicPricing from './components/PublicPricing';
 import TermsOfServicePage from './components/TermsOfServicePage'; 
 import VideoPage from './components/VideoPage';
 import { getUserStatus, deductCredits } from './services/paymentService';
-import { cleanupStaleJobs } from './services/jobService'; // Import cleanup service
+import { cleanupStaleJobs, recoverOrphanedTransactions } from './services/jobService'; // Import cleanup service
 import { plans } from './constants/plans';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
@@ -277,7 +277,10 @@ const App: React.FC = () => {
   // Define fetchUserStatus using useCallback to be stable
   const fetchUserStatus = useCallback(async () => {
     if (session?.user) {
-      // Clean up zombie jobs (> 8 mins) to free queue and return credits
+      // 1. Recover any lost transactions from browser crashes
+      await recoverOrphanedTransactions(session.user.id);
+      
+      // 2. Clean up zombie jobs (> 8 mins) to free queue and return credits
       await cleanupStaleJobs(session.user.id);
       
       const status = await getUserStatus(session.user.id, session.user.email);

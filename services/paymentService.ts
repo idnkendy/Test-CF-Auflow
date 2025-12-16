@@ -99,6 +99,24 @@ export const deductCredits = async (userId: string, amount: number, description:
         throw new Error(`Giao dịch thất bại: ${error.message || 'Lỗi hệ thống'}`);
     }
 
+    // --- AUTOMATIC PROTECTION MARKER ---
+    // This runs for ALL tools using deductCredits. 
+    // It creates a "receipt" in localStorage. If the subsequent job creation crashes,
+    // the recovery system will see this receipt and refund.
+    try {
+        if (data) {
+            localStorage.setItem('opzen_pending_tx', JSON.stringify({
+                logId: data,
+                amount: amount,
+                reason: description,
+                timestamp: Date.now()
+            }));
+        }
+    } catch (e) {
+        console.warn("Could not set protection marker", e);
+    }
+    // -----------------------------------
+
     return data; // Returns log ID
 };
 

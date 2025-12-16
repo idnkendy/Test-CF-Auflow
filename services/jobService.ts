@@ -166,6 +166,15 @@ export const createJob = async (jobData: Partial<GenerationJob>): Promise<string
             console.error("Error creating generation job:", error.message || JSON.stringify(error));
             throw new Error(`Lỗi tạo Job: ${error.message}`);
         }
+
+        // --- AUTOMATIC PROTECTION CLEANUP ---
+        // If we successfully created the job record, the "receipt" is no longer needed.
+        // We "tear it up" to prevent double-refunds.
+        try {
+            localStorage.removeItem('opzen_pending_tx');
+        } catch (e) {}
+        // ------------------------------------
+
         return data.id;
     } catch (e: any) {
         console.error("Exception creating job:", e.message || e);
