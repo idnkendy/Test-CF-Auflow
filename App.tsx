@@ -40,7 +40,7 @@ import PublicPricing from './components/PublicPricing';
 import TermsOfServicePage from './components/TermsOfServicePage'; 
 import VideoPage from './components/VideoPage';
 import { getUserStatus, deductCredits } from './services/paymentService';
-import { cleanupStaleJobs, recoverOrphanedTransactions } from './services/jobService'; // Import cleanup service
+import { cleanupStaleJobs, recoverOrphanedTransactions, cleanupOrphanedLogs } from './services/jobService'; // Import cleanup service
 import { plans } from './constants/plans';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
@@ -282,6 +282,9 @@ const App: React.FC = () => {
       
       // 2. Clean up zombie jobs (> 8 mins) to free queue and return credits
       await cleanupStaleJobs(session.user.id);
+      
+      // 3. New: Server-side check for orphaned usage logs
+      await cleanupOrphanedLogs();
       
       const status = await getUserStatus(session.user.id, session.user.email);
       setUserStatus(status);

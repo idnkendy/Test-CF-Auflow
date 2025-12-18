@@ -17,6 +17,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import MaskingModal from './MaskingModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import MultiImageUpload from './common/MultiImageUpload';
+import OptionSelector from './common/OptionSelector';
 
 
 const renovationSuggestions = [
@@ -111,7 +112,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
                 }
                 
-                // Safe to remove
+                // Job created successfully, safe to remove marker
                 localStorage.removeItem('opzen_pending_tx');
             }
 
@@ -206,12 +207,10 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         onStateChange({ referenceImages: files });
     };
 
-    const handleSuggestionSelect = (e: React.ChangeEvent<HTMLSelectElement>) => {
-        const selectedPrompt = e.target.value;
+    const handleSuggestionSelect = (selectedPrompt: string) => {
         if (selectedPrompt) {
             const newPrompt = prompt.trim() ? `${prompt.trim()}. ${selectedPrompt}` : selectedPrompt;
             onStateChange({ prompt: newPrompt });
-            e.target.value = ""; // Reset dropdown after selection
         }
     };
 
@@ -319,26 +318,15 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                     onChange={(e) => onStateChange({ prompt: e.target.value })}
                                 />
                                  <div className="mt-3">
-                                     <label htmlFor="renovation-suggestions" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Thêm gợi ý nhanh</label>
-                                     <div className="relative">
-                                        <select
-                                            id="renovation-suggestions"
-                                            onChange={handleSuggestionSelect}
-                                            className="w-full bg-main-bg dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all appearance-none pr-10"
-                                            defaultValue=""
-                                            aria-label="Chọn gợi ý nhanh cho việc cải tạo"
-                                        >
-                                            <option value="" disabled>Chọn một gợi ý...</option>
-                                            {renovationSuggestions.map((suggestion) => (
-                                                <option key={suggestion.label} value={suggestion.prompt}>
-                                                    {suggestion.label}
-                                                </option>
-                                            ))}
-                                        </select>
-                                        <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-text-secondary dark:text-gray-400">
-                                           <svg className="h-5 w-5" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 20"><path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M6 8l4 4 4-4"/></svg>
-                                        </div>
-                                    </div>
+                                     <OptionSelector 
+                                        id="renovation-suggestions"
+                                        label="Thêm gợi ý nhanh"
+                                        options={renovationSuggestions.map(s => ({ value: s.prompt, label: s.label }))}
+                                        value=""
+                                        onChange={handleSuggestionSelect}
+                                        disabled={isLoading}
+                                        variant="select"
+                                    />
                                 </div>
                             </div>
                              <div className="flex-grow"></div>

@@ -5,314 +5,140 @@ import { refundCredits } from './paymentService';
 
 const BUCKET_NAME = 'assets';
 
-// Helper: Compress image to WEBP at 100% quality
 const compressImage = async (blob: Blob): Promise<Blob> => {
-    // If it's not an image, return as is
     if (!blob.type.startsWith('image/')) return blob;
-    
-    // If it's already small enough (< 500KB) and already webp, return as is.
-    // If it's not webp, we convert it regardless of size to standardize.
     if (blob.size < 500 * 1024 && blob.type === 'image/webp') return blob;
 
-    return new Promise((resolve, reject) => {
+    return new Promise((resolve) => {
         const img = new Image();
         const url = URL.createObjectURL(blob);
-        
         img.onload = () => {
             URL.revokeObjectURL(url);
             const canvas = document.createElement('canvas');
+            const MAX_SIZE = 1920;
             let width = img.width;
             let height = img.height;
-
-            // Resize if too big (max 1920px width/height) to ensure performant loading
-            const MAX_SIZE = 1920;
             if (width > MAX_SIZE || height > MAX_SIZE) {
-                if (width > height) {
-                    height = Math.round(height * (MAX_SIZE / width));
-                    width = MAX_SIZE;
-                } else {
-                    width = Math.round(width * (MAX_SIZE / height));
-                    height = MAX_SIZE;
-                }
+                if (width > height) { height = Math.round(height * (MAX_SIZE / width)); width = MAX_SIZE; }
+                else { width = Math.round(width * (MAX_SIZE / height)); height = MAX_SIZE; }
             }
-
-            canvas.width = width;
-            canvas.height = height;
+            canvas.width = width; canvas.height = height;
             const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                resolve(blob);
-                return;
-            }
-
-            // Draw white background (for transparent PNGs)
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, width, height);
-            ctx.drawImage(img, 0, 0, width, height);
-
-            // Compress to WEBP at 100% quality
-            canvas.toBlob((compressedBlob) => {
-                if (compressedBlob) {
-                    resolve(compressedBlob);
-                } else {
-                    resolve(blob); // If compression fails, return original
-                }
-            }, 'image/webp', 1.0);
+            if (!ctx) { resolve(blob); return; }
+            ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, width, height); ctx.drawImage(img, 0, 0, width, height);
+            canvas.toBlob((compressedBlob) => resolve(compressedBlob || blob), 'image/webp', 1.0);
         };
-
-        img.onerror = (err) => {
-            URL.revokeObjectURL(url);
-            console.warn("Image compression failed, using original", err);
-            resolve(blob);
-        };
-
+        img.onerror = () => { URL.revokeObjectURL(url); resolve(blob); };
         img.src = url;
     });
 };
 
-// Helper: Smartly persist any data (Base64 or Remote URL) to Supabase Storage
 const persistResultToStorage = async (userId: string, data: string): Promise<string | null> => {
     try {
-        if (data.includes('supabase.co') && data.includes(BUCKET_NAME)) {
-            return data;
-        }
-
+        if (data.includes('supabase.co') && data.includes(BUCKET_NAME)) return data;
         let blob: Blob;
         let extension = 'webp';
-
         if (data.startsWith('data:')) {
             const arr = data.split(',');
-            const mimeMatch = arr[0].match(/:(.*?);/);
-            const mime = mimeMatch ? mimeMatch[1] : 'image/png';
+            const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
             const bstr = atob(arr[1]);
-            let n = bstr.length;
-            const u8arr = new Uint8Array(n);
-            while (n--) {
-                u8arr[n] = bstr.charCodeAt(n);
-            }
+            let n = bstr.length; const u8arr = new Uint8Array(n);
+            while (n--) { u8arr[n] = bstr.charCodeAt(n); }
             blob = new Blob([u8arr], { type: mime });
-        } 
-        else if (data.startsWith('blob:')) {
-            try {
-                const response = await fetch(data);
-                blob = await response.blob();
-                if (blob.type === 'image/jpeg') extension = 'jpg';
-                else if (blob.type === 'image/png') extension = 'png';
-                else if (blob.type === 'image/webp') extension = 'webp';
-            } catch (e) {
-                console.error("Failed to fetch blob data:", e);
-                return null;
-            }
-        }
-        else if (data.startsWith('http')) {
-            try {
-                const response = await fetch(data);
-                if (!response.ok) throw new Error('Failed to fetch remote URL');
-                blob = await response.blob();
-                if (blob.type.startsWith('video')) {
-                    extension = 'mp4';
-                }
-            } catch (fetchError) {
-                console.warn("Could not fetch remote URL for persistence (keeping original):", fetchError);
-                return data;
-            }
-        } 
-        else {
-            return data;
-        }
+        } else if (data.startsWith('blob:') || data.startsWith('http')) {
+            const response = await fetch(data);
+            blob = await response.blob();
+            if (blob.type.startsWith('video')) extension = 'mp4';
+        } else return data;
 
-        if (blob.type.startsWith('image/')) {
-            blob = await compressImage(blob);
-            extension = 'webp';
-        }
-
+        if (blob.type.startsWith('image/')) { blob = await compressImage(blob); extension = 'webp'; }
         const fileName = `${userId}/jobs/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${extension}`;
-
-        const { error: uploadError } = await supabase.storage
-            .from(BUCKET_NAME)
-            .upload(fileName, blob, {
-                cacheControl: '31536000',
-                upsert: false,
-                contentType: blob.type
-            });
-
-        if (uploadError) {
-            console.error("Error uploading job result to storage:", uploadError);
-            return null;
-        }
-
+        const { error: uploadError } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob, { cacheControl: '31536000', upsert: false, contentType: blob.type });
+        if (uploadError) return null;
         const { data: publicData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
         return publicData.publicUrl;
-
-    } catch (e) {
-        console.error("Exception in persistResultToStorage:", e);
-        return null;
-    }
+    } catch (e) { return null; }
 };
 
 export const createJob = async (jobData: Partial<GenerationJob>): Promise<string> => {
     try {
-        const { data, error } = await supabase
-            .from('generation_jobs')
-            .insert([{
-                ...jobData,
-                status: 'pending',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-            }])
-            .select('id')
-            .single();
-
-        if (error) {
-            console.error("Error creating generation job:", error.message || JSON.stringify(error));
-            throw new Error(`Lỗi tạo Job: ${error.message}`);
-        }
-
-        // --- AUTOMATIC PROTECTION CLEANUP ---
-        // If we successfully created the job record, the "receipt" is no longer needed.
-        // We "tear it up" to prevent double-refunds.
-        try {
-            localStorage.removeItem('opzen_pending_tx');
-        } catch (e) {}
-        // ------------------------------------
-
+        const { data, error } = await supabase.from('generation_jobs').insert([{ ...jobData, status: 'pending', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]).select('id').single();
+        if (error) throw new Error(`Lỗi tạo Job: ${error.message}`);
+        try { localStorage.removeItem('opzen_pending_tx'); } catch (e) {}
         return data.id;
-    } catch (e: any) {
-        console.error("Exception creating job:", e.message || e);
-        throw new Error(e.message || "Không thể tạo bản ghi công việc (Job Creation Failed)");
-    }
+    } catch (e: any) { throw new Error(e.message || "Job Creation Failed"); }
 };
 
 export const updateJobStatus = async (jobId: string, status: 'pending' | 'processing' | 'completed' | 'failed', resultUrl?: string, errorMessage?: string) => {
     try {
-        const updates: any = {
-            status,
-            updated_at: new Date().toISOString()
-        };
-
+        const updates: any = { status, updated_at: new Date().toISOString() };
         if (resultUrl) {
-            const { data: jobData } = await supabase
-                .from('generation_jobs')
-                .select('user_id')
-                .eq('id', jobId)
-                .single();
-            
-            if (jobData && jobData.user_id) {
+            const { data: jobData } = await supabase.from('generation_jobs').select('user_id').eq('id', jobId).single();
+            if (jobData?.user_id) {
                 const persistentUrl = await persistResultToStorage(jobData.user_id, resultUrl);
                 updates.result_url = persistentUrl || resultUrl;
-            } else {
-                 updates.result_url = resultUrl;
-            }
+            } else updates.result_url = resultUrl;
         }
-
         if (errorMessage) updates.error_message = errorMessage;
-
-        const { error } = await supabase
-            .from('generation_jobs')
-            .update(updates)
-            .eq('id', jobId);
-
-        if (error) {
-            console.error(`Error updating job ${jobId}:`, error.message || JSON.stringify(error));
-        }
-    } catch (e: any) {
-        console.error(`Exception updating job ${jobId}:`, e.message || e);
-    }
+        await supabase.from('generation_jobs').update(updates).eq('id', jobId);
+    } catch (e) {}
 };
 
 export const getQueuePosition = async (jobId: string, knownCreatedAt?: string): Promise<number> => {
     try {
         let createdAt = knownCreatedAt;
         if (!createdAt) {
-            const { data: currentJob, error: fetchError } = await supabase
-                .from('generation_jobs')
-                .select('created_at')
-                .eq('id', jobId)
-                .single();
-
-            if (fetchError || !currentJob) return 0;
-            createdAt = currentJob.created_at;
+            const { data } = await supabase.from('generation_jobs').select('created_at').eq('id', jobId).single();
+            if (!data) return 0;
+            createdAt = data.created_at;
         }
-
-        const { count, error } = await supabase
-            .from('generation_jobs')
-            .select('*', { count: 'exact', head: true })
-            .in('status', ['pending', 'processing'])
-            .lt('created_at', createdAt!);
-
-        if (error) return 0;
+        const { count } = await supabase.from('generation_jobs').select('*', { count: 'exact', head: true }).in('status', ['pending', 'processing']).lt('created_at', createdAt!);
         return (count || 0) + 1;
-    } catch (e) {
-        return 0;
-    }
+    } catch (e) { return 0; }
 };
 
+/**
+ * CLEANUP STALE JOBS
+ * Tìm các job bị treo > 15 phút, đánh dấu lỗi và hoàn tiền dựa trên usage_log_id.
+ */
 export const cleanupStaleJobs = async (userId: string) => {
     try {
-        // Thiết lập ngưỡng an toàn: 15 phút.
-        // Video gen lâu nhất khoảng 3-5 phút. 15 phút là chắc chắn đã lỗi.
         const TIMEOUT_MINUTES = 15;
         const threshold = new Date(Date.now() - TIMEOUT_MINUTES * 60 * 1000).toISOString();
-
-        // 1. Tìm các job đang treo (pending/processing) quá thời gian này
-        const { data: stuckJobs, error } = await supabase
-            .from('generation_jobs')
-            .select('id, cost, usage_log_id, created_at')
-            .eq('user_id', userId)
-            .in('status', ['pending', 'processing'])
-            .lt('created_at', threshold);
-
-        if (error) {
-            console.error("Error finding stuck jobs:", error);
-            return;
-        }
-
+        const { data: stuckJobs } = await supabase.from('generation_jobs').select('id, cost, usage_log_id').eq('user_id', userId).in('status', ['pending', 'processing']).lt('created_at', threshold);
+        
         if (stuckJobs && stuckJobs.length > 0) {
-            console.log(`[JobService] Found ${stuckJobs.length} stuck jobs (> ${TIMEOUT_MINUTES} mins). Cleaning up...`);
-            
+            console.log(`[JobService] Phát hiện ${stuckJobs.length} jobs bị treo. Đang xử lý hoàn tiền...`);
             for (const job of stuckJobs) {
-                console.log(`[JobService] Refunding stuck job: ${job.id}`);
-                
-                // 2. Đánh dấu là Failed trong DB để không quét lại lần sau
-                await updateJobStatus(
-                    job.id, 
-                    'failed', 
-                    undefined, 
-                    `Timeout: Hệ thống tự động hủy do treo quá ${TIMEOUT_MINUTES} phút.`
-                );
-
-                // 3. Hoàn tiền
-                if (job.cost > 0) {
-                    await refundCredits(
-                        userId, 
-                        job.cost, 
-                        `Hoàn tiền: Job ${job.id.substring(0, 8)}... bị treo quá lâu`
-                    );
+                await updateJobStatus(job.id, 'failed', undefined, `Hệ thống tự động hủy do treo quá ${TIMEOUT_MINUTES} phút.`);
+                if (job.cost > 0 && job.usage_log_id) {
+                    await refundCredits(userId, job.cost, `Hoàn tiền: Job bị treo`, job.usage_log_id);
                 }
             }
         }
-    } catch (e) {
-        console.error("Exception in cleanupStaleJobs:", e);
-    }
+    } catch (e) {}
+};
+
+export const cleanupOrphanedLogs = async () => {
+    try { await supabase.rpc('cleanup_orphaned_logs'); } catch (e) {}
 };
 
 /**
  * RECOVER ORPHANED TRANSACTIONS
- * Scans both LocalStorage (Immediate client crash) AND Database (Server logic gaps)
- * Includes Double-Spending Protection.
+ * Cơ chế cứu hộ cho Client: Kiểm tra localStorage và hoàn tiền nếu sau 1 phút chưa thấy Job.
  */
 export const recoverOrphanedTransactions = async (userId: string) => {
-    // 1. LocalStorage Recovery (Client-Side Crash)
     const rawPending = localStorage.getItem('opzen_pending_tx');
     if (rawPending) {
         try {
             const pendingTx = JSON.parse(rawPending);
             const now = Date.now();
             
-            // Only act if > 1 minute old to avoid race condition with active process
-            if (pendingTx && pendingTx.timestamp && (now - pendingTx.timestamp > 60000)) {
+            // Chờ ít nhất 1 phút để chắc chắn không phải do mạng chậm
+            if (pendingTx?.timestamp && (now - pendingTx.timestamp > 60000)) {
                 if (pendingTx.amount > 0 && pendingTx.logId) {
-                    // CRITICAL CHECK: Verify against DB before refunding
-                    // Ensure a job wasn't actually created for this logId
+                    console.log("[JobService] Đang cứu hộ giao dịch bị bỏ rơi:", pendingTx.logId);
+                    
                     const { data: existingJob } = await supabase
                         .from('generation_jobs')
                         .select('id')
@@ -320,19 +146,17 @@ export const recoverOrphanedTransactions = async (userId: string) => {
                         .maybeSingle();
 
                     if (!existingJob) {
-                        console.log("[JobService] Recovering crashed client transaction (No Job Found)...");
-                        await refundCredits(userId, pendingTx.amount, `Hoàn tiền: Lỗi Client Crash - ${pendingTx.reason || 'Unknown'}`);
-                    } else {
-                        console.log("[JobService] Marker found but Job exists. Cleaning up marker only.");
+                        // Gọi hàm hoàn tiền an toàn với LOG ID để tránh trùng lặp
+                        await refundCredits(userId, pendingTx.amount, `Cứu hộ giao dịch lỗi`, pendingTx.logId);
                     }
                 }
-                // Cleanup marker regardless of outcome (Refunded OR Job exists)
                 localStorage.removeItem('opzen_pending_tx');
             }
         } catch(e) { 
-            console.error("Error parsing pending tx", e);
+            console.error("[JobService] Lỗi trong quá trình cứu hộ:", e);
             localStorage.removeItem('opzen_pending_tx'); 
         }
     }
-    // Server-side orphan scan is kept disabled to prioritize client-side safety.
+    // Sau khi cứu hộ ở Client, gọi tiếp lệnh quét tổng thể ở Server
+    await cleanupOrphanedLogs();
 };
