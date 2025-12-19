@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../../services/supabaseClient';
 import Spinner from '../Spinner';
@@ -20,17 +19,10 @@ const GoogleIcon = () => (
 const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  
-  // Email/Password State
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError(null);
-    setSuccessMsg(null);
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
@@ -43,41 +35,6 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
     }
   };
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!email || !password) {
-          setError("Vui lòng nhập đầy đủ email và mật khẩu.");
-          return;
-      }
-      
-      setLoading(true);
-      setError(null);
-      setSuccessMsg(null);
-
-      try {
-          if (authMode === 'signup') {
-              const { data, error } = await supabase.auth.signUp({
-                  email,
-                  password,
-              });
-              if (error) throw error;
-              if (data.user && !data.session) {
-                  setSuccessMsg("Đăng ký thành công! Vui lòng kiểm tra email để xác thực tài khoản.");
-              }
-          } else {
-              const { error } = await supabase.auth.signInWithPassword({
-                  email,
-                  password,
-              });
-              if (error) throw error;
-          }
-      } catch (err: any) {
-          setError(err.message || "Đã xảy ra lỗi. Vui lòng thử lại.");
-      } finally {
-          setLoading(false);
-      }
-  };
-
   return (
     <div className="min-h-screen bg-main-bg dark:bg-gray-900 flex flex-col items-center justify-center p-4 relative font-sans transition-colors duration-300">
         <button onClick={onGoHome} className="absolute top-4 left-4 text-text-secondary dark:text-gray-400 hover:text-accent transition-colors flex items-center gap-2">
@@ -85,115 +42,50 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
             Quay lại trang chủ
         </button>
         <div className="w-full max-w-md">
-            <div className="flex flex-col items-center mb-6">
+            <div className="flex flex-col items-center mb-8">
                  <Logo className="w-16 h-16 mb-4 drop-shadow-xl" />
                 <h1 className="text-text-primary dark:text-white text-3xl font-extrabold mb-1">OPZEN AI</h1>
-                <p className="text-text-secondary dark:text-gray-400 text-center text-sm">Kiến tạo không gian với AI</p>
+                <p className="text-text-secondary dark:text-gray-400 text-center text-sm font-medium italic">Kiến tạo không gian với AI</p>
             </div>
             
             <div className="bg-surface dark:bg-dark-bg p-8 rounded-2xl shadow-2xl border border-border-color dark:border-gray-700">
-                <div className="text-center mb-6">
+                <div className="text-center mb-8">
                     <h2 className="text-2xl font-bold text-text-primary dark:text-white">
-                        {authMode === 'login' ? 'Đăng nhập' : 'Đăng ký tài khoản'}
+                        Đăng nhập
                     </h2>
-                    <p className="text-sm text-text-secondary dark:text-gray-400 mt-2">
-                        {authMode === 'login' ? 'Chào mừng bạn quay trở lại' : 'Tạo tài khoản để bắt đầu sáng tạo'}
+                    <p className="text-sm text-text-secondary dark:text-gray-400 mt-2 leading-relaxed">
+                        Chào mừng bạn đến với OPZEN AI.<br/>Truy cập để bắt đầu sáng tạo ý tưởng thiết kế.
                     </p>
                 </div>
                 
                 {!isSupabaseConfigured && (
                     <div className="mb-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-500 dark:text-yellow-300 rounded-r-lg text-left">
-                        <p className="font-bold">Cấu hình còn thiếu!</p>
-                        <p className="text-sm">Chức năng đăng nhập chưa được kích hoạt.</p>
+                        <p className="font-bold">Cấu hình chưa hoàn tất!</p>
+                        <p className="text-sm">Chức năng đăng nhập hiện chưa khả dụng.</p>
                     </div>
                 )}
                 
                 {error && <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm text-left">{error}</div>}
-                {successMsg && <div className="mb-6 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/50 dark:border-green-500 dark:text-green-300 rounded-lg text-sm text-left">{successMsg}</div>}
 
-                {/* EMAIL FORM */}
-                <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">Email</label>
-                        <input 
-                            type="email" 
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            required
-                            className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-xl p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all"
-                            placeholder="name@example.com"
-                        />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">Mật khẩu</label>
-                        <input 
-                            type="password" 
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            required
-                            minLength={6}
-                            className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-xl p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all"
-                            placeholder="••••••••"
-                        />
-                    </div>
-                    
-                    <button
-                        type="submit"
-                        disabled={loading || !isSupabaseConfigured}
-                        className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-purple-500/30 flex justify-center items-center"
-                    >
-                        {loading && authMode ? <Spinner /> : (authMode === 'login' ? 'Đăng nhập' : 'Đăng ký')}
-                    </button>
-                </form>
-
-                <div className="relative mb-6">
-                    <div className="absolute inset-0 flex items-center">
-                        <div className="w-full border-t border-gray-300 dark:border-gray-700"></div>
-                    </div>
-                    <div className="relative flex justify-center text-sm">
-                        <span className="px-2 bg-surface dark:bg-dark-bg text-text-secondary dark:text-gray-500">Hoặc tiếp tục với</span>
-                    </div>
-                </div>
-
-                {/* GOOGLE LOGIN */}
+                {/* GOOGLE LOGIN ONLY */}
                 <div className="space-y-4">
                     <button
                         onClick={handleGoogleSignIn}
                         disabled={loading || !isSupabaseConfigured}
-                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-semibold py-3 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-gray-600 shadow-sm group hover:shadow-md"
+                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold py-4 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-gray-600 shadow-sm group hover:shadow-md hover:scale-[1.02]"
                     >
-                        {loading && !authMode ? <Spinner /> : <GoogleIcon />}
-                        <span className="text-sm group-hover:text-primary dark:group-hover:text-white transition-colors">Google</span>
+                        {loading ? <Spinner /> : <GoogleIcon />}
+                        <span className="text-sm group-hover:text-primary dark:group-hover:text-white transition-colors">Tiếp tục với Google</span>
                     </button>
-                </div>
-
-                <div className="mt-6 text-center text-sm text-text-secondary dark:text-gray-400">
-                    {authMode === 'login' ? (
-                        <>
-                            Chưa có tài khoản?{' '}
-                            <button 
-                                onClick={() => { setAuthMode('signup'); setError(null); setSuccessMsg(null); }}
-                                className="font-bold text-[#7f13ec] hover:underline"
-                            >
-                                Đăng ký ngay
-                            </button>
-                        </>
-                    ) : (
-                        <>
-                            Đã có tài khoản?{' '}
-                            <button 
-                                onClick={() => { setAuthMode('login'); setError(null); setSuccessMsg(null); }}
-                                className="font-bold text-[#7f13ec] hover:underline"
-                            >
-                                Đăng nhập
-                            </button>
-                        </>
-                    )}
+                    
+                    <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center mt-4">
+                        Phương thức đăng nhập an toàn và nhanh chóng nhất.
+                    </p>
                 </div>
             </div>
             
-            <p className="text-center text-xs text-text-secondary dark:text-gray-500 mt-8">
-                Bằng việc tiếp tục, bạn đồng ý với Điều khoản dịch vụ & Chính sách bảo mật của OPZEN AI.
+            <p className="text-center text-[10px] text-text-secondary dark:text-gray-500 mt-8 leading-relaxed px-4">
+                Bằng việc tiếp tục, bạn đồng ý với <a href="/terms-of-service" className="underline hover:text-accent transition-colors">Điều khoản dịch vụ</a> & <a href="#" className="underline hover:text-accent transition-colors">Chính sách bảo mật</a> của OPZEN AI.
             </p>
         </div>
     </div>

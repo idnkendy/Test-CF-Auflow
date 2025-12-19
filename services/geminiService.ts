@@ -8,18 +8,14 @@ import { AspectRatio, FileData, ImageResolution } from "../types";
 // KHÓA BÍ MẬT (Phải khớp với v_secret trong SQL function)
 const XOR_SECRET = 'OPZEN_SUPER_SECRET_2025';
 
-// Hàm xóa API Key khỏi chuỗi văn bản để bảo mật tuyệt đối
+// Hàm xóa API Key khỏi chuỗi văn bản để bảo mật
 const scrubErrorText = (text: string): string => {
     if (!text) return "";
+    // Xóa các định dạng phổ biến của API Key trong log lỗi của Google
     return text
-        // Xóa mã AIza... (định dạng của Google API Key)
         .replace(/AIza[A-Za-z0-9_-]{35}/g, '***')
-        // Xóa chuỗi api_key:ABC...
-        .replace(/api_key:[A-Za-z0-9_-]+/gi, 'api_key:***')
-        // Xóa thông tin Consumer nếy bị lộ
-        .replace(/Consumer 'api_key:[^']+'/gi, "API Key")
-        // Xóa các tham số key trong URL nếu có
-        .replace(/key=[A-Za-z0-9_-]+/g, 'key=***');
+        .replace(/api_key:[A-Za-z0-9_-]+/g, 'api_key:***')
+        .replace(/Consumer 'api_key:[^']+'/g, "API Key");
 };
 
 // Hàm giải mã XOR từ chuỗi Base64
@@ -82,6 +78,9 @@ const getAIClient = async () => {
 
 // --- HELPER: Memory Optimization (Base64 -> Blob URL) ---
 
+/**
+ * Converts a Base64 string to a Blob URL ASYNCHRONOUSLY to prevent UI freeze.
+ */
 const base64ToBlobUrlAsync = async (base64: string, mimeType: string = 'image/png'): Promise<string> => {
     try {
         const res = await fetch(`data:${mimeType};base64,${base64}`);
@@ -93,6 +92,9 @@ const base64ToBlobUrlAsync = async (base64: string, mimeType: string = 'image/pn
     }
 };
 
+/**
+ * Extracts raw Base64 and MimeType from a URL.
+ */
 export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
     if (url.startsWith('data:')) {
         const arr = url.split(',');
@@ -127,6 +129,10 @@ export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
     }
 };
 
+/**
+ * Creates a composite image: Source Image + Mask (Colored Red) overlaid.
+ * This effectively "burns" the mask into the image for the Pro model to see.
+ */
 const createCompositeImage = async (source: FileData, mask: FileData): Promise<string> => {
     return new Promise((resolve, reject) => {
         const canvas = document.createElement('canvas');
@@ -139,46 +145,65 @@ const createCompositeImage = async (source: FileData, mask: FileData): Promise<s
         const imgSource = new Image();
         const imgMask = new Image();
 
+        // Handle CORS if needed, though FileData usually comes from local or data URI
         imgSource.crossOrigin = "Anonymous";
         imgMask.crossOrigin = "Anonymous";
 
         imgSource.onload = () => {
             canvas.width = imgSource.width;
             canvas.height = imgSource.height;
+            
+            // 1. Draw Source Image
             ctx.drawImage(imgSource, 0, 0);
 
             imgMask.onload = () => {
+                // 2. Prepare the Mask Layer (Tint it RED)
+                // Create a temporary canvas to colorize the mask
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = canvas.width;
                 tempCanvas.height = canvas.height;
                 const tempCtx = tempCanvas.getContext('2d');
                 
                 if (tempCtx) {
+                    // Draw the white mask
                     tempCtx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
+                    
+                    // Composite operation to tint non-transparent pixels to RED
                     tempCtx.globalCompositeOperation = 'source-in';
-                    tempCtx.fillStyle = '#FF0000';
+                    tempCtx.fillStyle = '#FF0000'; // Pure Red
                     tempCtx.fillRect(0, 0, canvas.width, canvas.height);
+                    
+                    // 3. Draw the Red Mask onto the Main Canvas
                     ctx.drawImage(tempCanvas, 0, 0);
                 }
+
+                // Return Base64 of the combined image
                 resolve(canvas.toDataURL('image/jpeg', 0.95).split(',')[1]);
             };
-            imgMask.onerror = () => reject(new Error("Failed to load mask"));
+            
+            imgMask.onerror = (e) => reject(new Error("Failed to load mask image for compositing"));
             imgMask.src = mask.objectURL || `data:${mask.mimeType};base64,${mask.base64}`;
         };
-        imgSource.onerror = () => reject(new Error("Failed to load source"));
+
+        imgSource.onerror = (e) => reject(new Error("Failed to load source image for compositing"));
         imgSource.src = source.objectURL || `data:${source.mimeType};base64,${source.base64}`;
     });
 };
 
+// --- HELPER: Process Response ---
+
 const processContentResponseAsync = async (response: any): Promise<string[]> => {
     const images: string[] = [];
+    
     if (response.candidates && response.candidates.length > 0) {
         const candidate = response.candidates[0];
+        
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
              if (['SAFETY', 'BLOCKLIST', 'PROHIBITED_CONTENT'].includes(candidate.finishReason)) {
                  throw new Error(`AI từ chối xử lý do vi phạm an toàn: ${candidate.finishReason}`);
              }
         }
+
         if (candidate.content?.parts) {
             for (const part of candidate.content.parts) {
                 if (part.inlineData) {
@@ -189,30 +214,35 @@ const processContentResponseAsync = async (response: any): Promise<string[]> => 
             }
         }
     }
+
     if (images.length === 0) {
         const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (text) throw new Error(`AI phản hồi nhưng không có ảnh: ${text.substring(0, 200)}...`);
-        throw new Error("Không có ảnh nào được tạo ra.");
+        if (text) {
+             throw new Error(`AI phản hồi nhưng không có ảnh: ${text.substring(0, 200)}...`);
+        }
+        throw new Error("Không có ảnh nào được tạo ra. Vui lòng thử lại với mô tả khác.");
     }
+
     return images;
 };
 
+// Helper for error handling
 const handleGeminiError = (e: any) => {
     let msg = e.message || e.toString();
     
-    // Bảo mật: Lọc bỏ API Key ngay lập tức khỏi mọi log hoặc thông báo
+    // Scrub potential API Key from raw string
     msg = scrubErrorText(msg);
 
     if (msg.startsWith('{') && msg.includes('"error"')) {
         try {
             const parsed = JSON.parse(msg);
-            if (parsed.error?.message) msg = scrubErrorText(parsed.error.message);
+            if (parsed.error) {
+                if (parsed.error.message) msg = scrubErrorText(parsed.error.message);
+                if (parsed.error.code === 503 || parsed.error.status === 'UNAVAILABLE') {
+                    throw new Error("Hệ thống AI đang quá tải (Model Overloaded). Đã thử lại 3 lần nhưng chưa thành công. Vui lòng đợi 1-2 phút.");
+                }
+            }
         } catch (err) {}
-    }
-
-    // Xử lý các mã lỗi cụ thể và trả về thông báo tiếng Việt an toàn
-    if (msg.includes('suspended') || msg.includes('API_KEY_INVALID') || msg.includes('400') && msg.includes('API key') || msg.includes('PERMISSION_DENIED')) {
-        throw new Error("Lỗi: API Key hiện tại gặp sự cố hoặc bị tạm ngưng. Hệ thống đang tự động điều chuyển, vui lòng thử lại sau giây lát.");
     }
 
     if (msg.includes('503') || msg.includes('overloaded') || msg.includes('UNAVAILABLE')) {
@@ -222,257 +252,575 @@ const handleGeminiError = (e: any) => {
     if (msg.includes('403') || msg.includes('location') || msg.includes('User location is not supported')) {
         throw new Error("Lỗi: IP không được hỗ trợ. Vui lòng bật VPN hoặc đổi vùng.");
     }
+    
+    if (msg.includes('suspended') || msg.includes('API_KEY_INVALID') || msg.includes('400') && msg.includes('API key')) {
+        throw new Error("Lỗi: API Key hiện tại gặp sự cố hoặc bị tạm ngưng. Hệ thống đang tự động điều chuyển, vui lòng thử lại sau giây lát.");
+    }
 
     if (msg.includes('429') || msg.includes('quota') || msg.includes('exhausted') || msg.includes('Resource has been exhausted')) {
         throw new Error("Hệ thống đang bận (Quota Exceeded). Vui lòng thử lại sau giây lát.");
     }
 
-    if (msg.includes('413') || msg.includes('Too Large') || msg.includes('too large')) {
-        throw new Error("Dữ liệu ảnh quá lớn. Vui lòng giảm kích thước ảnh.");
+    if (msg.includes('413') || msg.includes('Too Large') || msg.includes('too large') || msg.includes('limit')) {
+        throw new Error("Dữ liệu ảnh quá lớn so với giới hạn xử lý của AI. Vui lòng giảm kích thước ảnh hoặc nén ảnh trước khi tải lên.");
     }
     
     if (msg.includes('500') || msg.includes('Internal error')) {
-        throw new Error("Máy chủ Google gặp lỗi nội bộ. Vui lòng thử lại.");
+        throw new Error("Máy chủ Google gặp lỗi nội bộ. Vui lòng thử lại sau vài giây.");
+    }
+    
+    if (msg.includes('400') || msg.includes('INVALID_ARGUMENT')) {
+        throw new Error("Dữ liệu ảnh không hợp lệ hoặc bị hỏng. Vui lòng thử lại với một ảnh khác.");
     }
     
     throw new Error(msg);
 };
 
+// --- RETRY LOGIC WRAPPER ---
 const retryOperation = async <T>(operation: () => Promise<T>, retries = 2, delay = 2000): Promise<T> => {
     try {
         return await operation();
     } catch (error: any) {
-        const msg = error.message || "";
-        const shouldRetry = msg.includes('503') || msg.includes('overloaded') || msg.includes('UNAVAILABLE') || msg.includes('500') || msg.includes('suspended');
+        const msg = error.message || JSON.stringify(error);
+        
+        const shouldRetry = 
+            msg.includes('503') || 
+            msg.includes('overloaded') || 
+            msg.includes('UNAVAILABLE') || 
+            msg.includes('500') || 
+            msg.includes('Internal error') ||
+            msg.includes('suspended') || // Retry with a potentially different key from rotate logic
+            msg.includes('429') || 
+            msg.includes('exhausted');
+
         if (retries > 0 && shouldRetry) {
+            console.warn(`[AI Service] Gặp lỗi: "${scrubErrorText(msg)}". Đang thử lại... (Còn ${retries} lần)`);
             await new Promise(resolve => setTimeout(resolve, delay));
             return retryOperation(operation, retries - 1, delay * 2);
         }
+        
         throw error;
     }
 };
 
-export const generateStandardImage = async (prompt: string, aspectRatio: AspectRatio, numberOfImages: number, sourceImage?: FileData, jobId?: string): Promise<string[]> => {
+// --- GENERATION FUNCTIONS ---
+
+export const generateStandardImage = async (
+    prompt: string, 
+    aspectRatio: AspectRatio, 
+    numberOfImages: number, 
+    sourceImage?: FileData,
+    jobId?: string
+): Promise<string[]> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash-image';
+
     const parts: any[] = [{ text: prompt }];
-    if (sourceImage) parts.push({ inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } });
+    if (sourceImage) {
+        parts.push({
+            inlineData: {
+                mimeType: sourceImage.mimeType,
+                data: sourceImage.base64
+            }
+        });
+    }
+
     const promises = Array.from({ length: numberOfImages }).map(async () => {
         return retryOperation(async () => {
             try {
-                const response = await ai.models.generateContent({ model, contents: { parts } });
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts },
+                    config: {}
+                });
                 return await processContentResponseAsync(response);
-            } catch (e: any) { throw e; }
+            } catch (e: any) {
+                throw e; 
+            }
         });
     });
+
     try {
         const results = await Promise.all(promises);
         return results.flat();
-    } catch (e: any) { handleGeminiError(e); return []; }
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
 
-export const generateHighQualityImage = async (prompt: string, aspectRatio: AspectRatio, resolution: ImageResolution, sourceImage?: FileData, jobId?: string, referenceImages?: FileData[], maskImage?: FileData): Promise<string[]> => {
+export const generateHighQualityImage = async (
+    prompt: string, 
+    aspectRatio: AspectRatio, 
+    resolution: ImageResolution, 
+    sourceImage?: FileData,
+    jobId?: string,
+    referenceImages?: FileData[],
+    maskImage?: FileData
+): Promise<string[]> => {
     const ai = await getAIClient();
     const model = 'gemini-3-pro-image-preview';
+
     let finalPrompt = prompt;
     const parts: any[] = [];
+    
+    // --- SPECIAL HANDLING FOR MASKING IN PRO MODEL ---
+    // If mask exists, we create a composite image (Source + Red Mask) and send ONLY that.
     if (maskImage && sourceImage) {
         try {
+            console.log("Creating composite image for Pro Model in-painting...");
             const compositeBase64 = await createCompositeImage(sourceImage, maskImage);
-            parts.push({ inlineData: { mimeType: 'image/jpeg', data: compositeBase64 } });
-            finalPrompt = `I have provided an image where an area is RED. EDIT the image by modifying ONLY the RED area: "${prompt}". Remove the red overlay in final result.`;
-        } catch (e) { throw new Error("Lỗi xử lý vùng chọn."); }
-    } else if (sourceImage) {
-        parts.push({ inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } });
+            
+            // 1. Push Composite Image (Source marked with Red)
+            parts.push({
+                inlineData: {
+                    mimeType: 'image/jpeg',
+                    data: compositeBase64
+                }
+            });
+
+            // 2. Updated Prompt for "Red Mask" logic
+            finalPrompt = `
+                I have provided an image where a specific area is marked with a RED overlay. 
+                Your task is to EDIT the image by modifying ONLY the area covered by the RED mask.
+                
+                Instructions:
+                1. Identify the red overlaid area.
+                2. Replace the content of that red area based on this request: "${prompt}".
+                3. Ensure the new content matches the lighting, perspective, and style of the surrounding unmasked image seamlessly.
+                4. Completely remove the red overlay in the final result.
+                5. Do NOT modify any part of the image outside the red area.
+            `;
+        } catch (e) {
+            console.error("Failed to create composite image", e);
+            throw new Error("Lỗi xử lý vùng chọn ảnh.");
+        }
+    } else {
+        // Standard flow (No mask)
+        if (sourceImage) {
+            parts.push({
+                inlineData: {
+                    mimeType: sourceImage.mimeType,
+                    data: sourceImage.base64
+                }
+            });
+        }
     }
+
+    // Add Text Prompt
     parts.push({ text: finalPrompt });
-    if (referenceImages) referenceImages.forEach(ref => parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.base64 } }));
+
+    // Add Reference Images (if any)
+    if (referenceImages && referenceImages.length > 0) {
+        referenceImages.forEach(ref => {
+            parts.push({
+                inlineData: {
+                    mimeType: ref.mimeType,
+                    data: ref.base64
+                }
+            });
+        });
+    }
 
     return retryOperation(async () => {
         try {
             const response = await ai.models.generateContent({
-                model,
+                model: model,
                 contents: { parts },
-                config: { imageConfig: { aspectRatio, imageSize: resolution === 'Standard' ? '1K' : resolution } }
+                config: {
+                    imageConfig: {
+                        aspectRatio: aspectRatio,
+                        imageSize: resolution === 'Standard' ? '1K' : resolution
+                    }
+                }
             });
             return await processContentResponseAsync(response);
-        } catch (e: any) { handleGeminiError(e); throw e; }
+        } catch (e: any) {
+            handleGeminiError(e);
+            throw e;
+        }
     });
 };
 
-export const editImage = async (prompt: string, image: FileData, numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
+export const editImage = async (
+    prompt: string, 
+    image: FileData, 
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
+    // Re-use standard image generation logic which handles retries
     const urls = await generateStandardImage(prompt, '4:3', numberOfImages, image);
     return urls.map(url => ({ imageUrl: url }));
 };
 
-export const editImageWithMask = async (prompt: string, image: FileData, mask: FileData, numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
+export const editImageWithMask = async (
+    prompt: string, 
+    image: FileData, 
+    mask: FileData, 
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash-image';
+    
     const parts = [
-        { text: `Edit based on mask (white = edit zone): ${prompt}` },
+        { text: `Edit the first image based on the second mask image (white area is the edit zone). Instruction: ${prompt}` },
         { inlineData: { mimeType: image.mimeType, data: image.base64 } },
         { inlineData: { mimeType: mask.mimeType, data: mask.base64 } }
     ];
+
     const promises = Array.from({ length: numberOfImages }).map(async () => {
         return retryOperation(async () => {
-            const response = await ai.models.generateContent({ model, contents: { parts } });
-            return await processContentResponseAsync(response);
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
         });
     });
+
     try {
         const results = await Promise.all(promises);
         return results.flat().map(url => ({ imageUrl: url }));
-    } catch (e: any) { handleGeminiError(e); return []; }
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
 
-export const editImageWithReference = async (prompt: string, sourceImage: FileData | null, referenceImage: FileData | null, numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
+export const editImageWithReference = async (
+    prompt: string, 
+    sourceImage: FileData | null, 
+    referenceImage: FileData | null, 
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash-image';
+    
     const parts: any[] = [{ text: prompt }];
     if (sourceImage) parts.push({ inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } });
     if (referenceImage) parts.push({ inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.base64 } });
+
     const promises = Array.from({ length: numberOfImages }).map(async () => {
         return retryOperation(async () => {
-            const response = await ai.models.generateContent({ model, contents: { parts } });
-            return await processContentResponseAsync(response);
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
         });
     });
+
     try {
         const results = await Promise.all(promises);
         return results.flat().map(url => ({ imageUrl: url }));
-    } catch (e: any) { handleGeminiError(e); return []; }
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
 
-export const editImageWithMaskAndReference = async (prompt: string, sourceImage: FileData, maskImage: FileData, referenceImage: FileData, numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
+export const editImageWithMaskAndReference = async (
+    prompt: string, 
+    sourceImage: FileData, 
+    maskImage: FileData, 
+    referenceImage: FileData, 
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash-image';
-    const parts = [
+    
+    const parts: any[] = [
         { text: prompt },
         { inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } },
         { inlineData: { mimeType: maskImage.mimeType, data: maskImage.base64 } },
         { inlineData: { mimeType: referenceImage.mimeType, data: referenceImage.base64 } }
     ];
+
     const promises = Array.from({ length: numberOfImages }).map(async () => {
         return retryOperation(async () => {
-            const response = await ai.models.generateContent({ model, contents: { parts } });
-            return await processContentResponseAsync(response);
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
         });
     });
+
     try {
         const results = await Promise.all(promises);
         return results.flat().map(url => ({ imageUrl: url }));
-    } catch (e: any) { handleGeminiError(e); return []; }
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
 
-export const editImageWithMultipleReferences = async (prompt: string, sourceImage: FileData, referenceImages: FileData[], numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
+export const editImageWithMultipleReferences = async (
+    prompt: string,
+    sourceImage: FileData,
+    referenceImages: FileData[],
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash-image';
-    const parts: any[] = [{ text: prompt }, { inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } }];
-    referenceImages.forEach(ref => parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.base64 } }));
-    const promises = Array.from({ length: numberOfImages }).map(async () => {
-        return retryOperation(async () => {
-            const response = await ai.models.generateContent({ model, contents: { parts } });
-            return await processContentResponseAsync(response);
-        });
+    
+    const parts: any[] = [{ text: prompt }];
+    parts.push({ inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } });
+    
+    referenceImages.forEach(ref => {
+        parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.base64 } });
     });
-    try {
-        const results = await Promise.all(promises);
-        return results.flat().map(url => ({ imageUrl: url }));
-    } catch (e: any) { handleGeminiError(e); return []; }
-};
 
-export const editImageWithMaskAndMultipleReferences = async (prompt: string, sourceImage: FileData, maskImage: FileData, referenceImages: FileData[], numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
-    const ai = await getAIClient();
-    const model = 'gemini-2.5-flash-image';
-    const parts: any[] = [{ text: prompt }, { inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } }, { inlineData: { mimeType: maskImage.mimeType, data: maskImage.base64 } }];
-    referenceImages.forEach(ref => parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.base64 } }));
     const promises = Array.from({ length: numberOfImages }).map(async () => {
         return retryOperation(async () => {
-            const response = await ai.models.generateContent({ model, contents: { parts } });
-            return await processContentResponseAsync(response);
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
         });
     });
+
     try {
         const results = await Promise.all(promises);
         return results.flat().map(url => ({ imageUrl: url }));
-    } catch (e: any) { handleGeminiError(e); return []; }
-};
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
+}
+
+export const editImageWithMaskAndMultipleReferences = async (
+    prompt: string,
+    sourceImage: FileData,
+    maskImage: FileData,
+    referenceImages: FileData[],
+    numberOfImages: number = 1
+): Promise<{ imageUrl: string }[]> => {
+    const ai = await getAIClient();
+    const model = 'gemini-2.5-flash-image';
+    
+    const parts: any[] = [{ text: prompt }];
+    parts.push({ inlineData: { mimeType: sourceImage.mimeType, data: sourceImage.base64 } });
+    parts.push({ inlineData: { mimeType: maskImage.mimeType, data: maskImage.base64 } });
+    
+    referenceImages.forEach(ref => {
+        parts.push({ inlineData: { mimeType: ref.mimeType, data: ref.base64 } });
+    });
+
+    const promises = Array.from({ length: numberOfImages }).map(async () => {
+        return retryOperation(async () => {
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
+        });
+    });
+
+    try {
+        const results = await Promise.all(promises);
+        return results.flat().map(url => ({ imageUrl: url }));
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
+}
+
+// --- TEXT GENERATION FUNCTIONS ---
 
 export const generateText = async (prompt: string): Promise<string> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash';
+    
     return retryOperation(async () => {
         try {
-            const response = await ai.models.generateContent({ model, contents: [{ parts: [{ text: prompt }] }] });
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: [{ parts: [{ text: prompt }] }]
+            });
             return response.text || "";
-        } catch (e: any) { handleGeminiError(e); throw e; }
+        } catch (e: any) {
+            handleGeminiError(e);
+            throw e;
+        }
     });
 };
 
-export const generatePromptSuggestions = async (image: FileData, subject: string, count: number, customInstruction: string = ''): Promise<Record<string, string[]> | null> => {
+export const generatePromptSuggestions = async (
+    image: FileData, 
+    subject: string, 
+    count: number,
+    customInstruction: string = ''
+): Promise<Record<string, string[]> | null> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash';
-    const allCategories = ["Góc toàn cảnh", "Góc trung cảnh", "Góc lấy nét", "Chi tiết kiến trúc"];
-    let systemPrompt = subject === 'all' 
-        ? `Analyze image and generate suggestions for: ${allCategories.join(', ')}. Each category gets ${count} prompts in Vietnamese.`
-        : `Analyze image and generate exactly ${count} prompts for category: "${subject}" in Vietnamese.`;
+    
+    // Define the specific categories requested
+    const allCategories = [
+        "Góc toàn cảnh", 
+        "Góc trung cảnh", 
+        "Góc lấy nét", 
+        "Chi tiết kiến trúc"
+    ];
 
-    const fullPrompt = `${systemPrompt}\n${customInstruction}\nStrictly return JSON object. Values are arrays of strings.`;
+    let systemPrompt = "";
+
+    if (subject === 'all') {
+        systemPrompt = `Analyze the provided image and generate prompt suggestions for EACH of the following 4 categories: ${allCategories.join(', ')}. 
+        For each category, provide exactly ${count} distinct prompts in Vietnamese.`;
+    } else {
+        systemPrompt = `Analyze the provided image and generate exactly ${count} distinct prompt suggestions focusing specifically on the category: "${subject}".`;
+    }
+
+    const fullPrompt = `${systemPrompt}
+    ${customInstruction ? `Additional user requirement: ${customInstruction}` : ''}
+    
+    IMPORTANT FORMATTING RULES:
+    1. Language: Vietnamese.
+    2. **Conciseness**: Each prompt must be short and impactful (approx 2-4 lines of text).
+    3. **Structure**: Combine all details (lighting, angle, materials, mood) into **ONE single, coherent sentence** or a short paragraph. Do NOT use bullet points or lists within a suggestion.
+    4. **Goal**: Create a prompt suitable for "View Sync" (consistent style transfer).
+
+    RETURN FORMAT: Strictly a raw JSON object (no markdown, no code blocks).
+    Keys must be the category names.
+    Values must be arrays of strings (the prompts).
+    Example for 'all': { "Góc toàn cảnh": ["..."], "Góc trung cảnh": ["..."], ... }
+    Example for single: { "${subject}": ["...", "..."] }
+    `;
 
     return retryOperation(async () => {
         try {
             const response = await ai.models.generateContent({
-                model,
-                contents: { parts: [{ text: fullPrompt }, { inlineData: { mimeType: image.mimeType, data: image.base64 } }] },
-                config: { responseMimeType: "application/json" }
+                model: model,
+                contents: {
+                    parts: [
+                        { text: fullPrompt },
+                        { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+                    ]
+                },
+                config: { 
+                    responseMimeType: "application/json"
+                }
             });
-            return JSON.parse(response.text || "{}");
-        } catch (e: any) { return null; }
+
+            const text = response.text || "{}";
+            return JSON.parse(text);
+        } catch (e: any) {
+            console.error("Failed to generate/parse suggestions", e);
+            return null; // Don't throw for suggestions, just return null
+        }
     });
 };
 
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash';
-    const parts: any[] = [{ text: `Expert architectural prompt engineer. Enhance: "${userInput}"` }];
-    if (image) parts.push({ inlineData: { mimeType: image.mimeType, data: image.base64 } });
+    
+    const parts: any[] = [{ text: `Act as an expert architectural prompt engineer. Enhance the following user input into a detailed, professional prompt suitable for high-quality AI rendering (like Midjourney or Gemini). Focus on lighting, materials, atmosphere, and camera specifications. \n\nUser Input: "${userInput}"` }];
+    
+    if (image) {
+        parts.push({ inlineData: { mimeType: image.mimeType, data: image.base64 } });
+        parts[0].text += " \n\nAlso use the visual style of the attached image as a reference.";
+    }
+
     return retryOperation(async () => {
         try {
-            const response = await ai.models.generateContent({ model, contents: { parts } });
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: { parts }
+            });
             return response.text || "";
-        } catch (e: any) { handleGeminiError(e); throw e; }
+        } catch (e: any) {
+            handleGeminiError(e);
+            throw e;
+        }
     });
 };
 
+// --- VIDEO PROMPT GENERATION ---
 export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash';
-    const prompt = `Phân tích hình ảnh này và viết prompt video cinematic bằng Tiếng Việt dưới 60 từ. Chỉ trả về nội dung prompt.`;
+    
+    const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI (như Google Veo). 
+    Tập trung mô tả chuyển động camera (ví dụ: quay chậm, flycam, dolly zoom), thay đổi ánh sáng (ví dụ: ngày sang đêm), và các yếu tố khí quyển (ví dụ: gió nhẹ lay động cây, phản chiếu).
+    Giữ prompt dưới 60 từ, súc tích và tập trung vào chuyển động hình ảnh. 
+    QUAN TRỌNG: TUYỆT ĐỐI CHỈ TRẢ VỀ NỘI DUNG PROMPT BẰNG TIẾNG VIỆT. KHÔNG TRẢ LỜI BẰNG TIẾNG ANH. KHÔNG THÊM CÁC CÂU DẪN NHƯ "Dưới đây là prompt...". CHỈ TRẢ VỀ NỘI DUNG PROMPT.`;
+
     return retryOperation(async () => {
         try {
-            const response = await ai.models.generateContent({ model, contents: { parts: [{ text: prompt }, { inlineData: { mimeType: image.mimeType, data: image.base64 } }] } });
-            return response.text?.trim() || "Video kiến trúc điện ảnh.";
-        } catch (e: any) { return "Video kiến trúc điện ảnh."; }
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: {
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+                    ]
+                }
+            });
+            return response.text?.trim() || "Video kiến trúc điện ảnh với chuyển động camera chậm.";
+        } catch (e: any) {
+            console.error("Failed to generate video prompt from image", e);
+            return "Video kiến trúc điện ảnh với chuyển động camera chậm.";
+        }
     });
 };
 
+// --- VIDEO GENERATION ---
 export const generateVideo = async (prompt: string, startImage?: FileData, jobId?: string): Promise<string> => {
-    throw new Error("Sử dụng dịch vụ Video chuyên dụng.");
+    throw new Error("Please use the specialized Video Generation service (Veo 3) which is currently handled via external service for stability.");
 };
 
 export const generateStagingImage = async (prompt: string, sceneImage: FileData, objectImages: FileData[], numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
     const ai = await getAIClient();
     const model = 'gemini-2.5-flash-image';
-    const parts: any[] = [{ text: prompt }, { inlineData: { mimeType: sceneImage.mimeType, data: sceneImage.base64 } }];
-    objectImages.forEach(obj => parts.push({ inlineData: { mimeType: obj.mimeType, data: obj.base64 } }));
+    
+    const parts: any[] = [{ text: prompt }];
+    parts.push({ inlineData: { mimeType: sceneImage.mimeType, data: sceneImage.base64 } });
+    
+    objectImages.forEach(obj => {
+        parts.push({ inlineData: { mimeType: obj.mimeType, data: obj.base64 } });
+    });
+
     const promises = Array.from({ length: numberOfImages }).map(async () => {
         return retryOperation(async () => {
-            const response = await ai.models.generateContent({ model, contents: { parts } });
-            return await processContentResponseAsync(response);
+            try {
+                const response = await ai.models.generateContent({
+                    model: model,
+                    contents: { parts }
+                });
+                return await processContentResponseAsync(response);
+            } catch (e: any) {
+                throw e;
+            }
         });
     });
+
     try {
         const results = await Promise.all(promises);
         return results.flat().map(url => ({ imageUrl: url }));
-    } catch (e: any) { handleGeminiError(e); return []; }
+    } catch (e: any) {
+        handleGeminiError(e);
+        return [];
+    }
 };
