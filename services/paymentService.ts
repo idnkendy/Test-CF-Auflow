@@ -11,7 +11,6 @@ export const getUserStatus = async (userId: string, email?: string): Promise<Use
             .maybeSingle();
 
         if (!data && email) {
-             console.log("Profile not found, attempting to create new profile...");
              const { error: insertError } = await supabase
                 .from('profiles')
                 .insert([{ id: userId, email, credits: 60 }]);
@@ -34,11 +33,11 @@ export const getUserStatus = async (userId: string, email?: string): Promise<Use
             return { credits: 0, subscriptionEnd: null, isExpired: false };
         }
 
-        const credits = data?.credits ?? 0;
-        const subscriptionEnd = data?.subscription_end;
-        const isExpired = subscriptionEnd ? new Date(subscriptionEnd) < new Date() : false;
-
-        return { credits, subscriptionEnd, isExpired };
+        return { 
+            credits: data?.credits ?? 0, 
+            subscriptionEnd: data?.subscription_end, 
+            isExpired: data?.subscription_end ? new Date(data.subscription_end) < new Date() : false 
+        };
     } catch (e) {
         return { credits: 0, subscriptionEnd: null, isExpired: false };
     }
@@ -71,63 +70,48 @@ export const updateUserProfile = async (userId: string, fullName: string, phone:
     }
 };
 
+/**
+ * TRỪ TIỀN (Deduct)
+ * Trả về ID của dòng Log để App có thể theo dõi.
+ */
 export const deductCredits = async (userId: string, amount: number, description: string): Promise<string> => {
-    const { data, error } = await supabase.rpc('deduct_credits', {
+    const { data: logId, error } = await supabase.rpc('deduct_credits', {
         p_user_id: userId,
         p_amount: amount,
         p_description: description
     });
 
-    if (error) {
-        throw new Error(`Giao dịch thất bại: ${error.message || 'Lỗi hệ thống'}`);
+    if (error) throw new Error(`Giao dịch thất bại: ${error.message}`);
+    
+    // Lưu tạm Log ID vào máy khách để cứu hộ nếu trình duyệt bị tắt đột ngột
+    if (logId) {
+        localStorage.setItem('opzen_last_log_id', logId);
     }
-
-    try {
-        if (data) {
-            localStorage.setItem('opzen_pending_tx', JSON.stringify({
-                logId: data,
-                amount: amount,
-                reason: description,
-                timestamp: Date.now()
-            }));
-        }
-    } catch (e) {}
-
-    return data;
+    return logId;
 };
 
 /**
- * REFUND CREDITS (PHIÊN BẢN AN TOÀN)
- * Truyền thêm usageLogId để Database tự đánh dấu và chống hoàn tiền trùng lặp (Idempotency).
+ * HOÀN TIỀN (Refund)
+ * p_usage_log_id là tham số cực kỳ quan trọng để đánh dấu dòng tiền này đã được giải quyết.
  */
-export const refundCredits = async (userId: string, amount: number, description: string, usageLogId?: string): Promise<void> => {
-    console.log(`[PaymentService] Đang thực hiện hoàn tiền: ${amount} credits. Log đích: ${usageLogId || 'N/A'}`);
-    
+export const refundCredits = async (userId: string, amount: number, description: string, originalLogId?: string): Promise<void> => {
+    if (amount <= 0) return;
+
+    // Nếu App gọi hoàn tiền, ưu tiên lấy Log ID từ localStorage nếu tham số truyền vào bị thiếu
+    const finalLogId = originalLogId || localStorage.getItem('opzen_last_log_id');
+
     const { error } = await supabase.rpc('refund_credits', {
         p_user_id: userId,
         p_amount: amount,
         p_description: description,
-        p_usage_log_id: usageLogId // CHỐT CHẶN QUAN TRỌNG: Gửi ID lên để Database lock
+        p_usage_log_id: finalLogId
     });
 
-    if (error) {
-        console.error("[PaymentService] Lỗi khi gọi RPC refund_credits:", error.message);
-        // Fallback thủ công nếu RPC thất bại hoặc chưa cập nhật (Dùng tạm trong lúc dev)
-        try {
-            if (usageLogId) {
-                // Thử kiểm tra xem đã hoàn tiền chưa bằng cách đọc log
-                const { data: log } = await supabase.from('usage_logs').select('description').eq('id', usageLogId).single();
-                if (log?.description.startsWith('Hoàn tiền')) return;
-            }
-
-            const { data: profile } = await supabase.from('profiles').select('credits').eq('id', userId).single();
-            if (profile) {
-                await supabase.from('profiles').update({ credits: (profile.credits || 0) + amount }).eq('id', userId);
-                if (usageLogId) {
-                    await supabase.from('usage_logs').update({ description: `Hoàn tiền: ${description}` }).eq('id', usageLogId);
-                }
-            }
-        } catch (e) {}
+    if (!error) {
+        // Hoàn tiền xong thì xóa dấu vết tạm
+        localStorage.removeItem('opzen_last_log_id');
+    } else {
+        console.error("[PaymentService] Lỗi hoàn tiền:", error.message);
     }
 };
 
@@ -150,8 +134,7 @@ export const createPendingTransaction = async (userId: string, plan: PricingPlan
 
     if (existingTx) {
         const isCorrectPrefix = existingTx.transaction_code.startsWith('OPZ');
-        const existingIntAmount = Math.round(existingTx.amount);
-        if (existingIntAmount === intAmount && isCorrectPrefix) {
+        if (Math.round(existingTx.amount) === intAmount && isCorrectPrefix) {
             if (customerInfo) {
                 await supabase.from('transactions').update({ customer_name: customerInfo.name, customer_phone: customerInfo.phone, customer_email: customerInfo.email }).eq('id', existingTx.id);
             }
@@ -180,23 +163,13 @@ export const subscribeToTransaction = (transactionId: string, onPaid: () => void
 
 export const checkVoucher = async (code: string): Promise<number> => {
     try {
-        const { data, error } = await supabase.from('vouchers').select('discount_percent, is_active, start_date, end_date').eq('code', code).single();
+        const { data, error } = await supabase.from('vouchers').select('discount_percent, is_active').eq('code', code).single();
         if (error) throw new Error(error.message);
         if (!data.is_active) throw new Error("Mã giảm giá đã hết hạn.");
         return data.discount_percent;
     } catch (e: any) {
-        const hardcoded: Record<string, number> = { 'TEST10': 10, 'OPZEN20': 20, 'FREE100': 100 };
+        const hardcoded: Record<string, number> = { 'OPZEN20': 20, 'FREE100': 100 };
         if (hardcoded[code.toUpperCase()]) return hardcoded[code.toUpperCase()];
         throw e;
-    }
-};
-
-export const simulateSePayWebhook = async (transactionId: string): Promise<boolean> => {
-    try {
-        const { data, error } = await supabase.rpc('approve_transaction_test', { p_transaction_id: transactionId });
-        if (error) throw new Error(error.message);
-        return data === true;
-    } catch (e) {
-        return false;
     }
 };

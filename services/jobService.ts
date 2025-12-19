@@ -7,8 +7,6 @@ const BUCKET_NAME = 'assets';
 
 const compressImage = async (blob: Blob): Promise<Blob> => {
     if (!blob.type.startsWith('image/')) return blob;
-    if (blob.size < 500 * 1024 && blob.type === 'image/webp') return blob;
-
     return new Promise((resolve) => {
         const img = new Image();
         const url = URL.createObjectURL(blob);
@@ -26,7 +24,7 @@ const compressImage = async (blob: Blob): Promise<Blob> => {
             const ctx = canvas.getContext('2d');
             if (!ctx) { resolve(blob); return; }
             ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, width, height); ctx.drawImage(img, 0, 0, width, height);
-            canvas.toBlob((compressedBlob) => resolve(compressedBlob || blob), 'image/webp', 1.0);
+            canvas.toBlob((compressedBlob) => resolve(compressedBlob || blob), 'image/webp', 0.9);
         };
         img.onerror = () => { URL.revokeObjectURL(url); resolve(blob); };
         img.src = url;
@@ -62,9 +60,19 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
 
 export const createJob = async (jobData: Partial<GenerationJob>): Promise<string> => {
     try {
-        const { data, error } = await supabase.from('generation_jobs').insert([{ ...jobData, status: 'pending', created_at: new Date().toISOString(), updated_at: new Date().toISOString() }]).select('id').single();
+        const { data, error } = await supabase.from('generation_jobs').insert([{ 
+            ...jobData, 
+            status: 'pending', 
+            created_at: new Date().toISOString(), 
+            updated_at: new Date().toISOString() 
+        }]).select('id').single();
+        
         if (error) throw new Error(`Lỗi tạo Job: ${error.message}`);
-        try { localStorage.removeItem('opzen_pending_tx'); } catch (e) {}
+        
+        // QUAN TRỌNG: Xóa mã giao dịch khỏi localStorage ngay khi Job đã được tạo thành công
+        localStorage.removeItem('opzen_last_charge_id');
+        localStorage.removeItem('opzen_pending_tx');
+
         return data.id;
     } catch (e: any) { throw new Error(e.message || "Job Creation Failed"); }
 };
@@ -84,79 +92,11 @@ export const updateJobStatus = async (jobId: string, status: 'pending' | 'proces
     } catch (e) {}
 };
 
-export const getQueuePosition = async (jobId: string, knownCreatedAt?: string): Promise<number> => {
+export const getQueuePosition = async (jobId: string): Promise<number> => {
     try {
-        let createdAt = knownCreatedAt;
-        if (!createdAt) {
-            const { data } = await supabase.from('generation_jobs').select('created_at').eq('id', jobId).single();
-            if (!data) return 0;
-            createdAt = data.created_at;
-        }
-        const { count } = await supabase.from('generation_jobs').select('*', { count: 'exact', head: true }).in('status', ['pending', 'processing']).lt('created_at', createdAt!);
+        const { data } = await supabase.from('generation_jobs').select('created_at').eq('id', jobId).single();
+        if (!data) return 0;
+        const { count } = await supabase.from('generation_jobs').select('*', { count: 'exact', head: true }).in('status', ['pending', 'processing']).lt('created_at', data.created_at);
         return (count || 0) + 1;
     } catch (e) { return 0; }
-};
-
-/**
- * CLEANUP STALE JOBS
- * Tìm các job bị treo > 15 phút, đánh dấu lỗi và hoàn tiền dựa trên usage_log_id.
- */
-export const cleanupStaleJobs = async (userId: string) => {
-    try {
-        const TIMEOUT_MINUTES = 15;
-        const threshold = new Date(Date.now() - TIMEOUT_MINUTES * 60 * 1000).toISOString();
-        const { data: stuckJobs } = await supabase.from('generation_jobs').select('id, cost, usage_log_id').eq('user_id', userId).in('status', ['pending', 'processing']).lt('created_at', threshold);
-        
-        if (stuckJobs && stuckJobs.length > 0) {
-            console.log(`[JobService] Phát hiện ${stuckJobs.length} jobs bị treo. Đang xử lý hoàn tiền...`);
-            for (const job of stuckJobs) {
-                await updateJobStatus(job.id, 'failed', undefined, `Hệ thống tự động hủy do treo quá ${TIMEOUT_MINUTES} phút.`);
-                if (job.cost > 0 && job.usage_log_id) {
-                    await refundCredits(userId, job.cost, `Hoàn tiền: Job bị treo`, job.usage_log_id);
-                }
-            }
-        }
-    } catch (e) {}
-};
-
-export const cleanupOrphanedLogs = async () => {
-    try { await supabase.rpc('cleanup_orphaned_logs'); } catch (e) {}
-};
-
-/**
- * RECOVER ORPHANED TRANSACTIONS
- * Cơ chế cứu hộ cho Client: Kiểm tra localStorage và hoàn tiền nếu sau 1 phút chưa thấy Job.
- */
-export const recoverOrphanedTransactions = async (userId: string) => {
-    const rawPending = localStorage.getItem('opzen_pending_tx');
-    if (rawPending) {
-        try {
-            const pendingTx = JSON.parse(rawPending);
-            const now = Date.now();
-            
-            // Chờ ít nhất 1 phút để chắc chắn không phải do mạng chậm
-            if (pendingTx?.timestamp && (now - pendingTx.timestamp > 60000)) {
-                if (pendingTx.amount > 0 && pendingTx.logId) {
-                    console.log("[JobService] Đang cứu hộ giao dịch bị bỏ rơi:", pendingTx.logId);
-                    
-                    const { data: existingJob } = await supabase
-                        .from('generation_jobs')
-                        .select('id')
-                        .eq('usage_log_id', pendingTx.logId)
-                        .maybeSingle();
-
-                    if (!existingJob) {
-                        // Gọi hàm hoàn tiền an toàn với LOG ID để tránh trùng lặp
-                        await refundCredits(userId, pendingTx.amount, `Cứu hộ giao dịch lỗi`, pendingTx.logId);
-                    }
-                }
-                localStorage.removeItem('opzen_pending_tx');
-            }
-        } catch(e) { 
-            console.error("[JobService] Lỗi trong quá trình cứu hộ:", e);
-            localStorage.removeItem('opzen_pending_tx'); 
-        }
-    }
-    // Sau khi cứu hộ ở Client, gọi tiếp lệnh quét tổng thể ở Server
-    await cleanupOrphanedLogs();
 };
