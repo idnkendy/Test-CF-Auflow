@@ -7,13 +7,43 @@ import { FileData } from "../types";
 // @ts-ignore
 const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev"; 
 
+// TOKEN SERVICE CONFIG
+const ONEWISE_API_URL = "https://new-rest.onewise.app/api/fix/get-token";
+// Updated Token from user request
+const ONEWISE_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjI4NTg2Mn0.zLqDOTRuYAnavQyNWFoZL6NdEVXBUqbdfujnLwY199E";
+
 // Helper wait
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 // Constants for Timeout logic
-const POLL_INTERVAL = 8000; // 8 seconds
-const TIMEOUT_DURATION = 180000; // 3 minutes in ms
-const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL); // ~23 attempts
+const POLL_INTERVAL = 10000; // 10 seconds
+const TIMEOUT_DURATION = 300000; // 5 minutes in ms
+const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL); // 30 attempts
+
+// Helper to fetch dynamic token
+const getOneWiseToken = async (): Promise<string | null> => {
+    try {
+        const response = await fetch(ONEWISE_API_URL, {
+            method: 'GET',
+            headers: {
+                'Authorization': ONEWISE_AUTH_TOKEN,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.token) {
+                return data.token;
+            }
+        }
+        console.warn("OneWise Token Fetch failed");
+        return null;
+    } catch (e) {
+        console.warn("Network error fetching OneWise token:", e);
+        return null;
+    }
+};
 
 // Helper to get image dimensions
 const getImageDimensions = (fileData: FileData): Promise<{width: number, height: number}> => {
@@ -26,7 +56,6 @@ const getImageDimensions = (fileData: FileData): Promise<{width: number, height:
 };
 
 // Crop and Resize Image with Letterbox/Pillarbox support
-// Increased dimensions to 2048 (2K) for higher input fidelity
 export const resizeAndCropImage = async (
     fileData: FileData, 
     aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
@@ -39,12 +68,10 @@ export const resizeAndCropImage = async (
             let targetWidth, targetHeight;
             let effectiveRatio = aspectRatio;
 
-            // 1. Resolve Target Container Dimensions
             if (effectiveRatio === 'default') {
                 effectiveRatio = img.width >= img.height ? '16:9' : '9:16';
             }
 
-            // OPTIMIZATION: Use 2048px base for 2K quality input
             if (effectiveRatio === '16:9') {
                 targetWidth = 2048;
                 targetHeight = 1152;
@@ -63,28 +90,18 @@ export const resizeAndCropImage = async (
                 return;
             }
 
-            // High quality scaling
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-
-            // 2. Draw Background: ALWAYS BLACK (Letterbox style)
             ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, targetWidth, targetHeight);
 
-            // 3. Calculate "Contain" fit (Letterbox / Pillarbox)
             const scale = Math.min(targetWidth / img.width, targetHeight / img.height);
-            
             const renderWidth = img.width * scale;
             const renderHeight = img.height * scale;
-            
-            // Center the image in the container
             const offsetX = (targetWidth - renderWidth) / 2;
             const offsetY = (targetHeight - renderHeight) / 2;
 
-            // 4. Draw Image Centered
             ctx.drawImage(img, offsetX, offsetY, renderWidth, renderHeight);
-
-            // Export as JPEG with high quality
             const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
             resolve(compressedDataUrl);
         };
@@ -140,8 +157,15 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
             throw new Error(msg);
         }
         
-        if (data.status === 'failed') {
+        // Handle explicit "failed" status or code in JSON body
+        if (data.status === 'failed' || data.code === 'failed') {
              const failMsg = data.message || "Unknown error";
+             
+             // Critical check for ReCaptcha/System failure to trigger refund
+             if (failMsg.includes("reCAPTCHA") || failMsg.includes("failed")) {
+                 throw new Error(`SYSTEM_ERROR: ${failMsg}`);
+             }
+             
              if (failMsg.includes("SAFETY")) throw new Error("SAFETY_ERROR");
              throw new Error(failMsg);
         }
@@ -156,7 +180,251 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     }
 };
 
-// Internal function performing the actual generation logic
+/**
+ * NEW: Generate High Fidelity Image via Flow Media (GEM_PIX_2)
+ * Updated Flow: Create Task -> Return TaskID -> UI Polls (Handled here) -> Return Result
+ * Returns object with imageUrls, mediaIds, and projectId for subsequent upscale if needed
+ */
+export const generateFlowImage = async (
+    prompt: string,
+    sourceImage?: FileData,
+    aspectRatio: string = "IMAGE_ASPECT_RATIO_LANDSCAPE",
+    numberOfImages: number = 1
+): Promise<{ imageUrls: string[], mediaIds: string[], projectId?: string }> => {
+    let imageData = null;
+    if (sourceImage) {
+        // Prepare image
+        try {
+            const ratioType = aspectRatio.includes("PORTRAIT") ? "9:16" : "16:9";
+            imageData = await resizeAndCropImage(sourceImage, ratioType);
+        } catch (e) {
+            imageData = `data:${sourceImage.mimeType};base64,${sourceImage.base64}`;
+        }
+    }
+
+    // Fetch dynamic token for the request (Recaptcha Token)
+    const dynamicToken = await getOneWiseToken();
+
+    console.log("[Checkpoint 1] Creating Flow Task...");
+
+    // 1. CREATE TASK
+    const createRes = await fetchJson('/flow-create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'flow_media_create',
+            prompt: prompt || "enhance the resolution and quality of this image",
+            image: imageData,
+            imageAspectRatio: aspectRatio,
+            dynamicToken: dynamicToken, // Pass the recaptcha token to backend
+            numberOfImages: numberOfImages // Pass requested count
+        })
+    });
+
+    if (!createRes.taskId) {
+        throw new Error("Không nhận được Task ID từ hệ thống.");
+    }
+
+    const taskId = createRes.taskId;
+    const projectId = createRes.projectId; // Captured from worker response
+    
+    console.log(`[Checkpoint 2] Task Created: ${taskId}. Start Polling...`);
+
+    // 2. POLL STATUS
+    const POLLING_DELAY = 10000; // 10 seconds
+    const MAX_RETRIES = 60; // 10 minutes max (60 * 10s)
+
+    for (let i = 0; i < MAX_RETRIES; i++) {
+        await wait(POLLING_DELAY);
+        
+        try {
+            const statusRes = await fetchJson('/flow-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    action: 'flow_check',
+                    taskId: taskId 
+                })
+            });
+
+            // Log raw response for debugging
+            if (i % 2 === 0) console.log(`[Checkpoint 3] Poll ${i + 1}/${MAX_RETRIES}:`, statusRes);
+
+            // 2.0 Critical Check for Nested Google API Error (UNAUTHENTICATED inside 200 OK)
+            if (statusRes.result?.error) {
+                const nestedErr = statusRes.result.error;
+                if (nestedErr.code === 401 || nestedErr.status === 'UNAUTHENTICATED') {
+                    throw new Error("SYSTEM_ERROR: Lỗi xác thực hệ thống (401).");
+                }
+                throw new Error(nestedErr.message || "Lỗi xử lý từ hệ thống AI.");
+            }
+
+            // 2.1 Critical Check
+            if (statusRes.code === 'failed' || statusRes.success === false) {
+                 const msg = statusRes.message || "Lỗi xử lý không xác định.";
+                 if (msg.includes("reCAPTCHA")) {
+                     throw new Error(`SYSTEM_ERROR: Lỗi xác thực hệ thống (Captcha).`);
+                 }
+                 throw new Error(msg);
+            }
+
+            // 2.2 Check for success result structure (ROBUST PARSING)
+            if (statusRes.result?.media && statusRes.result.media.length > 0) {
+                const urls: string[] = [];
+                const mediaIds: string[] = [];
+
+                statusRes.result.media.forEach((mediaItem: any) => {
+                     // DEBUG: Log media item structure
+                     console.log("[Checkpoint 4] Parsing Media Item:", mediaItem);
+
+                     // Get Media ID (Robust check)
+                     let mId = mediaItem.image?.id || mediaItem.mediaGenerationId;
+                     if (!mId && mediaItem.image?.generatedImage) {
+                         mId = mediaItem.image.generatedImage.mediaGenerationId;
+                     }
+                     if(mId) mediaIds.push(mId);
+                     else console.warn("[Warning] Could not find mediaID in item", mediaItem);
+
+                     // Get URL
+                     // PRIORITY: Base64 (Reliable)
+                     let generatedImage = mediaItem.image?.generatedImage?.encodedImage;
+                     if (!generatedImage) generatedImage = mediaItem.encodedImage;
+
+                     if (generatedImage) {
+                         const finalUrl = generatedImage.startsWith('data:') 
+                             ? generatedImage 
+                             : `data:image/jpeg;base64,${generatedImage}`;
+                         urls.push(finalUrl);
+                         return; // Done
+                     }
+
+                     // FALLBACK: Fife URL
+                     if (mediaItem.fifeUrl) {
+                         urls.push(mediaItem.fifeUrl);
+                         return;
+                     }
+                });
+                
+                if (urls.length > 0) {
+                    console.log(`[Checkpoint 5] Success! Found ${urls.length} images and ${mediaIds.length} IDs.`);
+                    return { imageUrls: urls, mediaIds, projectId };
+                }
+            }
+            
+            // If explicit status field says failed
+            if (statusRes.status === 'FAILED') {
+                 throw new Error("Quá trình xử lý ảnh thất bại.");
+            }
+
+            // Continue polling...
+        } catch (pollErr: any) {
+            // If it's a SYSTEM_ERROR (like Captcha or 401), rethrow immediately to break loop and refund
+            if (pollErr.message && pollErr.message.includes("SYSTEM_ERROR")) {
+                 throw pollErr;
+            }
+            console.warn("Polling retry:", pollErr);
+        }
+    }
+    
+    throw new Error("Hết thời gian chờ xử lý (Timeout). Vui lòng thử lại.");
+};
+
+/**
+ * NEW: Upscale Flow Media Image to 2K
+ */
+export const upscaleFlowImage = async (
+    mediaId: string,
+    projectId: string | undefined,
+): Promise<{ imageUrl: string }> => {
+    
+    // Fetch dynamic token for the request
+    const dynamicToken = await getOneWiseToken();
+
+    console.log(`[Checkpoint 6] Starting Upscale for ID: ${mediaId}`);
+
+    // 1. TRIGGER UPSCALE TASK
+    const createRes = await fetchJson('/flow-upscale', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            action: 'flow_upscale',
+            mediaId: mediaId,
+            projectId: projectId, // Pass original project ID if available
+            dynamicToken: dynamicToken
+        })
+    });
+
+    if (!createRes.taskId) {
+        throw new Error("Không nhận được Task ID Upscale từ hệ thống.");
+    }
+
+    const taskId = createRes.taskId;
+    console.log(`[Checkpoint 7] Upscale Task Created: ${taskId}`);
+
+    // 2. POLL STATUS
+    const POLLING_DELAY = 10000;
+    const MAX_RETRIES = 60;
+
+    for (let i = 0; i < MAX_RETRIES; i++) {
+        await wait(POLLING_DELAY);
+        
+        try {
+            const statusRes = await fetchJson('/flow-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    action: 'flow_check',
+                    taskId: taskId 
+                })
+            });
+
+            // 2.0 Critical Check for Nested Google API Error
+            if (statusRes.result?.error) {
+                const nestedErr = statusRes.result.error;
+                if (nestedErr.code === 401 || nestedErr.status === 'UNAUTHENTICATED') {
+                    throw new Error("SYSTEM_ERROR: Lỗi xác thực hệ thống (401).");
+                }
+                throw new Error(nestedErr.message || "Lỗi xử lý từ hệ thống AI.");
+            }
+
+            if (statusRes.code === 'failed' || statusRes.success === false) {
+                 throw new Error(statusRes.message || "Lỗi xử lý upscale.");
+            }
+
+            // Success check for Upscale response
+            if (statusRes.result) {
+                let encodedImage = statusRes.result.encodedImage;
+                
+                // Sometimes it might be nested
+                if (!encodedImage && statusRes.result.media && statusRes.result.media.length > 0) {
+                     encodedImage = statusRes.result.media[0].image?.generatedImage?.encodedImage;
+                }
+
+                if (encodedImage) {
+                    console.log(`[Checkpoint 8] Upscale Success.`);
+                    const finalUrl = encodedImage.startsWith('data:') 
+                        ? encodedImage 
+                        : `data:image/jpeg;base64,${encodedImage}`;
+                    return { imageUrl: finalUrl };
+                }
+            }
+            
+            if (statusRes.status === 'FAILED') {
+                 throw new Error("Quá trình upscale thất bại.");
+            }
+
+        } catch (pollErr: any) {
+            // If it's a SYSTEM_ERROR, rethrow immediately
+            if (pollErr.message && pollErr.message.includes("SYSTEM_ERROR")) {
+                 throw pollErr;
+            }
+            console.warn("Polling upscale retry:", pollErr);
+        }
+    }
+
+    throw new Error("Hết thời gian chờ upscale.");
+};
+
 async function _executeVideoGeneration(
     prompt: string, 
     startImage?: FileData, 
@@ -287,7 +555,7 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
 
         while (attempts < maxRetries) {
             attempts++;
-            await wait(8000);
+            await wait(10000); // Also updated to 10s for consistency
 
             const checkData = await fetchJson('/check', {
                 method: 'POST',

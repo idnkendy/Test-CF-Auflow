@@ -3,6 +3,7 @@ import React, { useState, useCallback, useRef, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService';
 import { refundCredits } from '../services/paymentService';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { ImageGeneratorState } from '../state/toolState';
@@ -63,8 +64,8 @@ const weatherOptions = [
     { value: 'trời trong xanh, quang đãng', label: 'Trời trong' },
     { value: 'có mưa nhẹ và đường ướt', label: 'Mưa nhẹ' },
     { value: 'có tuyết rơi nhẹ', label: 'Tuyết rơi' },
-    { value: 'dưới trời nắng gắt, bóng đổ rõ rệt', label: 'Nắng gắt' },
-    { value: 'sau một cơn mưa, có vũng nước và phản chiếu', label: 'Sau mưa' },
+    { value: 'under the scorching sun, clear shadows', label: 'Nắng gắt' },
+    { value: 'after a rain, with puddles and reflections', label: 'Sau mưa' },
 ];
 
 interface ImageGeneratorProps {
@@ -86,8 +87,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [queuePosition, setQueuePosition] = useState<number | null>(null);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
-    // Polling for queue position
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
         if (isLoading && activeJobId) {
@@ -98,19 +99,18 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     setStatusMessage(`Đang trong hàng đợi (Vị trí: ${pos})...`);
                 } else {
                     setQueuePosition(null);
-                    setStatusMessage('Đang xử lý ảnh...');
+                    // Do not overwrite specific status messages from Flow
+                    if (!statusMessage?.includes("[")) {
+                       setStatusMessage('Đang xử lý ảnh...');
+                    }
                 }
             };
-            
-            checkQueue(); // Initial check
-            interval = setInterval(checkQueue, 8000); 
+            checkQueue();
+            interval = setInterval(checkQueue, 10000); 
         } else {
             setQueuePosition(null);
         }
-        
-        return () => {
-            if (interval) clearInterval(interval);
-        };
+        return () => { if (interval) clearInterval(interval); };
     }, [isLoading, activeJobId]);
 
     const escapeRegExp = (string: string) => {
@@ -132,7 +132,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
         const oldPart = getPromptPart(type, oldValue);
         const newPart = getPromptPart(type, newValue);
-        
         let nextPrompt = customPrompt;
 
         if (oldPart && nextPrompt.includes(oldPart)) {
@@ -144,57 +143,18 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart;
         }
 
-        const cleanedPrompt = nextPrompt
-            .replace(/,+/g, ',')
-            .split(',')
-            .map(p => p.trim())
-            .filter(p => p.length > 0)
-            .join(', ');
-            
+        const cleanedPrompt = nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ');
         onStateChange({ customPrompt: cleanedPrompt });
-
     }, [customPrompt, onStateChange]);
 
-    const handleBuildingTypeChange = (newVal: string) => {
-        updatePrompt('buildingType', newVal, buildingType);
-        onStateChange({ buildingType: newVal });
-    };
-
-    const handleStyleChange = (newVal: string) => {
-        updatePrompt('style', newVal, style);
-        onStateChange({ style: newVal });
-    };
-
-    const handleContextChange = (newVal: string) => {
-        updatePrompt('context', newVal, context);
-        onStateChange({ context: newVal });
-    };
-
-    const handleLightingChange = (newVal: string) => {
-        updatePrompt('lighting', newVal, lighting);
-        onStateChange({ lighting: newVal });
-    };
-
-    const handleWeatherChange = (newVal: string) => {
-        updatePrompt('weather', newVal, weather);
-        onStateChange({ weather: newVal });
-    };
-
-    const handleResolutionChange = (val: ImageResolution) => {
-        onStateChange({ resolution: val });
-    };
-
-    const handleFileSelect = (fileData: FileData | null) => {
-        onStateChange({ 
-            sourceImage: fileData, 
-            resultImages: [], 
-            upscaledImage: null 
-        });
-    }
-
-    const handleReferenceFilesChange = (files: FileData[]) => {
-        onStateChange({ referenceImages: files });
-    };
+    const handleBuildingTypeChange = (newVal: string) => { updatePrompt('buildingType', newVal, buildingType); onStateChange({ buildingType: newVal }); };
+    const handleStyleChange = (newVal: string) => { updatePrompt('style', newVal, style); onStateChange({ style: newVal }); };
+    const handleContextChange = (newVal: string) => { updatePrompt('context', newVal, context); onStateChange({ context: newVal }); };
+    const handleLightingChange = (newVal: string) => { updatePrompt('lighting', newVal, lighting); onStateChange({ lighting: newVal }); };
+    const handleWeatherChange = (newVal: string) => { updatePrompt('weather', newVal, weather); onStateChange({ weather: newVal }); };
+    const handleResolutionChange = (val: ImageResolution) => { onStateChange({ resolution: val }); };
+    const handleFileSelect = (fileData: FileData | null) => { onStateChange({ sourceImage: fileData, resultImages: [], upscaledImage: null }); }
+    const handleReferenceFilesChange = (files: FileData[]) => { onStateChange({ referenceImages: files }); };
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -208,55 +168,16 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     
     const cost = numberOfImages * getCostPerImage();
 
-    const performGeneration = async (
-        prompt: string, 
-        sourceImage: FileData | null, 
-        referenceImages: FileData[], 
-        numberOfImages: number, 
-        aspectRatio: AspectRatio, 
-        resolution: ImageResolution,
-        jobId?: string
-    ): Promise<string[]> => {
-        
-        let promptForService = "";
-        if (sourceImage) {
-             promptForService = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${prompt}`;
-             if (referenceImages && referenceImages.length > 0) {
-                 promptForService += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`;
-             }
-        } else {
-             promptForService = `${prompt}, photorealistic architectural rendering, high detail, masterpiece`;
-        }
-
-        if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-            const promises = Array.from({ length: numberOfImages }).map(async () => {
-                const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId, referenceImages);
-                return images[0];
-            });
-            return await Promise.all(promises);
-        } else {
-            if (sourceImage && referenceImages && referenceImages.length > 0) {
-                const results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
-                return results.map(r => r.imageUrl);
-            } else {
-                return await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId);
-            }
-        }
-    };
-
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
              return;
         }
-
-        if (!customPrompt.trim()) {
-            onStateChange({ error: 'Lời nhắc (prompt) không được để trống.' });
-            return;
-        }
+        if (!customPrompt.trim()) { onStateChange({ error: 'Lời nhắc không được để trống.' }); return; }
         
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
         setStatusMessage('Đang khởi tạo...');
+        setUpscaleWarning(null);
         
         let jobId: string | null = null;
         let logId: string | null = null;
@@ -264,135 +185,212 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         try {
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Render kiến trúc (${numberOfImages} ảnh) - ${resolution}`);
-                // Chờ 300ms để DB cập nhật log trước khi tạo Job (Tránh lỗi FK)
                 await new Promise(r => setTimeout(r, 300));
             }
-            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
-                 jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.ArchitecturalRendering,
-                    prompt: customPrompt,
-                    cost: cost,
-                    usage_log_id: logId
-                });
-                
+                 jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.ArchitecturalRendering, prompt: customPrompt, cost: cost, usage_log_id: logId });
                 setActiveJobId(jobId);
             }
-
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            const imageUrls = await performGeneration(
-                customPrompt, 
-                sourceImage, 
-                referenceImages, 
-                numberOfImages, 
-                aspectRatio, 
-                resolution, 
-                jobId || undefined
-            );
-
-            onStateChange({ resultImages: imageUrls });
-            if (jobId && imageUrls.length > 0) {
-                await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-            }
-
-            const historyPrompt = sourceImage 
-                ? `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. The main creative instruction is: ${customPrompt}`
+            let promptForService = sourceImage 
+                ? `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. ${customPrompt}`
                 : `${customPrompt}, photorealistic architectural rendering, high detail, masterpiece`;
 
-            imageUrls.forEach(url => {
-                historyService.addToHistory({
-                    tool: Tool.ArchitecturalRendering,
-                    prompt: historyPrompt,
-                    sourceImageURL: sourceImage?.objectURL,
-                    resultImageURL: url,
+            if (referenceImages.length > 0) promptForService += ` Also, take aesthetic inspiration from the provided reference image(s).`;
+
+            let imageUrls: string[] = [];
+            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+                const promises = Array.from({ length: numberOfImages }).map(async () => {
+                    const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId || undefined, referenceImages);
+                    return images[0];
                 });
-            });
+                imageUrls = await Promise.all(promises);
+            } else {
+                if (sourceImage && referenceImages.length > 0) {
+                    const results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
+                    imageUrls = results.map(r => r.imageUrl);
+                } else {
+                    imageUrls = await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId);
+                }
+            }
 
+            onStateChange({ resultImages: imageUrls });
+            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
+            imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.ArchitecturalRendering, prompt: promptForService, sourceImageURL: sourceImage?.objectURL, resultImageURL: url }));
         } catch (err: any) {
-            console.error("Generation Error:", err);
-            
-            let userErrorMessage = err.message;
-            if (logId) {
-                userErrorMessage += " (Credits đã được hoàn lại)";
-            }
-
-            onStateChange({ error: userErrorMessage });
-            
-            if (jobId) {
-                await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
-            }
-            
-             const { data: { user } } = await supabase.auth.getUser();
-             if (user && logId) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống khi tạo Job (${err.message})`, logId);
-             }
-
+            onStateChange({ error: err.message });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${err.message})`, logId);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
             setActiveJobId(null);
-            setQueuePosition(null);
         }
     };
 
+    const handleGenerateFlow = async () => {
+        const flowCostPerImage = 10;
+        const totalFlowCost = flowCostPerImage * numberOfImages;
+
+        if (onDeductCredits && userCredits < totalFlowCost) {
+            onStateChange({ error: `Bạn không đủ credits. Cần ${totalFlowCost} credits cho Render Flow (${numberOfImages} ảnh).` });
+            return;
+        }
+        
+        if (!sourceImage && !customPrompt.trim()) {
+            onStateChange({ error: 'Vui lòng nhập mô tả hoặc tải ảnh gốc để Render Flow.' });
+            return;
+        }
+
+        onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
+        setUpscaleWarning(null);
+
+        let logId: string | null = null;
+        try {
+            if (onDeductCredits) {
+                logId = await onDeductCredits(totalFlowCost, `Render Flow (GEM_PIX_2) - Architectural x${numberOfImages}`);
+            }
+
+            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+            if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+            } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+            }
+
+            let promptForFlow = sourceImage 
+                ? `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. ${customPrompt}`
+                : `${customPrompt}, photorealistic architectural rendering, high detail, masterpiece`;
+
+            if (referenceImages.length > 0) promptForFlow += ` Also, take aesthetic inspiration from the provided reference image(s).`;
+
+            const collectedUrls: string[] = [];
+            let completedCount = 0;
+
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
+                    // Update status: Step 1
+                    setStatusMessage(`[1/2] Đang tạo ảnh gốc... (${index + 1}/${numberOfImages})`);
+
+                    // 1. Generate Base Image
+                    const result = await externalVideoService.generateFlowImage(
+                        promptForFlow,
+                        sourceImage || undefined,
+                        aspectEnum,
+                        1
+                    );
+                    
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        
+                        // 2. Check for 2K Upscale Requirement
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                        
+                        if (shouldUpscale) {
+                             setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                             try {
+                                 const mediaId = result.mediaIds[0];
+                                 if (mediaId) {
+                                     // Call upscale service
+                                     const upscaleResult = await externalVideoService.upscaleFlowImage(
+                                         mediaId,
+                                         result.projectId
+                                     );
+                                     if (upscaleResult && upscaleResult.imageUrl) {
+                                         finalUrl = upscaleResult.imageUrl;
+                                     }
+                                 }
+                             } catch (upscaleErr: any) {
+                                 console.warn("Upscale failed, falling back to base image", upscaleErr);
+                                 setUpscaleWarning("Một số ảnh không thể nâng cấp lên 2K do lỗi hệ thống (401), hiển thị ảnh gốc.");
+                                 // Don't fail the whole process, just use base image
+                             }
+                        }
+
+                        collectedUrls.push(finalUrl);
+                        completedCount++;
+                        
+                        // Update UI immediately with what we have
+                        onStateChange({ resultImages: [...collectedUrls] });
+                        setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                        
+                        historyService.addToHistory({
+                            tool: Tool.ArchitecturalRendering,
+                            prompt: `Flow Enhance: ${promptForFlow}`,
+                            sourceImageURL: sourceImage?.objectURL,
+                            resultImageURL: finalUrl,
+                        });
+                    } else {
+                        throw new Error("Không nhận được dữ liệu ảnh từ server.");
+                    }
+                } catch (e) {
+                    console.error(`Image ${index+1} generation failed`, e);
+                }
+            });
+
+            await Promise.all(promises);
+
+            const successCount = collectedUrls.length;
+            const failedCount = numberOfImages - successCount;
+
+            if (successCount === 0) {
+                throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại."); 
+            }
+
+            if (failedCount > 0 && logId) {
+                 const refundAmount = failedCount * flowCostPerImage;
+                 const { data: { user } } = await supabase.auth.getUser();
+                 if (user) {
+                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi (Flow)`, logId);
+                 }
+                 onStateChange({ error: `Hoàn tất ${successCount}/${numberOfImages} ảnh. Đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh lỗi.` });
+            }
+
+        } catch (err: any) {
+            let msg = err.message || 'Lỗi kết nối Flow Media.';
+            onStateChange({ error: msg });
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) await refundCredits(user.id, totalFlowCost, `Hoàn tiền Flow Media: ${msg}`, logId);
+        } finally {
+            onStateChange({ isLoading: false });
+            setStatusMessage(null);
+        }
+    };
+
+
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
-        const resultImage = resultImages[0];
-
         onStateChange({ isUpscaling: true, error: null });
-
         try {
-            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImage);
-
-            const upscalePrompt = "Upscale this architectural rendering to a high resolution. Enhance the details, textures, and lighting to make it look photorealistic and professional. Do not change the composition or the core design.";
-            
-            const result = await geminiService.editImage(upscalePrompt, imageToUpscale, 1);
+            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImages[0]);
+            const result = await geminiService.editImage("Upscale this architectural rendering to high resolution. Enhance textures and detail.", imageToUpscale, 1);
             onStateChange({ upscaledImage: result[0].imageUrl });
-        } catch (err: any) {
-            onStateChange({ error: err.message || "Failed to upscale image." });
-        } finally {
-            onStateChange({ isUpscaling: false });
-        }
+        } catch (err: any) { onStateChange({ error: err.message }); } finally { onStateChange({ isUpscaling: false }); }
     };
 
     const handleDownload = () => {
         const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null);
         if (!url) return;
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = "generated-architecture.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const link = document.createElement('a'); link.href = url; link.download = "render.png"; link.click();
     };
 
     const handleSendImageToSync = async (imageUrl: string) => {
-        try {
-            const fileData = await geminiService.getFileDataFromUrl(imageUrl);
-            onSendToViewSync(fileData);
-        } catch (e) {
-            onStateChange({ error: "Không thể chuyển ảnh, định dạng không hợp lệ." });
-        }
+        try { const fileData = await geminiService.getFileDataFromUrl(imageUrl); onSendToViewSync(fileData); } catch (e) { onStateChange({ error: "Lỗi chuyển ảnh." }); }
     };
 
     return (
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            
             <div className="flex flex-col gap-2">
                 <h2 className="text-2xl md:text-3xl font-bold text-text-primary dark:text-white">AI Render Kiến trúc</h2>
                 <p className="text-sm md:text-base text-text-secondary dark:text-gray-400">Biến phác thảo thành hiện thực hoặc tạo ý tưởng mới từ mô tả văn bản.</p>
             </div>
             
-            {/* --- INPUTS CONTAINER --- */}
             <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-4 md:p-6 rounded-xl border border-border-color dark:border-gray-700">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                    
-                    {/* Left Column: Image Uploads */}
                     <div className="space-y-6">
                         <div>
                             <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Phác Thảo (Sketch)</label>
@@ -403,31 +401,16 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                             <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
                         </div>
                     </div>
-
-                    {/* Right Column: Prompts & Options */}
                     <div className="space-y-4 flex flex-col">
                         <div className="relative">
-                            <label htmlFor="custom-prompt-architectural" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">
-                                2. Mô tả ý tưởng (Prompt)
-                            </label>
-                            <textarea
-                                id="custom-prompt-architectural"
-                                rows={4}
-                                className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:border-accent focus:outline-none transition-all resize-none text-sm md:text-base"
-                                placeholder="VD: Một ngôi nhà phố hiện đại, mặt tiền 5m, nhiều cây xanh, cửa kính lớn, ánh sáng tự nhiên..."
-                                value={customPrompt}
-                                onChange={(e) => onStateChange({ customPrompt: e.target.value })}
-                                disabled={isLoading}
-                            />
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả ý tưởng (Prompt)</label>
+                            <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none resize-none text-sm" placeholder="VD: Một ngôi nhà phố hiện đại, mặt tiền 5m, nhiều cây xanh..." value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
                         </div>
-
-                        {/* Options Grid */}
                         <div className="pt-2">
                             <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh chi tiết</label>
                             <div className="space-y-4">
                                 <OptionSelector id="building-type-selector" label="Loại công trình" options={buildingTypeOptions} value={buildingType} onChange={handleBuildingTypeChange} disabled={isLoading} variant="grid" />
                                 <OptionSelector id="style-selector" label="Phong cách" options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
-                                
                                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
                                     <OptionSelector id="context-selector" label="Bối cảnh" options={contextOptions} value={context} onChange={handleContextChange} disabled={isLoading} variant="select" />
                                     <OptionSelector id="lighting-selector" label="Ánh sáng" options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
@@ -435,128 +418,70 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                                 </div>
                             </div>
                         </div>
-                        
-                        {/* Output Settings */}
                         <div className="pt-4 grid grid-cols-2 gap-4">
-                            <div>
-                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} disabled={isLoading || isUpscaling} />
-                            </div>
-                            <div>
-                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({aspectRatio: val})} disabled={isLoading || isUpscaling} />
-                            </div>
+                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} disabled={isLoading || isUpscaling} />
+                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({aspectRatio: val})} disabled={isLoading || isUpscaling} />
                         </div>
-                        
-                        <div className="pt-4">
-                            <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading || isUpscaling} />
-                        </div>
+                        <div className="pt-4"><ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading || isUpscaling} /></div>
                     </div>
                 </div>
 
-                {/* Bottom Action Bar */}
                 <div className="mt-4">
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-3 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                        </div>
-                        <div className="text-xs">
-                            {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
-                            ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
-                            )}
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <span>Ví: <span className="font-bold text-text-primary dark:text-white">{userCredits} Credits</span></span>
                         </div>
                     </div>
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost}
-                        className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg"
-                    >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Render'}
-                    </button>
+                    
+                    {/* BUTTON ROW */}
+                    <div className="flex flex-col sm:flex-row gap-4">
+                        <button
+                            onClick={handleGenerate}
+                            disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost}
+                            className="flex-1 flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg"
+                        >
+                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : `Bắt đầu Render (${cost})`}
+                        </button>
+                        
+                        <button
+                            onClick={handleGenerateFlow}
+                            disabled={isLoading || (!sourceImage && !customPrompt.trim()) || isUpscaling || userCredits < (10 * numberOfImages)}
+                            className="flex-1 flex justify-center items-center gap-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg"
+                            title="Tạo ảnh chất lượng cao nhất bằng mô hình GEM_PIX_2"
+                        >
+                            {isLoading ? <><Spinner /> {statusMessage || 'Đang tối ưu...'}</> : `Render Cao Cấp (${10 * numberOfImages})`}
+                        </button>
+                    </div>
+
                      {error && <p className="mt-3 text-sm text-red-500 text-center font-medium">{error}</p>}
+                     {upscaleWarning && <p className="mt-3 text-sm text-yellow-500 text-center font-medium bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded">{upscaleWarning}</p>}
                 </div>
             </div>
 
-            {/* --- RESULTS SECTION --- */}
             <div>
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                    <h3 className="text-lg font-bold text-text-primary dark:text-white flex items-center gap-2">
-                         Kết quả
-                    </h3>
-                    
+                    <h3 className="text-lg font-bold text-text-primary dark:text-white">Kết quả</h3>
                     {resultImages.length === 1 && (
                         <div className="flex flex-wrap items-center gap-2">
-                            {!upscaledImage && (
-                                <button
-                                    onClick={handleUpscale}
-                                    disabled={isUpscaling || isLoading}
-                                    className="flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-yellow-500/20"
-                                >
-                                    {isUpscaling ? <Spinner/> : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-                                    )}
-                                    <span>Upscale</span>
-                                </button>
-                            )}
-                            <button
-                                onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])}
-                                className="text-accent-600 dark:text-accent-400 bg-accent-50 dark:bg-accent-900/20 hover:bg-accent-100 dark:hover:bg-accent-900/40 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-accent-200 dark:border-accent-800"
-                            >
-                                Đồng bộ View
-                            </button>
-                            <button
-                                onClick={() => setPreviewImage(upscaledImage || resultImages[0])}
-                                className="bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600 p-1.5 rounded-lg transition-colors"
-                                title="Phóng to"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" /></svg>
-                            </button>
-                             <button onClick={handleDownload} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium shadow-sm transition-colors">
-                                Tải xuống
-                            </button>
+                            {!upscaledImage && <button onClick={handleUpscale} disabled={isUpscaling || isLoading} className="flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 px-3 py-1.5 rounded-lg text-sm font-medium border border-yellow-500/20">{isUpscaling ? <Spinner /> : <span className="material-symbols-outlined text-sm">bolt</span>}<span>Upscale</span></button>}
+                            <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="text-accent-600 bg-accent-50 hover:bg-accent-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-accent-200">Đồng bộ View</button>
+                            <button onClick={handleDownload} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium shadow-sm">Tải xuống</button>
                         </div>
                     )}
                 </div>
-
-                <div className="w-full aspect-[4/3] bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden relative group">
+                <div className="w-full aspect-[4/3] bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden relative">
                     {isLoading && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
                             <div className="w-16 h-16 border-4 border-accent-200 border-t-accent-600 rounded-full animate-spin mb-4"></div>
-                            <p className="text-accent-600 dark:text-accent-400 font-medium animate-pulse">
-                                {statusMessage || 'AI đang vẽ...'}
-                            </p>
-                            {queuePosition && queuePosition > 1 && (
-                                <p className="text-sm text-gray-500 mt-2 font-medium">
-                                    Vị trí trong hàng đợi: <span className="font-bold">{queuePosition}</span>
-                                </p>
-                            )}
+                            <p className="text-accent-600 dark:text-accent-400 font-medium animate-pulse">{statusMessage || 'AI đang vẽ...'}</p>
                         </div>
                     )}
-
-                    {!isLoading && upscaledImage && resultImages.length === 1 && (
-                         <ImageComparator originalImage={resultImages[0]} resultImage={upscaledImage} />
-                    )}
-                    {!isLoading && !upscaledImage && resultImages.length === 1 && sourceImage && (
-                         <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
-                    )}
-                     {!isLoading && !upscaledImage && resultImages.length === 1 && !sourceImage && (
-                        <img src={resultImages[0]} alt="Generated Result" className="w-full h-full object-contain" />
-                    )}
-                     {!isLoading && resultImages.length > 1 && (
-                        <ResultGrid images={resultImages} toolName="architecture-render" onSendToViewSync={handleSendImageToSync} />
-                    )}
-                    {!isLoading && resultImages.length === 0 && (
-                        <div className="text-center p-8 opacity-50">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 md:h-20 md:w-20 mx-auto mb-4 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                            </svg>
-                            <p className="text-gray-500 dark:text-gray-400 text-base md:text-lg">Kết quả render sẽ xuất hiện ở đây</p>
-                            <p className="text-xs md:text-sm text-gray-400 dark:text-gray-500">Hãy nhập mô tả hoặc tải ảnh lên để bắt đầu</p>
-                        </div>
-                    )}
+                    {!isLoading && upscaledImage && resultImages.length === 1 && <ImageComparator originalImage={resultImages[0]} resultImage={upscaledImage} />}
+                    {!isLoading && !upscaledImage && resultImages.length === 1 && sourceImage && <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />}
+                     {!isLoading && !upscaledImage && resultImages.length === 1 && !sourceImage && <img src={resultImages[0]} className="w-full h-full object-contain" />}
+                     {!isLoading && resultImages.length > 1 && <ResultGrid images={resultImages} toolName="architecture-render" onSendToViewSync={handleSendImageToSync} />}
+                    {!isLoading && resultImages.length === 0 && <div className="text-center opacity-50"><p className="text-gray-500">Kết quả render sẽ xuất hiện ở đây</p></div>}
                 </div>
             </div>
         </div>

@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../../services/supabaseClient';
 import Spinner from '../Spinner';
@@ -19,6 +20,43 @@ const GoogleIcon = () => (
 const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+        setError("Vui lòng điền đầy đủ thông tin.");
+        return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+        if (mode === 'login') {
+            const { error } = await supabase.auth.signInWithPassword({ email, password });
+            if (error) throw error;
+        } else {
+            const { error } = await supabase.auth.signUp({ 
+                email, 
+                password,
+                options: {
+                    emailRedirectTo: window.location.origin
+                }
+            });
+            if (error) throw error;
+            setSuccessMsg("Đăng ký thành công! Vui lòng kiểm tra email để xác nhận tài khoản.");
+        }
+    } catch (err: any) {
+        setError(err.message || "Đã xảy ra lỗi.");
+    } finally {
+        setLoading(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -36,58 +74,113 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   };
 
   return (
-    <div className="min-h-screen bg-main-bg dark:bg-gray-900 flex flex-col items-center justify-center p-4 relative font-sans transition-colors duration-300">
-        <button onClick={onGoHome} className="absolute top-4 left-4 text-text-secondary dark:text-gray-400 hover:text-accent transition-colors flex items-center gap-2">
+    <div className="min-h-screen bg-main-bg dark:bg-[#0F0F0F] flex flex-col items-center justify-center p-4 relative font-sans transition-colors duration-300">
+        <button onClick={onGoHome} className="absolute top-6 left-6 text-text-secondary dark:text-gray-400 hover:text-accent transition-colors flex items-center gap-2 font-medium">
             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clipRule="evenodd" /></svg>
             Quay lại trang chủ
         </button>
+
         <div className="w-full max-w-md">
-            <div className="flex flex-col items-center mb-8">
-                 <Logo className="w-16 h-16 mb-4 drop-shadow-xl" />
-                <h1 className="text-text-primary dark:text-white text-3xl font-extrabold mb-1">OPZEN AI</h1>
-                <p className="text-text-secondary dark:text-gray-400 text-center text-sm font-medium italic">Kiến tạo không gian với AI</p>
+            <div className="flex flex-col items-center mb-8 animate-fade-in">
+                 <Logo className="w-16 h-16 mb-4 drop-shadow-2xl" />
+                <h1 className="text-text-primary dark:text-white text-3xl font-extrabold mb-1 tracking-tight">OPZEN AI</h1>
+                <p className="text-text-secondary dark:text-gray-400 text-center text-sm font-medium opacity-80">Kiến tạo không gian với AI</p>
             </div>
             
-            <div className="bg-surface dark:bg-dark-bg p-8 rounded-2xl shadow-2xl border border-border-color dark:border-gray-700">
+            <div className="bg-surface dark:bg-[#191919] p-8 rounded-3xl shadow-2xl border border-border-color dark:border-[#302839] relative overflow-hidden">
                 <div className="text-center mb-8">
                     <h2 className="text-2xl font-bold text-text-primary dark:text-white">
-                        Đăng nhập
+                        {mode === 'login' ? 'Chào mừng trở lại' : 'Tạo tài khoản mới'}
                     </h2>
-                    <p className="text-sm text-text-secondary dark:text-gray-400 mt-2 leading-relaxed">
-                        Chào mừng bạn đến với OPZEN AI.<br/>Truy cập để bắt đầu sáng tạo ý tưởng thiết kế.
+                    <p className="text-sm text-text-secondary dark:text-gray-400 mt-2">
+                        {mode === 'login' ? 'Đăng nhập để tiếp tục sáng tạo' : 'Bắt đầu hành trình thiết kế của bạn ngay hôm nay'}
                     </p>
                 </div>
                 
                 {!isSupabaseConfigured && (
                     <div className="mb-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-500 dark:text-yellow-300 rounded-r-lg text-left">
-                        <p className="font-bold">Cấu hình chưa hoàn tất!</p>
-                        <p className="text-sm">Chức năng đăng nhập hiện chưa khả dụng.</p>
+                        <p className="font-bold text-sm">Cấu hình chưa hoàn tất!</p>
+                        <p className="text-xs">Chức năng đăng nhập hiện chưa khả dụng.</p>
                     </div>
                 )}
                 
-                {error && <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm text-left">{error}</div>}
+                {error && <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-400 rounded-xl text-sm text-left animate-shake">{error}</div>}
+                {successMsg && <div className="mb-6 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 rounded-xl text-sm text-left">{successMsg}</div>}
 
-                {/* GOOGLE LOGIN ONLY */}
-                <div className="space-y-4">
+                {/* EMAIL FORM */}
+                <form onSubmit={handleEmailAuth} className="space-y-4 mb-6">
+                    <div>
+                        <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Email</label>
+                        <input 
+                            type="email" 
+                            value={email}
+                            onChange={(e) => setEmail(e.target.value)}
+                            required
+                            className="w-full bg-gray-50 dark:bg-[#121212] border border-border-color dark:border-[#333] rounded-xl p-3.5 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec]/20 focus:border-[#7f13ec] outline-none transition-all"
+                            placeholder="email@vidu.com"
+                        />
+                    </div>
+                    <div>
+                        <label className="block text-[11px] font-bold text-gray-400 uppercase tracking-widest mb-1.5 ml-1">Mật khẩu</label>
+                        <input 
+                            type="password" 
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                            className="w-full bg-gray-50 dark:bg-[#121212] border border-border-color dark:border-[#333] rounded-xl p-3.5 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec]/20 focus:border-[#7f13ec] outline-none transition-all"
+                            placeholder="••••••••"
+                        />
+                    </div>
                     <button
-                        onClick={handleGoogleSignIn}
+                        type="submit"
                         disabled={loading || !isSupabaseConfigured}
-                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200 font-bold py-4 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-gray-600 shadow-sm group hover:shadow-md hover:scale-[1.02]"
+                        className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-200 shadow-lg shadow-purple-500/20 flex justify-center items-center gap-2 group"
                     >
-                        {loading ? <Spinner /> : <GoogleIcon />}
-                        <span className="text-sm group-hover:text-primary dark:group-hover:text-white transition-colors">Tiếp tục với Google</span>
+                        {loading ? <Spinner /> : (
+                            <span className="group-hover:translate-x-1 transition-transform">
+                                {mode === 'login' ? 'Đăng nhập' : 'Đăng ký'}
+                            </span>
+                        )}
                     </button>
-                    
-                    <p className="text-[11px] text-gray-400 dark:text-gray-500 text-center mt-4">
-                        Phương thức đăng nhập an toàn và nhanh chóng nhất.
-                    </p>
+                </form>
+
+                <div className="relative mb-6">
+                    <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-border-color dark:border-[#333]"></div></div>
+                    <div className="relative flex justify-center text-xs uppercase"><span className="bg-surface dark:bg-[#191919] px-3 text-gray-400">Hoặc</span></div>
+                </div>
+
+                {/* GOOGLE LOGIN */}
+                <button
+                    onClick={handleGoogleSignIn}
+                    disabled={loading || !isSupabaseConfigured}
+                    className="w-full flex justify-center items-center gap-3 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-3.5 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group"
+                >
+                    <GoogleIcon />
+                    <span className="text-sm group-hover:text-[#7f13ec] transition-colors">Tiếp tục với Google</span>
+                </button>
+                
+                <div className="mt-8 text-center">
+                    <button 
+                        onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(null); setSuccessMsg(null); }}
+                        className="text-sm text-[#7f13ec] hover:underline font-semibold"
+                    >
+                        {mode === 'login' ? 'Chưa có tài khoản? Đăng ký ngay' : 'Đã có tài khoản? Đăng nhập'}
+                    </button>
                 </div>
             </div>
             
-            <p className="text-center text-[10px] text-text-secondary dark:text-gray-500 mt-8 leading-relaxed px-4">
-                Bằng việc tiếp tục, bạn đồng ý với <a href="/terms-of-service" className="underline hover:text-accent transition-colors">Điều khoản dịch vụ</a> & <a href="#" className="underline hover:text-accent transition-colors">Chính sách bảo mật</a> của OPZEN AI.
+            <p className="text-center text-[10px] text-text-secondary dark:text-gray-500 mt-8 leading-relaxed px-4 opacity-60">
+                Bằng việc tiếp tục, bạn đồng ý với <a href="/terms-of-service" className="underline hover:text-[#7f13ec] transition-colors">Điều khoản dịch vụ</a> & <a href="#" className="underline hover:text-[#7f13ec] transition-colors">Chính sách bảo mật</a> của OPZEN AI.
             </p>
         </div>
+        <style>{`
+            @keyframes shake {
+                0%, 100% { transform: translateX(0); }
+                25% { transform: translateX(-5px); }
+                75% { transform: translateX(5px); }
+            }
+            .animate-shake { animation: shake 0.2s ease-in-out 0s 2; }
+        `}</style>
     </div>
   );
 };

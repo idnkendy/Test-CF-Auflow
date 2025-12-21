@@ -8,6 +8,10 @@ import { AspectRatio, FileData, ImageResolution } from "../types";
 // KHÓA BÍ MẬT (Phải khớp với v_secret trong SQL function)
 const XOR_SECRET = 'OPZEN_SUPER_SECRET_2025';
 
+// TOKEN SERVICE CONFIG
+const ONEWISE_API_URL = "https://new-rest.onewise.app/api/fix/get-token";
+const ONEWISE_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjIzOTAxOX0.0QD08i_xgEepl3XuMNvrdX1-dj217j6aF0AcdPzHs3A";
+
 // Hàm xóa API Key khỏi chuỗi văn bản để bảo mật
 const scrubErrorText = (text: string): string => {
     if (!text) return "";
@@ -44,39 +48,32 @@ const normalizeCode = (code: string): string => {
 // --- API KEY MANAGEMENT ---
 
 /**
- * DEPRECATED: Mandatory guideline requires using process.env.API_KEY directly.
- * Keeping for context but the SDK will now use the env var directly.
+ * Fetches a fresh token from OneWise API to use as the API Key.
+ * Falls back to process.env.API_KEY if the fetch fails.
  */
-const getGeminiApiKey = async (): Promise<string> => {
+const getDynamicAIClient = async () => {
     try {
-        const { data: encryptedKey, error } = await supabase.rpc('get_random_api_key');
-
-        if (error) {
-            console.error("Supabase RPC Error:", error);
-            if (error.message?.includes('function') && error.message?.includes('not found')) {
-                 console.warn("Falling back to direct table select...");
-                 const { data: keys } = await supabase
-                    .from('api_keys')
-                    .select('key_value')
-                    .eq('is_active', true)
-                    .limit(1);
-                 if (keys && keys.length > 0) return keys[0].key_value;
+        const response = await fetch(ONEWISE_API_URL, {
+            method: 'GET',
+            headers: {
+                'Authorization': ONEWISE_AUTH_TOKEN,
+                'Content-Type': 'application/json'
             }
-            throw new Error("Không thể lấy API Key từ hệ thống.");
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.success && data.token) {
+                // Initialize client with the fetched dynamic token
+                return new GoogleGenAI({ apiKey: data.token });
+            }
         }
-
-        if (!encryptedKey) throw new Error("Hệ thống đang bận hoặc hết lượt sử dụng Key.");
-        const apiKey = normalizeCode(decryptCode(encryptedKey));
-        if (!apiKey || apiKey.length < 10) throw new Error("API Key giải mã không hợp lệ.");
-
-        return apiKey;
-    } catch (err: any) {
-        throw new Error(`Lỗi lấy API Key: ${err.message}`);
+        console.warn("OneWise Token Fetch failed or returned unsuccessful, falling back to Env Key.");
+    } catch (e) {
+        console.warn("Network error fetching OneWise token, falling back to Env Key:", e);
     }
-};
 
-// Fix: Enforce mandatory guideline to use process.env.API_KEY exclusively and initialize right before use.
-const getAIClient = () => {
+    // Fallback
     return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
@@ -252,7 +249,7 @@ const handleGeminiError = (e: any) => {
 
     // Fix: Handle specific error for mandatory key selection as per guidelines.
     if (msg.includes('Requested entity was not found.')) {
-        throw new Error("Lỗi: Không tìm thấy thực thể yêu cầu. Vui lòng chọn lại API Key hợp lệ.");
+        throw new Error("Lỗi: Không tìm thấy thực thể yêu cầu. Vui lòng thử lại sau.");
     }
 
     if (msg.includes('503') || msg.includes('overloaded') || msg.includes('UNAVAILABLE')) {
@@ -322,7 +319,8 @@ export const generateStandardImage = async (
     sourceImage?: FileData,
     jobId?: string
 ): Promise<string[]> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
 
     const parts: any[] = [{ text: prompt }];
@@ -370,7 +368,8 @@ export const generateHighQualityImage = async (
     referenceImages?: FileData[],
     maskImage?: FileData
 ): Promise<string[]> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     const model = 'gemini-3-pro-image-preview';
 
     let finalPrompt = prompt;
@@ -460,7 +459,8 @@ export const editImageWithMask = async (
     mask: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts = [
@@ -501,7 +501,8 @@ export const editImageWithReference = async (
     referenceImage: FileData | null, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [{ text: prompt }];
@@ -541,7 +542,8 @@ export const editImageWithMaskAndReference = async (
     referenceImage: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [
@@ -583,7 +585,8 @@ export const editImageWithMultipleReferences = async (
     referenceImages: FileData[],
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [{ text: prompt }];
@@ -626,7 +629,8 @@ export const editImageWithMaskAndMultipleReferences = async (
     referenceImages: FileData[],
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [{ text: prompt }];
@@ -666,7 +670,8 @@ export const editImageWithMaskAndMultipleReferences = async (
 // --- TEXT GENERATION FUNCTIONS ---
 
 export const generateText = async (prompt: string): Promise<string> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
     const model = 'gemini-3-flash-preview';
     
@@ -690,7 +695,8 @@ export const generatePromptSuggestions = async (
     count: number,
     customInstruction: string = ''
 ): Promise<Record<string, string[]> | null> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
     const model = 'gemini-3-flash-preview';
     
@@ -749,7 +755,8 @@ export const generatePromptSuggestions = async (
 };
 
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
     const model = 'gemini-3-flash-preview';
     
@@ -776,7 +783,8 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 
 // --- VIDEO PROMPT GENERATION ---
 export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
     const model = 'gemini-3-flash-preview';
     
@@ -809,7 +817,8 @@ export const generateVideo = async (prompt: string, startImage?: FileData, jobId
 };
 
 export const generateStagingImage = async (prompt: string, sceneImage: FileData, objectImages: FileData[], numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
-    const ai = getAIClient();
+    // Acquire dynamic client
+    const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [{ text: prompt }];

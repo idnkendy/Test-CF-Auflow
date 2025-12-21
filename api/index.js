@@ -8,9 +8,23 @@
 // !!! QUAN TRỌNG: DÁN API KEY CỦA BẠN VÀO ĐÂY NẾU CHƯA CẤU HÌNH ENV !!!
 const FALLBACK_GEMINI_API_KEY = ""; 
 
+// ==================================================================================
+// === KHU VỰC TEST (FIX CỨNG ĐỂ CHẠY THỬ) ===
+// Dán Access Token (ya29...) vào đây để test mà không cần Database
+const TEST_ACCESS_TOKEN = ""; 
+// Dán Media ID (GEN...) vào đây nếu muốn bỏ qua bước Upload ảnh (Test nhanh tạo ảnh)
+const TEST_MEDIA_ID = ""; 
+const TEST_PROJECT_ID = "cloud-large-model"; // Mặc định thường dùng
+// ==================================================================================
+
 // Fallback credentials from client source if Env vars are missing
 const DEFAULT_SUPABASE_URL = 'https://mtlomjjlgvsjpudxlspq.supabase.co';
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMzAwMjcsImV4cCI6MjA3ODkwNjAyN30.6K-rSAFVJxQPLVjZKdJpBspb5tHE1dZiry4lS6u6JzQ";
+
+// PROXY CONFIG FOR FLOW MEDIA
+const ONEWISE_PROXY_URL_CREATE = "https://new-rest.onewise.app/api/fix/create-video-veo3";
+const ONEWISE_PROXY_URL_CHECK = "https://new-rest.onewise.app/api/fix/task-status";
+const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjI4NTg2Mn0.zLqDOTRuYAnavQyNWFoZL6NdEVXBUqbdfujnLwY199E";
 
 const HEADERS = {
     'content-type': 'text/plain;charset=UTF-8', // Google bắt buộc text/plain
@@ -140,7 +154,6 @@ async function getAllAccounts(env) {
     const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
 
     try {
-        // UPDATE: Thêm order=updated_at.desc để ưu tiên lấy các tài khoản mới được bot cập nhật
         const response = await fetch(`${sbUrl}/rest/v1/video_accounts?select=id,access_token,auth_cookies,project_id,usage_count,usage_limit&is_active=eq.true&access_token=not.is.null&order=updated_at.desc`, {
             method: 'GET',
             headers: {
@@ -170,9 +183,6 @@ async function getAllAccounts(env) {
             accounts = accounts.map(acc => ({ ...acc, usage_count: 0 }));
             availableAccounts = accounts; 
         }
-
-        // UPDATE: Không random hoàn toàn nữa, mà giữ nguyên thứ tự ưu tiên (mới nhất trước)
-        // Tuy nhiên, để tránh "Hotspot" (tất cả user cùng dùng 1 acc mới nhất), ta lấy Top 5 acc mới nhất và random trong đó.
         
         if (availableAccounts.length > 5) {
              const topFresh = availableAccounts.slice(0, 5).sort(() => Math.random() - 0.5);
@@ -196,22 +206,17 @@ async function executeWithFailover(env, accounts, operationName, callback) {
         if (!account.project_id) continue;
 
         try {
-            // EXECUTE FIRST
             const result = await callback(account);
-
-            // SUCCESS -> INCREMENT USAGE (Only for quota-consuming actions)
-            if (operationName !== 'CheckStatus' && operationName !== 'UploadImage') {
-                 // Fire and forget update to speed up response
+            // Don't increment for read-only ops or simple uploads unless needed
+            if (operationName !== 'CheckStatus' && operationName !== 'UploadImage' && operationName !== 'CheckFlowStatus') {
                  incrementAccountUsage(env, account.id, account.usage_count).catch(err => 
                      console.error("Failed to increment usage post-success:", err)
                  );
             }
-
             return result; 
         } catch (e) {
             lastError = e;
             const msg = e.message || "";
-            
             const isRetryable = 
                 msg.includes("401") || 
                 msg.includes("403") || 
@@ -227,11 +232,10 @@ async function executeWithFailover(env, accounts, operationName, callback) {
                 continue; 
             } else {
                 console.error(`[${operationName}] Permanent Error: ${msg}`);
-                throw e; // Throw permanent errors like 400 Bad Request immediately so client sees the message
+                throw e; 
             }
         }
     }
-    
     throw lastError || new Error(`All accounts failed for ${operationName}`);
 }
 
@@ -241,7 +245,6 @@ async function performUpload(authData, base64Data, imageAspectRatio) {
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
     const aspectRatioEnum = imageAspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE";
 
-    // UPDATED: Use 'PINHOLE' tool to match the Veo session context
     const payload = {
         "imageInput": { 
             "aspectRatio": aspectRatioEnum, 
@@ -273,7 +276,6 @@ async function performUpload(authData, base64Data, imageAspectRatio) {
     }
     const data = await res.json();
     const mediaId = data.mediaGenerationId?.mediaGenerationId || data.mediaGenerationId || data.imageOutput?.image?.id;
-    
     if (!mediaId) throw new Error("No mediaId found in upload response");
     return mediaId;
 }
@@ -286,24 +288,15 @@ async function uploadImage(env, accounts, base64Data, imageAspectRatio) {
     });
 }
 
-// UPDATED: Now supports atomic upload-and-generate logic if image data is passed
 async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRatio, imageData, imageAspectRatio) {
     return executeWithFailover(env, accounts, "CreateVideo", async (authData) => {
         const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
-        
-        // 1. ATOMIC UPLOAD (If image data is provided in the request)
-        // This ensures upload and generation happen in the same account context
         let activeMediaId = mediaId;
         if (imageData) {
-            console.log(`[Worker] Performing atomic upload for account ${authData.id}...`);
             activeMediaId = await performUpload(authData, imageData, imageAspectRatio);
         }
-
-        // 2. GENERATION
         const sceneId = crypto.randomUUID();
         const aspectRatioEnum = videoAspectRatio || "VIDEO_ASPECT_RATIO_LANDSCAPE";
-        
-        // CRITICAL FIX: SELECT CORRECT MODEL KEY BASED ON ASPECT RATIO
         const modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
             ? "veo_3_1_i2v_s_fast_portrait_ultra" 
             : "veo_3_1_i2v_s_fast_ultra";
@@ -324,28 +317,167 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
                 "metadata": { "sceneId": sceneId }
             }]
         };
-    
         const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage', {
             method: 'POST',
-            headers: { 
-                ...HEADERS, 
-                'authorization': `Bearer ${token}`,
-                'cookie': cookies || ''
+            headers: { ...HEADERS, 'authorization': `Bearer ${token}`, 'cookie': cookies || '' },
+            body: JSON.stringify(payload)
+        });
+        if (!res.ok) throw new Error(`Trigger Failed (${res.status})`);
+        const data = await res.json();
+        const operationName = data.operations?.[0]?.operation?.name || data.operations?.[0]?.name;
+        return { task_id: operationName, scene_id: sceneId };
+    });
+}
+
+// --- NEW ACTION: FLOW MEDIA CREATE (GEM_PIX_2) VIA PROXY (START TASK) ---
+async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, dynamicToken, numberOfImages = 1) {
+    return executeWithFailover(env, accounts, "CreateFlowImage", async (authData) => {
+        // Lấy token từ account rotation (cơ chế giống video)
+        const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
+        
+        let mediaId = null;
+        if (imageData) {
+            // Upload ảnh sử dụng token động để lấy MediaID (Cơ chế giống video)
+            mediaId = await performUpload(authData, imageData, imageAspectRatio);
+        }
+        
+        const flowUrl = `https://aisandbox-pa.googleapis.com/v1/projects/${projectId}/flowMedia:batchGenerateImages`;
+        const sessionId = ";" + Date.now();
+
+        // Create multiple request objects
+        const requests = [];
+        for(let i=0; i<numberOfImages; i++) {
+            requests.push({
+                "clientContext": {
+                    "recaptchaToken": dynamicToken,
+                    "sessionId": sessionId,
+                    "projectId": projectId,
+                    "tool": "PINHOLE"
+                },
+                "seed": Math.floor(Math.random() * 1000000) + i,
+                "imageModelName": "GEM_PIX_2",
+                "imageAspectRatio": imageAspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE",
+                "prompt": prompt || "enhance the resolution and quality of this image",
+                "imageInputs": mediaId ? [
+                    {
+                        "name": mediaId,
+                        "imageInputType": "IMAGE_INPUT_TYPE_REFERENCE"
+                    }
+                ] : []
+            });
+        }
+
+        const payload = {
+            "body_json": {
+                "clientContext": {
+                    "recaptchaToken": dynamicToken, 
+                    "sessionId": sessionId,
+                    "projectId": projectId,
+                    "tool": "PINHOLE"
+                },
+                "requests": requests
+            },
+            "flow_auth_token": token,
+            "flow_url": flowUrl
+        };
+
+        const res = await fetch(ONEWISE_PROXY_URL_CREATE, {
+            method: 'POST',
+            headers: {
+                'Authorization': ONEWISE_PROXY_AUTH,
+                'Content-Type': 'application/json'
             },
             body: JSON.stringify(payload)
         });
 
         if (!res.ok) {
             const errText = await res.text();
-            throw new Error(`Trigger Failed (${res.status}) [Key: ${modelKey}]: ${errText}`);
+            throw new Error(`Flow Media Trigger Failed (${res.status}): ${errText}`);
         }
+        
         const data = await res.json();
+        
+        // Return taskId AND projectId (important for upscale)
+        if (data.success && data.taskId) {
+            return { status: 'pending', taskId: data.taskId, projectId: projectId };
+        }
+        
+        throw new Error("Invalid response from Flow Proxy (No Task ID)");
+    });
+}
 
-        const opItem = data.operations?.[0];
-        const operationName = opItem?.operation?.name || opItem?.name;
-        if (!operationName) throw new Error("No operation name returned in trigger response");
+// --- NEW ACTION: FLOW MEDIA UPSCALE ---
+async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynamicToken) {
+    // IMPORTANT: Upscale MUST use the same Project ID that created the media.
+    // We filter available accounts to find one that matches the projectId.
+    // If no specific account found, fall back to rotating accounts (which will likely fail if cross-project).
+    
+    // Note: accounts list passed here should already be filtered if possible, but we'll double check or rely on caller.
+    // Actually, executeWithFailover iterates. If we pass a list of ONE correct account, it works.
+    
+    return executeWithFailover(env, accounts, "UpscaleFlowImage", async (authData) => {
+        // We use authData.access_token from rotation
+        const { access_token: token } = authData;
+        
+        const activeProjectId = projectId || authData.project_id;
+        const flowUrl = `https://aisandbox-pa.googleapis.com/v1/flow/upsampleImage`; 
+        const sessionId = ";" + Date.now();
 
-        return { task_id: operationName, scene_id: sceneId };
+        // Specific payload structure for Upscale
+        const payload = {
+            "body_json": {
+                "clientContext": {
+                    "recaptchaToken": dynamicToken,
+                    "sessionId": sessionId,
+                    "projectId": activeProjectId,
+                    "tool": "PINHOLE"
+                },
+                "mediaId": mediaId,
+                "targetResolution": "UPSAMPLE_IMAGE_RESOLUTION_2K"
+            },
+            "flow_auth_token": token,
+            "flow_url": flowUrl
+        };
+
+        const res = await fetch(ONEWISE_PROXY_URL_CREATE, {
+            method: 'POST',
+            headers: {
+                'Authorization': ONEWISE_PROXY_AUTH,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+            const errText = await res.text();
+            throw new Error(`Flow Upscale Failed (${res.status}): ${errText}`);
+        }
+        
+        const data = await res.json();
+        
+        if (data.success && data.taskId) {
+            return { status: 'pending', taskId: data.taskId };
+        }
+        throw new Error("Invalid response from Flow Proxy (Upscale)");
+    });
+}
+
+// --- NEW ACTION: CHECK FLOW STATUS (POLLING) ---
+async function checkFlowStatus(env, accounts, taskId) {
+    return executeWithFailover(env, accounts, "CheckFlowStatus", async (authData) => {
+        const url = `${ONEWISE_PROXY_URL_CHECK}?taskId=${taskId}`;
+        const res = await fetch(url, {
+            method: 'GET',
+            headers: {
+                'Authorization': ONEWISE_PROXY_AUTH,
+                'Content-Type': 'application/json'
+            }
+        });
+
+        if (!res.ok) throw new Error(`Check Status Failed (${res.status})`);
+        
+        const data = await res.json();
+        return data; 
     });
 }
 
@@ -353,7 +485,6 @@ async function triggerUpscale(env, accounts, mediaId) {
     return executeWithFailover(env, accounts, "UpscaleVideo", async (authData) => {
         const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
         const sceneId = crypto.randomUUID();
-        
         const payload = {
             "requests": [{
                 "aspectRatio": "VIDEO_ASPECT_RATIO_LANDSCAPE",
@@ -369,26 +500,14 @@ async function triggerUpscale(env, accounts, mediaId) {
                 "userPaygateTier": "PAYGATE_TIER_TWO"
             }
         };
-
         const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoUpsampleVideo', {
             method: 'POST',
-            headers: { 
-                ...HEADERS, 
-                'authorization': `Bearer ${token}`,
-                'cookie': cookies || ''
-            },
+            headers: { ...HEADERS, 'authorization': `Bearer ${token}`, 'cookie': cookies || '' },
             body: JSON.stringify(payload)
         });
-
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Upscale Trigger Failed (${res.status}): ${errText}`);
-        }
+        if (!res.ok) throw new Error(`Upscale Trigger Failed (${res.status})`);
         const data = await res.json();
-        const opItem = data.operations?.[0];
-        const operationName = opItem?.operation?.name || opItem?.name;
-        if (!operationName) throw new Error("No operation name returned in upscale trigger response");
-        
+        const operationName = data.operations?.[0]?.operation?.name || data.operations?.[0]?.name;
         return { task_id: operationName, scene_id: sceneId };
     });
 }
@@ -403,47 +522,24 @@ async function checkStatus(env, accounts, task_id, scene_id) {
                 "status": "MEDIA_GENERATION_STATUS_ACTIVE"
             }]
         };
-
         const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', {
             method: 'POST',
-            headers: { 
-                ...HEADERS, 
-                'authorization': `Bearer ${token}`,
-                'cookie': cookies || ''
-            },
+            headers: { ...HEADERS, 'authorization': `Bearer ${token}`, 'cookie': cookies || '' },
             body: JSON.stringify(payload)
         });
-
-        if (res.status === 404 || res.status === 403 || res.status === 400) {
-             throw new Error(`NotFound/Permission (${res.status}) - Try next account`);
-        }
-
+        if (res.status === 404 || res.status === 403 || res.status === 400) throw new Error(`NotFound/Permission (${res.status})`);
         if (!res.ok) throw new Error(`Check Status Failed (${res.status})`);
-
         const data = await res.json();
         const opResult = data.operations?.[0];
-        
-        if (!opResult) throw new Error("Operation not found in response - Try next account");
-
+        if (!opResult) throw new Error("Operation not found");
         const status = opResult.status;
-
         if (["MEDIA_GENERATION_STATUS_SUCCESSFUL", "MEDIA_GENERATION_STATUS_COMPLETED", "DONE"].includes(status)) {
-            let vidUrl = opResult.operation?.metadata?.video?.fifeUrl || 
-                         opResult.videoFiles?.[0]?.url || 
-                         opResult.response?.videoUrl;
-
-            let mediaId = opResult.response?.id || 
-                          opResult.operation?.response?.id ||
-                          opResult.mediaGenerationId;
-
+            let vidUrl = opResult.operation?.metadata?.video?.fifeUrl || opResult.videoFiles?.[0]?.url || opResult.response?.videoUrl;
+            let mediaId = opResult.response?.id || opResult.operation?.response?.id || opResult.mediaGenerationId;
             if (vidUrl) return { status: 'completed', video_url: vidUrl, mediaId: mediaId };
-            return { status: 'failed', message: 'Video URL not found in response' };
+            return { status: 'failed', message: 'Video URL not found' };
         }
-
-        if (status === "MEDIA_GENERATION_STATUS_FAILED") {
-            return { status: 'failed', message: JSON.stringify(opResult) };
-        }
-
+        if (status === "MEDIA_GENERATION_STATUS_FAILED") return { status: 'failed', message: JSON.stringify(opResult) };
         return { status: 'processing' };
     });
 }
@@ -455,12 +551,9 @@ async function handleSePayWebhook(request, env) {
         const amount = body.transferAmount || body.amount || 0;
         const match = content.match(/OPZ\d+/i);
         const transactionCode = match ? match[0].toUpperCase() : null;
-
         if (!transactionCode) return new Response(JSON.stringify({ success: false, message: "No transaction code" }), { status: 200 });
-        
         const sbUrl = env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
         const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
-
         const response = await fetch(`${sbUrl}/rest/v1/rpc/webhook_approve_transaction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` },
@@ -472,151 +565,89 @@ async function handleSePayWebhook(request, env) {
     }
 }
 
-// --- PROXY VIDEO DOWNLOAD HELPER ---
 async function handleProxyDownload(request) {
-    const corsHeaders = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-        'Access-Control-Expose-Headers': 'Content-Length, Content-Type' 
-    };
-    
+    const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Expose-Headers': 'Content-Length, Content-Type' };
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
-
     try {
         let url;
-        // Handle both POST and GET
-        if (request.method === 'POST') {
-            const body = await request.json();
-            url = body.url;
-        } else {
-            const u = new URL(request.url);
-            url = u.searchParams.get('url');
-        }
-
+        if (request.method === 'POST') { const body = await request.json(); url = body.url; } 
+        else { const u = new URL(request.url); url = u.searchParams.get('url'); }
         if (!url) return new Response("Missing URL", { status: 400, headers: corsHeaders });
-
         const response = await fetch(url);
-        
-        // Recreate headers to be mutable and ensure CORS is set
         const newHeaders = new Headers(response.headers);
         newHeaders.set('Access-Control-Allow-Origin', '*');
         newHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
-        
-        return new Response(response.body, {
-            status: response.status,
-            headers: newHeaders
-        });
-    } catch (e) {
-        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders });
-    }
+        return new Response(response.body, { status: response.status, headers: newHeaders });
+    } catch (e) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
 }
 
 export default {
     async fetch(request, env, ctx) {
-        const corsHeaders = {
-            'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With',
-        };
-
-        if (request.method === 'OPTIONS') {
-            return new Response(null, { headers: corsHeaders });
-        }
-
-        const sendJson = (data, status = 200) => {
-            return new Response(JSON.stringify(data), {
-                status: status,
-                headers: {
-                    'Content-Type': 'application/json',
-                    ...corsHeaders
-                }
-            });
-        };
-
+        const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With' };
+        if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
+        const sendJson = (data, status = 200) => new Response(JSON.stringify(data), { status: status, headers: { 'Content-Type': 'application/json', ...corsHeaders } });
         const url = new URL(request.url);
         const path = url.pathname;
-
         if (path.includes('/sepay-webhook')) return handleSePayWebhook(request, env);
-        // ADDED: Route for Proxy Download
         if (path.includes('/proxy-download')) return handleProxyDownload(request);
-
         try {
             let body = {};
-            try {
-                if (request.method !== 'GET' && request.method !== 'HEAD') {
-                    body = await request.json();
-                }
-            } catch (e) {}
-
+            if (request.method !== 'GET' && request.method !== 'HEAD') { body = await request.json(); }
             let action = body.action || '';
-
             if (!action) {
                 if (path.includes('/gemini-proxy')) action = 'gemini_proxy';
                 else if (path.includes('/auth')) action = 'auth';
                 else if (path.includes('/upload')) action = 'upload';
                 else if (path.includes('/create')) action = 'create';
+                else if (path.includes('/flow-create')) action = 'flow_create';
+                else if (path.includes('/flow-check')) action = 'flow_check';
+                else if (path.includes('/flow-upscale')) action = 'flow_upscale'; // NEW
                 else if (path.includes('/upscale')) action = 'upscale';
                 else if (path.includes('/check')) action = 'check';
-                else if (path.includes('/update-token')) action = 'update_token';
             }
-
             if (action === 'gemini_proxy') {
                 const { data, status } = await handleGeminiProxy(body, env, request);
                 return sendJson(data, status); 
-            }
-            
-            else if (action === 'auth') {
+            } else if (action === 'auth') {
                 return sendJson({ status: "connected", token: "managed-by-worker" });
-            } 
-            else if (action === 'upload') {
+            } else if (action === 'upload') {
                 const accounts = await getAllAccounts(env);
-                // Extract imageAspectRatio from body, created by client
                 const mediaId = await uploadImage(env, accounts, body.image, body.imageAspectRatio);
                 return sendJson({ mediaId });
-            }
-            else if (action === 'create') {
+            } else if (action === 'create') {
                 const accounts = await getAllAccounts(env);
-                // Extract params including atomic image upload data
-                const result = await triggerGeneration(
-                    env, 
-                    accounts, 
-                    body.prompt, 
-                    body.mediaId, 
-                    body.videoAspectRatio,
-                    body.image, // Atomic: Base64 data
-                    body.imageAspectRatio // Atomic: Ratio Enum
-                );
+                const result = await triggerGeneration(env, accounts, body.prompt, body.mediaId, body.videoAspectRatio, body.image, body.imageAspectRatio);
                 return sendJson(result);
-            }
-            else if (action === 'upscale') {
+            } else if (action === 'flow_create' || action === 'flow_media_create') {
+                const accounts = await getAllAccounts(env);
+                const count = body.numberOfImages || 1;
+                const result = await triggerFlowMediaCreate(env, accounts, body.prompt, body.image, body.imageAspectRatio, body.dynamicToken, count);
+                return sendJson(result);
+            } else if (action === 'flow_upscale') {
+                const accounts = await getAllAccounts(env);
+                // CRITICAL: Filter accounts to match the creation project ID
+                const specificAccounts = body.projectId 
+                    ? accounts.filter(acc => acc.project_id === body.projectId)
+                    : accounts;
+                const accountsToUse = specificAccounts.length > 0 ? specificAccounts : accounts;
+                
+                const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId, body.dynamicToken);
+                return sendJson(result);
+            } else if (action === 'flow_check') {
+                const accounts = await getAllAccounts(env);
+                const result = await checkFlowStatus(env, accounts, body.taskId);
+                return sendJson(result);
+            } else if (action === 'upscale') {
                 const accounts = await getAllAccounts(env);
                 const result = await triggerUpscale(env, accounts, body.mediaId);
                 return sendJson(result);
-            }
-            else if (action === 'check') {
+            } else if (action === 'check') {
                 const accounts = await getAllAccounts(env);
                 const result = await checkStatus(env, accounts, body.task_id, body.scene_id);
                 return sendJson(result);
+            } else {
+                return sendJson({ status: "ok", message: "Cloudflare Worker is running", request_path: path });
             }
-            
-            else if (action === 'update_token') {
-                return sendJson({ status: "deprecated", message: "Bot should update Supabase video_accounts table directly." });
-            }
-            else {
-                return sendJson({ 
-                    status: "ok", 
-                    message: "Cloudflare Worker is running (Quota Managed)", 
-                    request_path: path,
-                    detected_action: action || "none"
-                }, 200);
-            }
-
-        } catch (error) {
-            return sendJson({ 
-                error: true, 
-                message: error.message || String(error)
-            }, 500);
-        }
+        } catch (error) { return sendJson({ error: true, message: error.message || String(error) }, 500); }
     }
 };
