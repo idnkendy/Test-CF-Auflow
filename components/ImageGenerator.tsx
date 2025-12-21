@@ -230,19 +230,15 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
         if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
             const promises = Array.from({ length: numberOfImages }).map(async () => {
-                // Pass array of reference images
                 const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId, referenceImages);
                 return images[0];
             });
             return await Promise.all(promises);
         } else {
-            // Standard resolution
             if (sourceImage && referenceImages && referenceImages.length > 0) {
-                // If standard has both source and references, use the multi-ref editor
                 const results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
                 return results.map(r => r.imageUrl);
             } else {
-                // Otherwise use standard generation
                 return await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId);
             }
         }
@@ -268,6 +264,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         try {
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Render kiến trúc (${numberOfImages} ảnh) - ${resolution}`);
+                // Chờ 300ms để DB cập nhật log trước khi tạo Job (Tránh lỗi FK)
+                await new Promise(r => setTimeout(r, 300));
             }
             
             const { data: { user } } = await supabase.auth.getUser();
@@ -279,11 +277,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     cost: cost,
                     usage_log_id: logId
                 });
-                
-                // CRITICAL SAFETY CHECK: If credits were deducted but job creation failed
-                if (!jobId && logId) {
-                    throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
-                }
                 
                 setActiveJobId(jobId);
             }
@@ -322,10 +315,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             console.error("Generation Error:", err);
             
             let userErrorMessage = err.message;
-            if (!userErrorMessage.includes('không đủ credits') && !userErrorMessage.includes('API Key') && !userErrorMessage.includes('Hệ thống') && !userErrorMessage.includes('Safety Filter') && !userErrorMessage.includes('IP hiện tại')) {
-                 userErrorMessage = 'Đã xảy ra lỗi trong quá trình xử lý.';
-            }
-
             if (logId) {
                 userErrorMessage += " (Credits đã được hoàn lại)";
             }
@@ -338,7 +327,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             
              const { data: { user } } = await supabase.auth.getUser();
              if (user && logId) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi khi render kiến trúc (${err.message})`);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống khi tạo Job (${err.message})`, logId);
              }
 
         } finally {
@@ -356,7 +345,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         onStateChange({ isUpscaling: true, error: null });
 
         try {
-            // FIX: Use safe helper to get base64 data regardless of URL type (blob or data uri)
             const imageToUpscale = await geminiService.getFileDataFromUrl(resultImage);
 
             const upscalePrompt = "Upscale this architectural rendering to a high resolution. Enhance the details, textures, and lighting to make it look photorealistic and professional. Do not change the composition or the core design.";
@@ -384,7 +372,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
     const handleSendImageToSync = async (imageUrl: string) => {
         try {
-            // FIX: Use safe helper to get base64 data regardless of URL type (blob or data uri)
             const fileData = await geminiService.getFileDataFromUrl(imageUrl);
             onSendToViewSync(fileData);
         } catch (e) {

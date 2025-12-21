@@ -19,11 +19,9 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
 
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            // OPTIMIZATION: Limit max dimension to 1280px (Safe zone for Gemini/Vercel/Cloudflare limits)
-            // AI Vision models typically perform optimally around 512-1024px. 
-            // Sending 4K images is unnecessary payload overhead.
-            const MAX_WIDTH = 1280;
-            const MAX_HEIGHT = 1280;
+            // OPTIMIZATION: Limit max dimension to 2048px (Enhanced for Gemini Pro Image quality)
+            const MAX_WIDTH = 2048;
+            const MAX_HEIGHT = 2048;
             let width = img.width;
             let height = img.height;
 
@@ -53,8 +51,8 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Compress to JPEG 80% - Significant size reduction, virtually no loss for AI vision
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
+            // Compress to JPEG 85% - Higher quality for higher resolution
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
             
             // Create a new blob URL from the compressed data for efficient rendering
             canvas.toBlob((blob) => {
@@ -69,7 +67,7 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
                 } else {
                     reject(new Error("Compression failed"));
                 }
-            }, 'image/jpeg', 0.8);
+            }, 'image/jpeg', 0.85);
         };
 
         img.onerror = (e) => {

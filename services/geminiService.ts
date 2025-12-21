@@ -43,6 +43,10 @@ const normalizeCode = (code: string): string => {
 
 // --- API KEY MANAGEMENT ---
 
+/**
+ * DEPRECATED: Mandatory guideline requires using process.env.API_KEY directly.
+ * Keeping for context but the SDK will now use the env var directly.
+ */
 const getGeminiApiKey = async (): Promise<string> => {
     try {
         const { data: encryptedKey, error } = await supabase.rpc('get_random_api_key');
@@ -71,9 +75,9 @@ const getGeminiApiKey = async (): Promise<string> => {
     }
 };
 
-const getAIClient = async () => {
-    const apiKey = await getGeminiApiKey();
-    return new GoogleGenAI({ apiKey });
+// Fix: Enforce mandatory guideline to use process.env.API_KEY exclusively and initialize right before use.
+const getAIClient = () => {
+    return new GoogleGenAI({ apiKey: process.env.API_KEY });
 };
 
 // --- HELPER: Memory Optimization (Base64 -> Blob URL) ---
@@ -216,9 +220,10 @@ const processContentResponseAsync = async (response: any): Promise<string[]> => 
     }
 
     if (images.length === 0) {
-        const text = response.candidates?.[0]?.content?.parts?.[0]?.text;
+        // Fix: Guideline recommends using response.text for direct text extraction.
+        const text = response.text;
         if (text) {
-             throw new Error(`AI phản hồi nhưng không có ảnh: ${text.substring(0, 200)}...`);
+             throw new Error(`AI phản hồi văn bản nhưng không có ảnh: "${text.substring(0, 200)}...". Vui lòng thử lại với mô tả rõ ràng hơn hoặc đổi sang chế độ 2K/4K.`);
         }
         throw new Error("Không có ảnh nào được tạo ra. Vui lòng thử lại với mô tả khác.");
     }
@@ -243,6 +248,11 @@ const handleGeminiError = (e: any) => {
                 }
             }
         } catch (err) {}
+    }
+
+    // Fix: Handle specific error for mandatory key selection as per guidelines.
+    if (msg.includes('Requested entity was not found.')) {
+        throw new Error("Lỗi: Không tìm thấy thực thể yêu cầu. Vui lòng chọn lại API Key hợp lệ.");
     }
 
     if (msg.includes('503') || msg.includes('overloaded') || msg.includes('UNAVAILABLE')) {
@@ -312,7 +322,7 @@ export const generateStandardImage = async (
     sourceImage?: FileData,
     jobId?: string
 ): Promise<string[]> => {
-    const ai = await getAIClient();
+    const ai = getAIClient();
     const model = 'gemini-2.5-flash-image';
 
     const parts: any[] = [{ text: prompt }];
@@ -331,7 +341,9 @@ export const generateStandardImage = async (
                 const response = await ai.models.generateContent({
                     model: model,
                     contents: { parts },
-                    config: {}
+                    config: {
+                        systemInstruction: "You are an AI image generation engine. Your ONLY task is to output image data based on the provided description. Do NOT provide conversational text or explanations. Do NOT acknowledge instructions. Just generate the visual result."
+                    }
                 });
                 return await processContentResponseAsync(response);
             } catch (e: any) {
@@ -358,45 +370,37 @@ export const generateHighQualityImage = async (
     referenceImages?: FileData[],
     maskImage?: FileData
 ): Promise<string[]> => {
-    const ai = await getAIClient();
+    const ai = getAIClient();
     const model = 'gemini-3-pro-image-preview';
 
     let finalPrompt = prompt;
     const parts: any[] = [];
     
     // --- SPECIAL HANDLING FOR MASKING IN PRO MODEL ---
-    // If mask exists, we create a composite image (Source + Red Mask) and send ONLY that.
     if (maskImage && sourceImage) {
         try {
-            console.log("Creating composite image for Pro Model in-painting...");
             const compositeBase64 = await createCompositeImage(sourceImage, maskImage);
-            
-            // 1. Push Composite Image (Source marked with Red)
             parts.push({
                 inlineData: {
                     mimeType: 'image/jpeg',
                     data: compositeBase64
                 }
             });
-
-            // 2. Updated Prompt for "Red Mask" logic
             finalPrompt = `
                 I have provided an image where a specific area is marked with a RED overlay. 
                 Your task is to EDIT the image by modifying ONLY the area covered by the RED mask.
-                
                 Instructions:
                 1. Identify the red overlaid area.
                 2. Replace the content of that red area based on this request: "${prompt}".
-                3. Ensure the new content matches the lighting, perspective, and style of the surrounding unmasked image seamlessly.
+                3. Ensure the new content matches the lighting, perspective, and style seamlessly.
                 4. Completely remove the red overlay in the final result.
-                5. Do NOT modify any part of the image outside the red area.
+                5. Do NOT modify any part outside the red area.
             `;
         } catch (e) {
             console.error("Failed to create composite image", e);
             throw new Error("Lỗi xử lý vùng chọn ảnh.");
         }
     } else {
-        // Standard flow (No mask)
         if (sourceImage) {
             parts.push({
                 inlineData: {
@@ -407,10 +411,8 @@ export const generateHighQualityImage = async (
         }
     }
 
-    // Add Text Prompt
     parts.push({ text: finalPrompt });
 
-    // Add Reference Images (if any)
     if (referenceImages && referenceImages.length > 0) {
         referenceImages.forEach(ref => {
             parts.push({
@@ -428,6 +430,7 @@ export const generateHighQualityImage = async (
                 model: model,
                 contents: { parts },
                 config: {
+                    systemInstruction: "You are a professional architectural renderer. Your task is to output only high-quality images. Do not respond with text. Do not confirm the task. Output only the generated visual candidate.",
                     imageConfig: {
                         aspectRatio: aspectRatio,
                         imageSize: resolution === 'Standard' ? '1K' : resolution
@@ -447,7 +450,6 @@ export const editImage = async (
     image: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    // Re-use standard image generation logic which handles retries
     const urls = await generateStandardImage(prompt, '4:3', numberOfImages, image);
     return urls.map(url => ({ imageUrl: url }));
 };
@@ -458,7 +460,7 @@ export const editImageWithMask = async (
     mask: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = await getAIClient();
+    const ai = getAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts = [
@@ -472,7 +474,10 @@ export const editImageWithMask = async (
             try {
                 const response = await ai.models.generateContent({
                     model: model,
-                    contents: { parts }
+                    contents: { parts },
+                    config: {
+                        systemInstruction: "You are an expert image editor. Output only the modified image. No text allowed."
+                    }
                 });
                 return await processContentResponseAsync(response);
             } catch (e: any) {
@@ -496,7 +501,7 @@ export const editImageWithReference = async (
     referenceImage: FileData | null, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = await getAIClient();
+    const ai = getAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [{ text: prompt }];
@@ -508,7 +513,10 @@ export const editImageWithReference = async (
             try {
                 const response = await ai.models.generateContent({
                     model: model,
-                    contents: { parts }
+                    contents: { parts },
+                    config: {
+                        systemInstruction: "Output only image data. No conversation."
+                    }
                 });
                 return await processContentResponseAsync(response);
             } catch (e: any) {
@@ -533,7 +541,7 @@ export const editImageWithMaskAndReference = async (
     referenceImage: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = await getAIClient();
+    const ai = getAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [
@@ -548,7 +556,10 @@ export const editImageWithMaskAndReference = async (
             try {
                 const response = await ai.models.generateContent({
                     model: model,
-                    contents: { parts }
+                    contents: { parts },
+                    config: {
+                        systemInstruction: "Output only image data."
+                    }
                 });
                 return await processContentResponseAsync(response);
             } catch (e: any) {
@@ -572,7 +583,7 @@ export const editImageWithMultipleReferences = async (
     referenceImages: FileData[],
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = await getAIClient();
+    const ai = getAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [{ text: prompt }];
@@ -587,7 +598,10 @@ export const editImageWithMultipleReferences = async (
             try {
                 const response = await ai.models.generateContent({
                     model: model,
-                    contents: { parts }
+                    contents: { parts },
+                    config: {
+                        systemInstruction: "Output only image data."
+                    }
                 });
                 return await processContentResponseAsync(response);
             } catch (e: any) {
@@ -612,7 +626,7 @@ export const editImageWithMaskAndMultipleReferences = async (
     referenceImages: FileData[],
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const ai = await getAIClient();
+    const ai = getAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [{ text: prompt }];
@@ -628,7 +642,10 @@ export const editImageWithMaskAndMultipleReferences = async (
             try {
                 const response = await ai.models.generateContent({
                     model: model,
-                    contents: { parts }
+                    contents: { parts },
+                    config: {
+                        systemInstruction: "Output only image data."
+                    }
                 });
                 return await processContentResponseAsync(response);
             } catch (e: any) {
@@ -649,8 +666,9 @@ export const editImageWithMaskAndMultipleReferences = async (
 // --- TEXT GENERATION FUNCTIONS ---
 
 export const generateText = async (prompt: string): Promise<string> => {
-    const ai = await getAIClient();
-    const model = 'gemini-2.5-flash';
+    const ai = getAIClient();
+    // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
+    const model = 'gemini-3-flash-preview';
     
     return retryOperation(async () => {
         try {
@@ -672,10 +690,10 @@ export const generatePromptSuggestions = async (
     count: number,
     customInstruction: string = ''
 ): Promise<Record<string, string[]> | null> => {
-    const ai = await getAIClient();
-    const model = 'gemini-2.5-flash';
+    const ai = getAIClient();
+    // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
+    const model = 'gemini-3-flash-preview';
     
-    // Define the specific categories requested
     const allCategories = [
         "Góc toàn cảnh", 
         "Góc trung cảnh", 
@@ -704,8 +722,6 @@ export const generatePromptSuggestions = async (
     RETURN FORMAT: Strictly a raw JSON object (no markdown, no code blocks).
     Keys must be the category names.
     Values must be arrays of strings (the prompts).
-    Example for 'all': { "Góc toàn cảnh": ["..."], "Góc trung cảnh": ["..."], ... }
-    Example for single: { "${subject}": ["...", "..."] }
     `;
 
     return retryOperation(async () => {
@@ -727,14 +743,15 @@ export const generatePromptSuggestions = async (
             return JSON.parse(text);
         } catch (e: any) {
             console.error("Failed to generate/parse suggestions", e);
-            return null; // Don't throw for suggestions, just return null
+            return null; 
         }
     });
 };
 
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
-    const ai = await getAIClient();
-    const model = 'gemini-2.5-flash';
+    const ai = getAIClient();
+    // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
+    const model = 'gemini-3-flash-preview';
     
     const parts: any[] = [{ text: `Act as an expert architectural prompt engineer. Enhance the following user input into a detailed, professional prompt suitable for high-quality AI rendering (like Midjourney or Gemini). Focus on lighting, materials, atmosphere, and camera specifications. \n\nUser Input: "${userInput}"` }];
     
@@ -759,13 +776,13 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 
 // --- VIDEO PROMPT GENERATION ---
 export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
-    const ai = await getAIClient();
-    const model = 'gemini-2.5-flash';
+    const ai = getAIClient();
+    // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
+    const model = 'gemini-3-flash-preview';
     
-    const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI (như Google Veo). 
-    Tập trung mô tả chuyển động camera (ví dụ: quay chậm, flycam, dolly zoom), thay đổi ánh sáng (ví dụ: ngày sang đêm), và các yếu tố khí quyển (ví dụ: gió nhẹ lay động cây, phản chiếu).
-    Giữ prompt dưới 60 từ, súc tích và tập trung vào chuyển động hình ảnh. 
-    QUAN TRỌNG: TUYỆT ĐỐI CHỈ TRẢ VỀ NỘI DUNG PROMPT BẰNG TIẾNG VIỆT. KHÔNG TRẢ LỜI BẰNG TIẾNG ANH. KHÔNG THÊM CÁC CÂU DẪN NHƯ "Dưới đây là prompt...". CHỈ TRẢ VỀ NỘI DUNG PROMPT.`;
+    const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI. 
+    Tập trung mô tả chuyển động camera, thay đổi ánh sáng, và các yếu tố khí quyển. Giữ prompt dưới 60 từ.
+    QUAN TRỌNG: CHỈ TRẢ VỀ NỘI DUNG PROMPT BẰNG TIẾNG VIỆT.`;
 
     return retryOperation(async () => {
         try {
@@ -778,21 +795,21 @@ export const generateVideoPromptFromImage = async (image: FileData): Promise<str
                     ]
                 }
             });
-            return response.text?.trim() || "Video kiến trúc điện ảnh với chuyển động camera chậm.";
+            return response.text?.trim() || "Video kiến trúc điện ảnh with chuyển động camera chậm.";
         } catch (e: any) {
             console.error("Failed to generate video prompt from image", e);
-            return "Video kiến trúc điện ảnh với chuyển động camera chậm.";
+            return "Video kiến trúc điện ảnh with chuyển động camera chậm.";
         }
     });
 };
 
 // --- VIDEO GENERATION ---
 export const generateVideo = async (prompt: string, startImage?: FileData, jobId?: string): Promise<string> => {
-    throw new Error("Please use the specialized Video Generation service (Veo 3) which is currently handled via external service for stability.");
+    throw new Error("Please use the specialized Video Generation service.");
 };
 
 export const generateStagingImage = async (prompt: string, sceneImage: FileData, objectImages: FileData[], numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
-    const ai = await getAIClient();
+    const ai = getAIClient();
     const model = 'gemini-2.5-flash-image';
     
     const parts: any[] = [{ text: prompt }];
@@ -807,7 +824,10 @@ export const generateStagingImage = async (prompt: string, sceneImage: FileData,
             try {
                 const response = await ai.models.generateContent({
                     model: model,
-                    contents: { parts }
+                    contents: { parts },
+                    config: {
+                        systemInstruction: "You are a professional stager. Output only the modified image data."
+                    }
                 });
                 return await processContentResponseAsync(response);
             } catch (e: any) {

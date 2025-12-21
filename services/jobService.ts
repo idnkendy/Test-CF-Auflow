@@ -13,7 +13,7 @@ const compressImage = async (blob: Blob): Promise<Blob> => {
         img.onload = () => {
             URL.revokeObjectURL(url);
             const canvas = document.createElement('canvas');
-            const MAX_SIZE = 1920;
+            const MAX_SIZE = 2048;
             let width = img.width;
             let height = img.height;
             if (width > MAX_SIZE || height > MAX_SIZE) {
@@ -58,23 +58,46 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
     } catch (e) { return null; }
 };
 
-export const createJob = async (jobData: Partial<GenerationJob>): Promise<string> => {
+/**
+ * TẠO JOB VỚI CƠ CHẾ RETRY
+ */
+export const createJob = async (jobData: Partial<GenerationJob>, retries = 2): Promise<string> => {
     try {
-        const { data, error } = await supabase.from('generation_jobs').insert([{ 
-            ...jobData, 
-            status: 'pending', 
-            created_at: new Date().toISOString(), 
-            updated_at: new Date().toISOString() 
-        }]).select('id').single();
+        // Dùng .select() thay vì .single() để tránh lỗi RLS False Positive
+        const { data, error } = await supabase
+            .from('generation_jobs')
+            .insert([{ 
+                ...jobData, 
+                status: 'pending', 
+                created_at: new Date().toISOString(), 
+                updated_at: new Date().toISOString() 
+            }])
+            .select('id');
         
-        if (error) throw new Error(`Lỗi tạo Job: ${error.message}`);
+        if (error) {
+            // Nếu lỗi do trễ khóa ngoại (Foreign Key), thử lại sau 1s
+            if (retries > 0 && (error.code === '23503' || error.message.includes('foreign key'))) {
+                console.warn("[JobService] FK Error, retrying...", error.message);
+                await new Promise(r => setTimeout(r, 1000));
+                return createJob(jobData, retries - 1);
+            }
+            throw error;
+        }
+
+        if (!data || data.length === 0) {
+            throw new Error("Insert succeeded but no ID returned (RLS Issue)");
+        }
         
-        // QUAN TRỌNG: Xóa mã giao dịch khỏi localStorage ngay khi Job đã được tạo thành công
+        // Thành công: Xóa các marker giao dịch tạm thời
         localStorage.removeItem('opzen_last_charge_id');
         localStorage.removeItem('opzen_pending_tx');
+        localStorage.removeItem('opzen_last_log_id');
 
-        return data.id;
-    } catch (e: any) { throw new Error(e.message || "Job Creation Failed"); }
+        return data[0].id;
+    } catch (e: any) { 
+        console.error("[JobService] Critical Create Job Error:", e);
+        throw new Error(e.message || "Không thể khởi tạo bản ghi công việc."); 
+    }
 };
 
 export const updateJobStatus = async (jobId: string, status: 'pending' | 'processing' | 'completed' | 'failed', resultUrl?: string, errorMessage?: string) => {

@@ -4,6 +4,7 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { MaterialSwapperState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import * as jobService from '../services/jobService';
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -22,34 +23,10 @@ interface MaterialSwapperProps {
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
 }
 
-const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
-    const ratio = width / height;
-    const ratios: { [key in AspectRatio]: number } = {
-        "1:1": 1,
-        "3:4": 3/4,
-        "4:3": 4/3,
-        "9:16": 9/16,
-        "16:9": 16/9
-    };
-    
-    let closest: AspectRatio = '1:1';
-    let minDiff = Infinity;
-
-    (Object.keys(ratios) as AspectRatio[]).forEach((r) => {
-        const diff = Math.abs(ratio - ratios[r]);
-        if (diff < minDiff) {
-            minDiff = diff;
-            closest = r;
-        }
-    });
-    return closest;
-};
-
 const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { prompt, sceneImage, materialImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-    // Calculate cost based on resolution
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -59,229 +36,97 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             default: return 5;
         }
     };
-    
     const cost = numberOfImages * getCostPerImage();
-
-    const handleResolutionChange = (val: ImageResolution) => {
-        onStateChange({ resolution: val });
-    };
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
              return;
         }
 
-        if (!prompt) {
-            onStateChange({ error: 'Vui lòng nhập mô tả yêu cầu.' });
-            return;
-        }
-        if (!sceneImage) {
-            onStateChange({ error: 'Vui lòng tải lên ảnh không gian.' });
-            return;
-        }
-        if (!materialImage) {
-            onStateChange({ error: 'Vui lòng tải lên ảnh vật liệu hoặc nội thất tham khảo.' });
+        if (!prompt || !sceneImage || !materialImage) {
+            onStateChange({ error: 'Vui lòng điền đủ thông tin và tải ảnh.' });
             return;
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-
         let logId: string | null = null;
+        let jobId: string | null = null;
 
         try {
              if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Thay vật liệu (${numberOfImages} ảnh) - ${resolution}`);
             }
 
-            let results: { imageUrl: string }[] = [];
-            
-            // Build prompt to enforce aspect ratio
-            const ratioInstruction = `The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally.`;
-            const fullPrompt = `${prompt}. ${ratioInstruction}`;
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                jobId = await jobService.createJob({
+                    user_id: user.id,
+                    tool_id: Tool.MaterialSwap,
+                    prompt: prompt,
+                    cost: cost,
+                    usage_log_id: logId
+                });
+            }
 
-            // High Quality (Pro) Logic
+            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
+
+            const fullPrompt = `${prompt}. Maintain ${aspectRatio} ratio. Photorealistic quality.`;
+            let imageUrls: string[] = [];
+
             if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    // Use materialImage as referenceImage
-                    const images = await geminiService.generateHighQualityImage(
-                        fullPrompt, 
-                        aspectRatio, 
-                        resolution, 
-                        sceneImage, 
-                        undefined, 
-                        [materialImage]
-                    );
-                    return { imageUrl: images[0] };
+                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sceneImage, jobId || undefined, [materialImage]);
+                    return images[0];
                 });
-                results = await Promise.all(promises);
-            }
-            // Standard (Flash) Logic
-            else {
-                results = await geminiService.editImageWithReference(fullPrompt, sceneImage, materialImage, numberOfImages);
+                imageUrls = await Promise.all(promises);
+            } else {
+                const results = await geminiService.editImageWithReference(fullPrompt, sceneImage, materialImage, numberOfImages);
+                imageUrls = results.map(r => r.imageUrl);
             }
 
-            const imageUrls = results.map(r => r.imageUrl);
             onStateChange({ resultImages: imageUrls });
+            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
             imageUrls.forEach(url => {
-                 historyService.addToHistory({
-                    tool: Tool.MaterialSwap,
-                    prompt: fullPrompt,
-                    sourceImageURL: sceneImage.objectURL,
-                    resultImageURL: url,
-                });
+                 historyService.addToHistory({ tool: Tool.MaterialSwap, prompt: fullPrompt, sourceImageURL: sceneImage.objectURL, resultImageURL: url });
             });
-
         } catch (err: any) {
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) {
-                errorMessage += " (Credits đã được hoàn lại)";
-            }
-            onStateChange({ error: errorMessage });
-
-            // Refund logic
+            onStateChange({ error: err.message });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi thay vật liệu (${err.message})`);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi thay vật liệu (${err.message})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
         }
     };
 
-    const handleSceneFileSelect = (fileData: FileData | null) => {
-        let newRatio = aspectRatio;
-        if (fileData?.objectURL) {
-            const img = new Image();
-            img.onload = () => {
-                const detected = getClosestAspectRatio(img.width, img.height);
-                onStateChange({ sceneImage: fileData, resultImages: [], aspectRatio: detected });
-            };
-            img.src = fileData.objectURL;
-        } else {
-            onStateChange({ sceneImage: fileData, resultImages: [] });
-        }
-    };
-    
-    const handleMaterialFileSelect = (fileData: FileData | null) => {
-        onStateChange({ materialImage: fileData });
-    };
-
-    const handleDownload = () => {
-        if (resultImages.length !== 1) return;
-        const link = document.createElement('a');
-        link.href = resultImages[0];
-        link.download = "material-swap.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
     return (
         <div>
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Thay Vật Liệu / Staging</h2>
-            <p className="text-text-secondary dark:text-gray-300 mb-6">Tải lên ảnh không gian và ảnh vật liệu hoặc đồ nội thất. AI sẽ tự động thay thế và staging vào không gian của bạn.</p>
-            
+            <h2 className="text-2xl font-bold mb-4">AI Thay Vật Liệu / Staging</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* --- INPUTS --- */}
-                <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Không Gian (Phòng, ngoại thất...)</label>
-                        <ImageUpload onFileSelect={handleSceneFileSelect} id="scene-image-upload" previewUrl={sceneImage?.objectURL} />
-                    </div>
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Tải Lên Ảnh Vật Liệu / Nội Thất Tham Khảo</label>
-                        <ImageUpload onFileSelect={handleMaterialFileSelect} id="material-image-upload" previewUrl={materialImage?.objectURL} />
-                    </div>
-                    <div>
-                        <label htmlFor="prompt-swap" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Mô tả yêu cầu</label>
-                        <textarea
-                            id="prompt-swap"
-                            rows={3}
-                            className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                            placeholder="VD: Thay thế ghế sofa trong phòng khách bằng chiếc ghế trong ảnh tham khảo..."
-                            value={prompt}
-                            onChange={(e) => onStateChange({ prompt: e.target.value })}
-                        />
-                    </div>
-                    
+                <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border">
+                    <ImageUpload onFileSelect={(f) => onStateChange({ sceneImage: f, resultImages: [] })} previewUrl={sceneImage?.objectURL} />
+                    <ImageUpload onFileSelect={(f) => onStateChange({ materialImage: f })} previewUrl={materialImage?.objectURL} />
+                    <textarea rows={3} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder="Mô tả yêu cầu..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                     <div className="grid grid-cols-2 gap-4">
-                        <div>
-                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                        </div>
-                        <div>
-                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
-                        </div>
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
+                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
                     </div>
-                     
-                     <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
-                    
-                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-1 border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                        </div>
-                        <div className="text-xs">
-                            {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
-                            ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
-                            )}
-                        </div>
+                    <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} />
+                    <div className="flex justify-between text-sm">
+                        <span>Chi phí: <b>{cost} Credits</b></span>
+                        <span>{userCredits < cost ? 'Không đủ' : `Còn: ${userCredits}`}</span>
                     </div>
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isLoading || !sceneImage || !materialImage || userCredits < cost}
-                        className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
-                    >
-                        {isLoading ? <><Spinner /> Đang xử lý...</> : 'Thực Hiện Thay Thế'}
+                    <button onClick={handleGenerate} disabled={isLoading || !sceneImage || !materialImage || userCredits < cost} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg">
+                        {isLoading ? <Spinner /> : 'Thực Hiện Thay Thế'}
                     </button>
-                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                 </div>
-
-                {/* --- RESULTS --- */}
-                <div>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">So sánh Trước & Sau</h3>
-                        {resultImages.length === 1 && (
-                             <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPreviewImage(resultImages[0])}
-                                    className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                      <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                                    </svg>
-                                    Phóng to
-                                </button>
-                                <button onClick={handleDownload} className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm">
-                                    Tải xuống
-                                </button>
-                            </div>
-                        )}
-                    </div>
-                    <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                        {isLoading && <Spinner />}
-                        
-                        {!isLoading && resultImages.length === 1 && sceneImage && (
-                            <ImageComparator
-                                originalImage={sceneImage.objectURL}
-                                resultImage={resultImages[0]}
-                            />
-                        )}
-                        
-                        {!isLoading && resultImages.length > 1 && (
-                            <ResultGrid images={resultImages} toolName="material-swap" />
-                        )}
-
-                        {!isLoading && resultImages.length === 0 && (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{sceneImage ? 'Kết quả sẽ được hiển thị ở đây.' : 'Tải lên ảnh để bắt đầu.'}</p>
-                        )}
-                    </div>
+                <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden">
+                    {isLoading ? <Spinner /> : resultImages.length === 1 && sceneImage ? <ImageComparator originalImage={sceneImage.objectURL} resultImage={resultImages[0]} /> : resultImages.length > 1 ? <ResultGrid images={resultImages} toolName="material-swap" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
                 </div>
             </div>
         </div>

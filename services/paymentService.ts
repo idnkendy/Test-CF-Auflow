@@ -72,7 +72,6 @@ export const updateUserProfile = async (userId: string, fullName: string, phone:
 
 /**
  * TRỪ TIỀN (Deduct)
- * Trả về ID của dòng Log để App có thể theo dõi.
  */
 export const deductCredits = async (userId: string, amount: number, description: string): Promise<string> => {
     const { data: logId, error } = await supabase.rpc('deduct_credits', {
@@ -83,7 +82,6 @@ export const deductCredits = async (userId: string, amount: number, description:
 
     if (error) throw new Error(`Giao dịch thất bại: ${error.message}`);
     
-    // Lưu tạm Log ID vào máy khách để cứu hộ nếu trình duyệt bị tắt đột ngột
     if (logId) {
         localStorage.setItem('opzen_last_log_id', logId);
     }
@@ -92,13 +90,15 @@ export const deductCredits = async (userId: string, amount: number, description:
 
 /**
  * HOÀN TIỀN (Refund)
- * p_usage_log_id là tham số cực kỳ quan trọng để đánh dấu dòng tiền này đã được giải quyết.
  */
 export const refundCredits = async (userId: string, amount: number, description: string, originalLogId?: string): Promise<void> => {
     if (amount <= 0) return;
 
-    // Nếu App gọi hoàn tiền, ưu tiên lấy Log ID từ localStorage nếu tham số truyền vào bị thiếu
     const finalLogId = originalLogId || localStorage.getItem('opzen_last_log_id');
+
+    if (!finalLogId) {
+        console.warn("[PaymentService] Không tìm thấy Log ID để hoàn tiền chính xác.");
+    }
 
     const { error } = await supabase.rpc('refund_credits', {
         p_user_id: userId,
@@ -108,10 +108,10 @@ export const refundCredits = async (userId: string, amount: number, description:
     });
 
     if (!error) {
-        // Hoàn tiền xong thì xóa dấu vết tạm
         localStorage.removeItem('opzen_last_log_id');
+        console.log(`[PaymentService] Đã hoàn tiền thành công (${amount} credits)`);
     } else {
-        console.error("[PaymentService] Lỗi hoàn tiền:", error.message);
+        console.error("[PaymentService] Lỗi hoàn tiền nghiêm trọng:", error.message);
     }
 };
 
