@@ -1,5 +1,5 @@
 
-import React, { Component, ErrorInfo, ReactNode } from 'react';
+import React, { ErrorInfo, ReactNode } from 'react';
 
 interface Props {
   children?: ReactNode;
@@ -10,8 +10,7 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Changed inheritance to explicitly use Component from 'react' to ensure setState and props are available.
-export class ErrorBoundary extends Component<Props, State> {
+export class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
@@ -31,7 +30,6 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   private handleReset = () => {
-      // Fix: Now correctly accesses setState from the base Component class.
       this.setState({ hasError: false, error: null });
       // Optional: Clear specific local storage if needed to reset bad state
       localStorage.removeItem('activeTool'); 
@@ -79,7 +77,6 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
-    // Fix: Now correctly accesses props from the base Component class.
     return this.props.children;
   }
 }

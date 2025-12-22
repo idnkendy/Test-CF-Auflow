@@ -4,7 +4,8 @@ import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { RenovationState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
-import * as jobService from '../services/jobService'; // Added jobService import
+import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService';
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -40,6 +41,8 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
     const { prompt, sourceImage, referenceImages, maskImage, isLoading, error, renovatedImages, numberOfImages, aspectRatio, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
     // Calculate cost based on resolution
     const getCostPerImage = () => {
@@ -58,6 +61,15 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         onStateChange({ resolution: val });
     };
 
+    const constructRenovationPrompt = () => {
+        let finalPrompt = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame while performing the renovation. Do not add black bars or letterbox. The renovation instruction is: ${prompt}`;
+        if (referenceImages && referenceImages.length > 0) {
+            finalPrompt += " Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).";
+        }
+        finalPrompt = `You are a professional architectural renovator. ${finalPrompt}`;
+        return finalPrompt;
+    };
+
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
              onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
@@ -74,30 +86,23 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         }
 
         onStateChange({ isLoading: true, error: null, renovatedImages: [] });
+        setStatusMessage('Đang lên phương án...');
+        setUpscaleWarning(null);
 
         let logId: string | null = null;
-        let jobId: string | null = null; // Defined for consistency
+        let jobId: string | null = null;
+
+        // Routing Logic:
+        // Use Flow if resolution is Standard/1K/2K AND NO MASK IS USED.
+        // If Mask is used, we MUST use Google API (Pro/Flash) because current Flow wrapper doesn't support mask input effectively.
+        const useFlow = resolution !== '4K' && !maskImage;
+        const promptForService = constructRenovationPrompt();
 
         try {
-            // Deduct credits
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Cải tạo thiết kế (${numberOfImages} ảnh) - ${resolution}`);
             }
 
-            // --- PROTECTIVE MARKER ---
-            if (logId) {
-                localStorage.setItem('opzen_pending_tx', JSON.stringify({
-                    logId: logId,
-                    amount: cost,
-                    reason: `Cải tạo thiết kế (${numberOfImages} ảnh) - ${resolution}`,
-                    timestamp: Date.now()
-                }));
-            }
-            // ------------------------
-
-            // Since renovation might not strictly use jobService.createJob in previous versions, we ensure it does now
-            // Or if it processes directly, we simulate job tracking or remove marker upon success.
-            // Assuming standard flow using jobService based on imports:
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                  jobId = await jobService.createJob({
@@ -107,94 +112,143 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     cost: cost,
                     usage_log_id: logId
                 });
-
-                if (!jobId && logId) {
-                    throw new Error("Lỗi hệ thống: Không thể tạo bản ghi công việc.");
-                }
-                
-                // Job created successfully, safe to remove marker
-                localStorage.removeItem('opzen_pending_tx');
             }
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            let results: { imageUrl: string }[] = [];
-            let finalPrompt = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame while performing the renovation. Do not add black bars or letterbox. The renovation instruction is: ${prompt}`;
+            let imageUrls: string[] = [];
 
-            // High Quality (Pro) Logic
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                if (referenceImages && referenceImages.length > 0) finalPrompt += " Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).";
-
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    // Pass maskImage here to generateHighQualityImage
-                    const images = await geminiService.generateHighQualityImage(
-                        finalPrompt, 
-                        aspectRatio, 
-                        resolution, 
-                        sourceImage || undefined,
-                        jobId || undefined,
-                        referenceImages,
-                        maskImage || undefined
-                    );
-                    return { imageUrl: images[0] };
-                });
-                results = await Promise.all(promises);
-            } 
-            // Standard (Flash) Logic
-            else {
-                if (referenceImages && referenceImages.length > 0) {
-                    finalPrompt = `${finalPrompt} Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`;
-                    
-                    if (maskImage) {
-                        results = await geminiService.editImageWithMaskAndMultipleReferences(finalPrompt, sourceImage, maskImage, referenceImages, numberOfImages);
-                    } else {
-                        // We use the new multi-ref function here as well
-                        results = await geminiService.editImageWithMultipleReferences(finalPrompt, sourceImage, referenceImages, numberOfImages);
-                    }
-                } else if (maskImage) {
-                     results = await geminiService.editImageWithMask(finalPrompt, sourceImage, maskImage, numberOfImages);
-                } else {
-                    results = await geminiService.editImage(finalPrompt, sourceImage, numberOfImages);
+            if (useFlow) {
+                // --- FLOW LOGIC ---
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
-            }
 
-            const imageUrls = results.map(r => r.imageUrl);
-            onStateChange({ renovatedImages: imageUrls });
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                const collectedUrls: string[] = [];
+                let completedCount = 0;
 
-            if (jobId && imageUrls.length > 0) {
-                await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-            }
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    try {
+                        setStatusMessage(`[1/2] Đang tạo ảnh (${modelName})... (${index + 1}/${numberOfImages})`);
+                        
+                        // Prepare input images array (Source + References)
+                        const inputImages: FileData[] = [];
+                        if (sourceImage) inputImages.push(sourceImage);
+                        if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
 
-            imageUrls.forEach(url => {
-                 historyService.addToHistory({
+                        const result = await externalVideoService.generateFlowImage(
+                            promptForService,
+                            inputImages,
+                            aspectEnum,
+                            1,
+                            modelName
+                        );
+
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+
+                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+
+                            if (shouldUpscale) {
+                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                try {
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
+                                        if (upscaleResult && upscaleResult.imageUrl) {
+                                            finalUrl = upscaleResult.imageUrl;
+                                        }
+                                    }
+                                } catch (upscaleErr: any) {
+                                    console.warn("Upscale failed", upscaleErr);
+                                    setUpscaleWarning("Không thể nâng cấp lên 2K, hiển thị ảnh gốc.");
+                                }
+                            }
+                            
+                            collectedUrls.push(finalUrl);
+                            completedCount++;
+                            onStateChange({ renovatedImages: [...collectedUrls] });
+                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                            
+                            historyService.addToHistory({
+                                tool: Tool.Renovation,
+                                prompt: `Flow (${modelName}): ${promptForService}`,
+                                sourceImageURL: sourceImage?.objectURL,
+                                resultImageURL: finalUrl,
+                            });
+                        }
+                    } catch (e) {
+                        console.error(`Image ${index+1} failed`, e);
+                    }
+                });
+
+                await Promise.all(promises);
+                if (collectedUrls.length === 0) throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại.");
+                if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
+
+            } else {
+                // --- GOOGLE API LOGIC (4K OR MASKING) ---
+                // Google API handles masks properly
+                if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+                    const promises = Array.from({ length: numberOfImages }).map(async () => {
+                        const images = await geminiService.generateHighQualityImage(
+                            promptForService, 
+                            aspectRatio, 
+                            resolution, 
+                            sourceImage || undefined,
+                            jobId || undefined,
+                            referenceImages,
+                            maskImage || undefined
+                        );
+                        return images[0];
+                    });
+                    imageUrls = await Promise.all(promises);
+                } else {
+                    // Standard Flash
+                    let results: { imageUrl: string }[] = [];
+                    if (referenceImages && referenceImages.length > 0) {
+                        if (maskImage) {
+                            results = await geminiService.editImageWithMaskAndMultipleReferences(promptForService, sourceImage, maskImage, referenceImages, numberOfImages);
+                        } else {
+                            results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
+                        }
+                    } else if (maskImage) {
+                         results = await geminiService.editImageWithMask(promptForService, sourceImage, maskImage, numberOfImages);
+                    } else {
+                        results = await geminiService.editImage(promptForService, sourceImage, numberOfImages);
+                    }
+                    imageUrls = results.map(r => r.imageUrl);
+                }
+
+                onStateChange({ renovatedImages: imageUrls });
+                if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
+
+                imageUrls.forEach(url => historyService.addToHistory({
                     tool: Tool.Renovation,
-                    prompt: finalPrompt,
+                    prompt: promptForService,
                     sourceImageURL: sourceImage.objectURL,
                     resultImageURL: url,
-                });
-            });
+                }));
+            }
+
         } catch (err: any) {
             let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) {
-                errorMessage += " (Credits đã được hoàn lại)";
-            }
+            if (logId) errorMessage += " (Credits đã được hoàn lại)";
             onStateChange({ error: errorMessage });
 
-            if (jobId) {
-                await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
-            }
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
 
-            // Refund Logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi cải tạo (${err.message})`);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi cải tạo (${err.message})`, logId);
             }
-            
-            // Clean up marker
-            localStorage.removeItem('opzen_pending_tx');
-
         } finally {
             onStateChange({ isLoading: false });
+            setStatusMessage(null);
         }
     };
     
@@ -364,11 +418,12 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 disabled={isLoading || !sourceImage || userCredits < cost}
                                 className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                             >
-                                {isLoading ? <><Spinner /> Đang lên phương án...</> : 'Bắt đầu Cải Tạo'}
+                                {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Cải Tạo'}
                             </button>
                         </div>
                     </div>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                    {upscaleWarning && <p className="mt-3 text-sm text-yellow-500 text-center font-medium bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded">{upscaleWarning}</p>}
                 </div>
             </div>
 
@@ -393,7 +448,12 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     )}
                 </div>
                 <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                    {isLoading && <Spinner />}
+                    {isLoading && (
+                        <div className="flex flex-col items-center">
+                            <Spinner />
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                        </div>
+                    )}
                     
                     {!isLoading && renovatedImages.length === 1 && sourceImage && (
                         <ImageComparator

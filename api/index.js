@@ -1,65 +1,50 @@
 
-// --- CẤU HÌNH ---
-// Lấy các biến này từ Cloudflare Worker Settings (Environment Variables)
-// ADMIN_SECRET (Để bảo vệ endpoint update_token)
-// SUPABASE_URL, SUPABASE_SERVICE_KEY (Để xử lý Webhook thanh toán & Lấy Key)
-// GEMINI_API_KEY (KEY DỰ PHÒNG)
-
-// !!! QUAN TRỌNG: DÁN API KEY CỦA BẠN VÀO ĐÂY NẾU CHƯA CẤU HÌNH ENV !!!
+// ... existing config and helpers ...
 const FALLBACK_GEMINI_API_KEY = ""; 
-
-// ==================================================================================
-// === KHU VỰC TEST (FIX CỨNG ĐỂ CHẠY THỬ) ===
-// Dán Access Token (ya29...) vào đây để test mà không cần Database
 const TEST_ACCESS_TOKEN = ""; 
-// Dán Media ID (GEN...) vào đây nếu muốn bỏ qua bước Upload ảnh (Test nhanh tạo ảnh)
 const TEST_MEDIA_ID = ""; 
-const TEST_PROJECT_ID = "cloud-large-model"; // Mặc định thường dùng
-// ==================================================================================
-
-// Fallback credentials from client source if Env vars are missing
+const TEST_PROJECT_ID = ""; 
 const DEFAULT_SUPABASE_URL = 'https://mtlomjjlgvsjpudxlspq.supabase.co';
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMzAwMjcsImV4cCI6MjA3ODkwNjAyN30.6K-rSAFVJxQPLVjZKdJpBspb5tHE1dZiry4lS6u6JzQ";
-
-// PROXY CONFIG FOR FLOW MEDIA
 const ONEWISE_PROXY_URL_CREATE = "https://new-rest.onewise.app/api/fix/create-video-veo3";
 const ONEWISE_PROXY_URL_CHECK = "https://new-rest.onewise.app/api/fix/task-status";
 const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjI4NTg2Mn0.zLqDOTRuYAnavQyNWFoZL6NdEVXBUqbdfujnLwY199E";
 
 const HEADERS = {
-    'content-type': 'text/plain;charset=UTF-8', // Google bắt buộc text/plain
+    'content-type': 'text/plain;charset=UTF-8', 
     'origin': 'https://labs.google',
     'referer': 'https://labs.google/',
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
 };
 
-// --- LOGIC LẤY KEY GEMINI TỪ SUPABASE (Server-Side) ---
+function cleanToken(token) {
+    if (!token) return "";
+    return token.trim().replace(/^["']|["']$/g, '');
+}
+
 async function getGeminiKeySecurely(env) {
     if (env.VIDEO_KV) {
         const cachedKey = await env.VIDEO_KV.get('GEMINI_ACTIVE_KEY');
-        if (cachedKey) return cachedKey;
+        if (cachedKey) return cleanToken(cachedKey);
     }
-
-    if (env.GEMINI_API_KEY) return env.GEMINI_API_KEY;
-    if (FALLBACK_GEMINI_API_KEY && FALLBACK_GEMINI_API_KEY.length > 10) return FALLBACK_GEMINI_API_KEY;
-
-    const sbUrl = env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
-    const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
-
+    if (env.GEMINI_API_KEY) return cleanToken(env.GEMINI_API_KEY);
+    if (FALLBACK_GEMINI_API_KEY && FALLBACK_GEMINI_API_KEY.length > 10) return cleanToken(FALLBACK_GEMINI_API_KEY);
+    const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
+    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
     if (sbUrl && sbKey) {
         try {
             const response = await fetch(`${sbUrl}/rest/v1/api_keys?select=key_value&is_active=eq.true`, {
                 headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` }
             });
-            
             if (response.ok) {
                 const data = await response.json();
                 if (data && data.length > 0) {
                     const randomIndex = Math.floor(Math.random() * data.length);
                     const key = data[randomIndex].key_value;
                     if (key) {
-                        if (env.VIDEO_KV) await env.VIDEO_KV.put('GEMINI_ACTIVE_KEY', key, { expirationTtl: 300 });
-                        return key;
+                        const cleanedKey = cleanToken(key);
+                        if (env.VIDEO_KV) await env.VIDEO_KV.put('GEMINI_ACTIVE_KEY', cleanedKey, { expirationTtl: 300 });
+                        return cleanedKey;
                     }
                 }
             }
@@ -70,19 +55,16 @@ async function getGeminiKeySecurely(env) {
     throw new Error("GEMINI_API_KEY not configured.");
 }
 
-// --- PROXY HANDLER (Image/Text Generation) ---
 async function handleGeminiProxy(body, env, request) {
     const { model, payload, method = 'generateContent' } = body;
     const apiKey = await getGeminiKeySecurely(env);
     const version = 'v1beta'; 
     const url = `https://generativelanguage.googleapis.com/${version}/models/${model}:${method}?key=${apiKey}`;
-
     const response = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
     });
-
     let data;
     const contentType = response.headers.get("content-type");
     if (contentType && contentType.includes("application/json")) {
@@ -100,12 +82,9 @@ async function handleGeminiProxy(body, env, request) {
     return { data, status: response.status, ok: response.ok };
 }
 
-// --- QUOTA MANAGEMENT HELPERS ---
-
 async function resetAllUsageCounts(env) {
-    const sbUrl = env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
-    const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
-    
+    const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
+    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
     try {
         await fetch(`${sbUrl}/rest/v1/video_accounts?is_active=eq.true`, {
             method: 'PATCH',
@@ -117,18 +96,14 @@ async function resetAllUsageCounts(env) {
             },
             body: JSON.stringify({ usage_count: 0 })
         });
-        console.log("Reset all video accounts usage to 0");
-    } catch (e) {
-        console.error("Failed to reset usage counts:", e);
-    }
+    } catch (e) { console.error("Failed to reset usage counts:", e); }
 }
 
 async function incrementAccountUsage(env, accountId, currentUsage) {
-    const sbUrl = env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
-    const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
-    
+    const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
+    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
     try {
-        const res = await fetch(`${sbUrl}/rest/v1/video_accounts?id=eq.${accountId}`, {
+        await fetch(`${sbUrl}/rest/v1/video_accounts?id=eq.${accountId}`, {
             method: 'PATCH',
             headers: {
                 'apikey': sbKey,
@@ -138,21 +113,12 @@ async function incrementAccountUsage(env, accountId, currentUsage) {
             },
             body: JSON.stringify({ usage_count: (currentUsage || 0) + 1 })
         });
-        if (!res.ok) {
-            console.error(`[DB Update] Failed for ID ${accountId}: ${res.statusText}`);
-        } else {
-            console.log(`[DB Update] Increased usage for ID ${accountId} to ${(currentUsage || 0) + 1}`);
-        }
-    } catch (e) {
-        console.error(`[DB Update] Exception incrementing usage for account ${accountId}:`, e);
-    }
+    } catch (e) { console.error(`[DB Update] Exception incrementing usage for account ${accountId}:`, e); }
 }
 
-// --- VIDEO GENERATION AUTH ---
 async function getAllAccounts(env) {
-    const sbUrl = env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
-    const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
-
+    const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
+    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
     try {
         const response = await fetch(`${sbUrl}/rest/v1/video_accounts?select=id,access_token,auth_cookies,project_id,usage_count,usage_limit&is_active=eq.true&access_token=not.is.null&order=updated_at.desc`, {
             method: 'GET',
@@ -162,89 +128,55 @@ async function getAllAccounts(env) {
                 'Content-Type': 'application/json'
             }
         });
-
         if (!response.ok) throw new Error("Lỗi kết nối DB Supabase");
-        
         let accounts = await response.json();
-        
-        if (!accounts || accounts.length === 0) {
-            throw new Error("Hệ thống đang cập nhật tài khoản Video. Vui lòng thử lại sau.");
-        }
-
+        if (!accounts || accounts.length === 0) throw new Error("Hệ thống đang cập nhật tài khoản Video. Vui lòng thử lại sau.");
         let availableAccounts = accounts.filter(acc => {
             const used = acc.usage_count || 0;
             const limit = acc.usage_limit || 50; 
             return used < limit;
         });
-
         if (availableAccounts.length === 0) {
-            console.warn("All accounts reached usage limit. Resetting all...");
             await resetAllUsageCounts(env);
             accounts = accounts.map(acc => ({ ...acc, usage_count: 0 }));
             availableAccounts = accounts; 
         }
-        
         if (availableAccounts.length > 5) {
              const topFresh = availableAccounts.slice(0, 5).sort(() => Math.random() - 0.5);
              const others = availableAccounts.slice(5).sort(() => Math.random() - 0.5);
              return [...topFresh, ...others];
         }
-
         return availableAccounts.sort(() => Math.random() - 0.5);
-
     } catch (e) {
-        console.error("Get Auth Data Error:", e);
         throw new Error(e.message || "Không thể lấy thông tin xác thực từ hệ thống.");
     }
 }
 
-// --- HELPER: Execute Logic with Failover Rotation & Quota Update ---
 async function executeWithFailover(env, accounts, operationName, callback) {
     let lastError = null;
-
     for (const account of accounts) {
         if (!account.project_id) continue;
-
         try {
             const result = await callback(account);
-            // Don't increment for read-only ops or simple uploads unless needed
             if (operationName !== 'CheckStatus' && operationName !== 'UploadImage' && operationName !== 'CheckFlowStatus') {
-                 incrementAccountUsage(env, account.id, account.usage_count).catch(err => 
-                     console.error("Failed to increment usage post-success:", err)
-                 );
+                 incrementAccountUsage(env, account.id, account.usage_count).catch(err => console.error("Failed to increment usage post-success:", err));
             }
             return result; 
         } catch (e) {
             lastError = e;
             const msg = e.message || "";
-            const isRetryable = 
-                msg.includes("401") || 
-                msg.includes("403") || 
-                msg.includes("429") || 
-                msg.includes("500") || 
-                msg.includes("502") ||
-                msg.includes("RESOURCE_EXHAUSTED") ||
-                msg.includes("UNAUTHENTICATED") ||
-                msg.includes("PERMISSION_DENIED");
-
-            if (isRetryable) {
-                console.warn(`[${operationName}] Account ${account.id} failed. Switching. Error: ${msg}`);
-                continue; 
-            } else {
-                console.error(`[${operationName}] Permanent Error: ${msg}`);
-                throw e; 
-            }
+            const isRetryable = msg.includes("401") || msg.includes("403") || msg.includes("429") || msg.includes("500") || msg.includes("502") || msg.includes("RESOURCE_EXHAUSTED") || msg.includes("UNAUTHENTICATED") || msg.includes("PERMISSION_DENIED");
+            if (isRetryable) { console.warn(`[${operationName}] Account ${account.id} failed. Switching. Error: ${msg}`); continue; } 
+            else { console.error(`[${operationName}] Permanent Error: ${msg}`); throw e; }
         }
     }
     throw lastError || new Error(`All accounts failed for ${operationName}`);
 }
 
-// --- CORE LOGIC: INTERNAL UPLOAD HELPER ---
 async function performUpload(authData, base64Data, imageAspectRatio) {
     const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
     const aspectRatioEnum = imageAspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE";
-
     const payload = {
         "imageInput": { 
             "aspectRatio": aspectRatioEnum, 
@@ -259,17 +191,15 @@ async function performUpload(authData, base64Data, imageAspectRatio) {
             "userPaygateTier": "PAYGATE_TIER_TWO"
         }
     };
-
     const res = await fetch('https://aisandbox-pa.googleapis.com/v1:uploadUserImage', {
         method: 'POST',
         headers: { 
             ...HEADERS, 
-            'authorization': `Bearer ${token}`,
+            'authorization': `Bearer ${cleanToken(token)}`,
             'cookie': cookies || ''
         },
         body: JSON.stringify(payload)
     });
-
     if (!res.ok) {
         const errText = await res.text();
         throw new Error(`Upload Failed (${res.status}): ${errText}`);
@@ -279,8 +209,6 @@ async function performUpload(authData, base64Data, imageAspectRatio) {
     if (!mediaId) throw new Error("No mediaId found in upload response");
     return mediaId;
 }
-
-// --- EXPORTED ACTIONS ---
 
 async function uploadImage(env, accounts, base64Data, imageAspectRatio) {
     return executeWithFailover(env, accounts, "UploadImage", async (authData) => {
@@ -300,7 +228,6 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
         const modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
             ? "veo_3_1_i2v_s_fast_portrait_ultra" 
             : "veo_3_1_i2v_s_fast_ultra";
-
         const payload = {
             "clientContext": {
                 "sessionId": ";" + Date.now(),
@@ -319,7 +246,7 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
         };
         const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage', {
             method: 'POST',
-            headers: { ...HEADERS, 'authorization': `Bearer ${token}`, 'cookie': cookies || '' },
+            headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' },
             body: JSON.stringify(payload)
         });
         if (!res.ok) throw new Error(`Trigger Failed (${res.status})`);
@@ -330,21 +257,38 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
 }
 
 // --- NEW ACTION: FLOW MEDIA CREATE (GEM_PIX_2) VIA PROXY (START TASK) ---
-async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, dynamicToken, numberOfImages = 1) {
+// Updated to support multiple image inputs (Source + References)
+async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, dynamicToken, numberOfImages = 1, imageModelName = "GEM_PIX_2", inputImages = []) {
     return executeWithFailover(env, accounts, "CreateFlowImage", async (authData) => {
-        // Lấy token từ account rotation (cơ chế giống video)
         const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
         
-        let mediaId = null;
-        if (imageData) {
-            // Upload ảnh sử dụng token động để lấy MediaID (Cơ chế giống video)
-            mediaId = await performUpload(authData, imageData, imageAspectRatio);
+        // Handle uploading multiple images
+        const imageInputList = [];
+        
+        // Determine which images to upload. Priority: inputImages array, fallback to single imageData
+        let imagesToUpload = [];
+        if (inputImages && Array.isArray(inputImages) && inputImages.length > 0) {
+            imagesToUpload = inputImages;
+        } else if (imageData) {
+            imagesToUpload = [imageData];
+        }
+
+        // Loop upload to get mediaIds
+        for (const imgBase64 of imagesToUpload) {
+            if (imgBase64) {
+                const mediaId = await performUpload(authData, imgBase64, imageAspectRatio);
+                // All uploaded images are added as REFERENCE inputs
+                imageInputList.push({
+                    "name": mediaId,
+                    "imageInputType": "IMAGE_INPUT_TYPE_REFERENCE"
+                });
+            }
         }
         
         const flowUrl = `https://aisandbox-pa.googleapis.com/v1/projects/${projectId}/flowMedia:batchGenerateImages`;
         const sessionId = ";" + Date.now();
 
-        // Create multiple request objects
+        // Create multiple request objects (batch generation)
         const requests = [];
         for(let i=0; i<numberOfImages; i++) {
             requests.push({
@@ -355,15 +299,10 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
                     "tool": "PINHOLE"
                 },
                 "seed": Math.floor(Math.random() * 1000000) + i,
-                "imageModelName": "GEM_PIX_2",
+                "imageModelName": imageModelName, 
                 "imageAspectRatio": imageAspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE",
                 "prompt": prompt || "enhance the resolution and quality of this image",
-                "imageInputs": mediaId ? [
-                    {
-                        "name": mediaId,
-                        "imageInputType": "IMAGE_INPUT_TYPE_REFERENCE"
-                    }
-                ] : []
+                "imageInputs": imageInputList // Send array of uploaded mediaIds
             });
         }
 
@@ -377,7 +316,7 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
                 },
                 "requests": requests
             },
-            "flow_auth_token": token,
+            "flow_auth_token": cleanToken(token),
             "flow_url": flowUrl
         };
 
@@ -397,7 +336,6 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
         
         const data = await res.json();
         
-        // Return taskId AND projectId (important for upscale)
         if (data.success && data.taskId) {
             return { status: 'pending', taskId: data.taskId, projectId: projectId };
         }
@@ -408,22 +346,11 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
 
 // --- NEW ACTION: FLOW MEDIA UPSCALE ---
 async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynamicToken) {
-    // IMPORTANT: Upscale MUST use the same Project ID that created the media.
-    // We filter available accounts to find one that matches the projectId.
-    // If no specific account found, fall back to rotating accounts (which will likely fail if cross-project).
-    
-    // Note: accounts list passed here should already be filtered if possible, but we'll double check or rely on caller.
-    // Actually, executeWithFailover iterates. If we pass a list of ONE correct account, it works.
-    
     return executeWithFailover(env, accounts, "UpscaleFlowImage", async (authData) => {
-        // We use authData.access_token from rotation
         const { access_token: token } = authData;
-        
         const activeProjectId = projectId || authData.project_id;
         const flowUrl = `https://aisandbox-pa.googleapis.com/v1/flow/upsampleImage`; 
         const sessionId = ";" + Date.now();
-
-        // Specific payload structure for Upscale
         const payload = {
             "body_json": {
                 "clientContext": {
@@ -435,10 +362,9 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynami
                 "mediaId": mediaId,
                 "targetResolution": "UPSAMPLE_IMAGE_RESOLUTION_2K"
             },
-            "flow_auth_token": token,
+            "flow_auth_token": cleanToken(token),
             "flow_url": flowUrl
         };
-
         const res = await fetch(ONEWISE_PROXY_URL_CREATE, {
             method: 'POST',
             headers: {
@@ -447,14 +373,11 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynami
             },
             body: JSON.stringify(payload)
         });
-
         if (!res.ok) {
             const errText = await res.text();
             throw new Error(`Flow Upscale Failed (${res.status}): ${errText}`);
         }
-        
         const data = await res.json();
-        
         if (data.success && data.taskId) {
             return { status: 'pending', taskId: data.taskId };
         }
@@ -462,7 +385,6 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynami
     });
 }
 
-// --- NEW ACTION: CHECK FLOW STATUS (POLLING) ---
 async function checkFlowStatus(env, accounts, taskId) {
     return executeWithFailover(env, accounts, "CheckFlowStatus", async (authData) => {
         const url = `${ONEWISE_PROXY_URL_CHECK}?taskId=${taskId}`;
@@ -473,9 +395,7 @@ async function checkFlowStatus(env, accounts, taskId) {
                 'Content-Type': 'application/json'
             }
         });
-
         if (!res.ok) throw new Error(`Check Status Failed (${res.status})`);
-        
         const data = await res.json();
         return data; 
     });
@@ -502,7 +422,7 @@ async function triggerUpscale(env, accounts, mediaId) {
         };
         const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoUpsampleVideo', {
             method: 'POST',
-            headers: { ...HEADERS, 'authorization': `Bearer ${token}`, 'cookie': cookies || '' },
+            headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' },
             body: JSON.stringify(payload)
         });
         if (!res.ok) throw new Error(`Upscale Trigger Failed (${res.status})`);
@@ -524,7 +444,7 @@ async function checkStatus(env, accounts, task_id, scene_id) {
         };
         const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', {
             method: 'POST',
-            headers: { ...HEADERS, 'authorization': `Bearer ${token}`, 'cookie': cookies || '' },
+            headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' },
             body: JSON.stringify(payload)
         });
         if (res.status === 404 || res.status === 403 || res.status === 400) throw new Error(`NotFound/Permission (${res.status})`);
@@ -552,8 +472,8 @@ async function handleSePayWebhook(request, env) {
         const match = content.match(/OPZ\d+/i);
         const transactionCode = match ? match[0].toUpperCase() : null;
         if (!transactionCode) return new Response(JSON.stringify({ success: false, message: "No transaction code" }), { status: 200 });
-        const sbUrl = env.SUPABASE_URL || DEFAULT_SUPABASE_URL;
-        const sbKey = env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY;
+        const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
+        const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
         const response = await fetch(`${sbUrl}/rest/v1/rpc/webhook_approve_transaction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` },
@@ -601,7 +521,7 @@ export default {
                 else if (path.includes('/create')) action = 'create';
                 else if (path.includes('/flow-create')) action = 'flow_create';
                 else if (path.includes('/flow-check')) action = 'flow_check';
-                else if (path.includes('/flow-upscale')) action = 'flow_upscale'; // NEW
+                else if (path.includes('/flow-upscale')) action = 'flow_upscale'; 
                 else if (path.includes('/upscale')) action = 'upscale';
                 else if (path.includes('/check')) action = 'check';
             }
@@ -621,16 +541,14 @@ export default {
             } else if (action === 'flow_create' || action === 'flow_media_create') {
                 const accounts = await getAllAccounts(env);
                 const count = body.numberOfImages || 1;
-                const result = await triggerFlowMediaCreate(env, accounts, body.prompt, body.image, body.imageAspectRatio, body.dynamicToken, count);
+                const modelName = body.imageModelName || "GEM_PIX_2";
+                // Pass array of images (inputImages)
+                const result = await triggerFlowMediaCreate(env, accounts, body.prompt, body.image, body.imageAspectRatio, body.dynamicToken, count, modelName, body.images);
                 return sendJson(result);
             } else if (action === 'flow_upscale') {
                 const accounts = await getAllAccounts(env);
-                // CRITICAL: Filter accounts to match the creation project ID
-                const specificAccounts = body.projectId 
-                    ? accounts.filter(acc => acc.project_id === body.projectId)
-                    : accounts;
+                const specificAccounts = body.projectId ? accounts.filter(acc => acc.project_id === body.projectId) : accounts;
                 const accountsToUse = specificAccounts.length > 0 ? specificAccounts : accounts;
-                
                 const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId, body.dynamicToken);
                 return sendJson(result);
             } else if (action === 'flow_check') {

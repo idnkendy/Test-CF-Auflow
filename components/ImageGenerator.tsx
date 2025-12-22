@@ -168,6 +168,22 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     
     const cost = numberOfImages * getCostPerImage();
 
+    // Helper to ensure 100% consistent prompt logic for ALL services
+    const constructArchitecturalPrompt = () => {
+        let basePrompt = sourceImage 
+            ? `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. ${customPrompt}`
+            : `${customPrompt}, photorealistic architectural rendering, high detail, masterpiece`;
+
+        if (referenceImages.length > 0) {
+            basePrompt += ` Also, take aesthetic inspiration from the provided reference image(s).`;
+        }
+
+        // Unified Persona: Inject for BOTH Flow and Google API to ensure exact prompt parity
+        basePrompt = `You are a professional architectural renderer. ${basePrompt}`;
+
+        return basePrompt;
+    };
+
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
              onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
@@ -182,6 +198,11 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         let jobId: string | null = null;
         let logId: string | null = null;
 
+        // Routing Logic:
+        // Standard, 1K, 2K -> Use Flow (External Service)
+        // 4K -> Use Google Gemini API
+        const useFlow = resolution !== '4K';
+
         try {
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Render kiến trúc (${numberOfImages} ảnh) - ${resolution}`);
@@ -194,31 +215,121 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            let promptForService = sourceImage 
-                ? `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. ${customPrompt}`
-                : `${customPrompt}, photorealistic architectural rendering, high detail, masterpiece`;
+            // Use the unified prompt construction (identical string for both paths)
+            const promptForService = constructArchitecturalPrompt();
 
-            if (referenceImages.length > 0) promptForService += ` Also, take aesthetic inspiration from the provided reference image(s).`;
+            if (useFlow) {
+                // --- FLOW LOGIC (Standard, 1K, 2K) ---
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+                }
 
-            let imageUrls: string[] = [];
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+                // Model Selection: Standard -> GEM_PIX, Others -> GEM_PIX_2
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                const collectedUrls: string[] = [];
+                let completedCount = 0;
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    try {
+                        setStatusMessage(`[1/2] Đang tạo ảnh (${modelName})... (${index + 1}/${numberOfImages})`);
+                        
+                        // Prepare input images array (Source + References)
+                        const inputImages: FileData[] = [];
+                        if (sourceImage) inputImages.push(sourceImage);
+                        if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
+
+                        // 1. Generate Base
+                        const result = await externalVideoService.generateFlowImage(
+                            promptForService,
+                            inputImages, 
+                            aspectEnum,
+                            1,
+                            modelName
+                        );
+
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+
+                            // 2. Check for 2K Upscale (Only apply if resolution is 2K, 1K usually fine with base HQ)
+                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+
+                            if (shouldUpscale) {
+                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                try {
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(
+                                            mediaId,
+                                            result.projectId
+                                        );
+                                        if (upscaleResult && upscaleResult.imageUrl) {
+                                            finalUrl = upscaleResult.imageUrl;
+                                        }
+                                    }
+                                } catch (upscaleErr: any) {
+                                    console.warn("Upscale failed, falling back to base image", upscaleErr);
+                                    setUpscaleWarning("Một số ảnh không thể nâng cấp lên 2K, hiển thị ảnh gốc.");
+                                }
+                            }
+                            
+                            collectedUrls.push(finalUrl);
+                            completedCount++;
+                            onStateChange({ resultImages: [...collectedUrls] });
+                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                            
+                            historyService.addToHistory({
+                                tool: Tool.ArchitecturalRendering,
+                                prompt: `Flow (${modelName}): ${promptForService}`,
+                                sourceImageURL: sourceImage?.objectURL,
+                                resultImageURL: finalUrl,
+                            });
+                        } else {
+                            throw new Error("Không nhận được dữ liệu ảnh từ server.");
+                        }
+                    } catch (e) {
+                        console.error(`Image ${index+1} generation failed`, e);
+                        // Don't throw here to allow partial success
+                    }
+                });
+
+                await Promise.all(promises);
+
+                if (collectedUrls.length === 0) {
+                    throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại.");
+                }
+                
+                if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
+
+            } else {
+                // --- GOOGLE API LOGIC (4K Only) ---
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(promptForService, aspectRatio, resolution, sourceImage || undefined, jobId || undefined, referenceImages);
+                    const images = await geminiService.generateHighQualityImage(
+                        promptForService, 
+                        aspectRatio, 
+                        resolution, // 4K passed here
+                        sourceImage || undefined, 
+                        jobId || undefined, 
+                        referenceImages
+                    );
                     return images[0];
                 });
-                imageUrls = await Promise.all(promises);
-            } else {
-                if (sourceImage && referenceImages.length > 0) {
-                    const results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
-                    imageUrls = results.map(r => r.imageUrl);
-                } else {
-                    imageUrls = await geminiService.generateStandardImage(promptForService, aspectRatio, numberOfImages, sourceImage || undefined, jobId);
-                }
+                
+                const imageUrls = await Promise.all(promises);
+                onStateChange({ resultImages: imageUrls });
+                
+                if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
+                
+                imageUrls.forEach(url => historyService.addToHistory({ 
+                    tool: Tool.ArchitecturalRendering, 
+                    prompt: `Gemini Pro 4K: ${promptForService}`, 
+                    sourceImageURL: sourceImage?.objectURL, 
+                    resultImageURL: url 
+                }));
             }
 
-            onStateChange({ resultImages: imageUrls });
-            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-            imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.ArchitecturalRendering, prompt: promptForService, sourceImageURL: sourceImage?.objectURL, resultImageURL: url }));
         } catch (err: any) {
             onStateChange({ error: err.message });
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
@@ -230,136 +341,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             setActiveJobId(null);
         }
     };
-
-    const handleGenerateFlow = async () => {
-        const flowCostPerImage = 10;
-        const totalFlowCost = flowCostPerImage * numberOfImages;
-
-        if (onDeductCredits && userCredits < totalFlowCost) {
-            onStateChange({ error: `Bạn không đủ credits. Cần ${totalFlowCost} credits cho Render Flow (${numberOfImages} ảnh).` });
-            return;
-        }
-        
-        if (!sourceImage && !customPrompt.trim()) {
-            onStateChange({ error: 'Vui lòng nhập mô tả hoặc tải ảnh gốc để Render Flow.' });
-            return;
-        }
-
-        onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
-        setUpscaleWarning(null);
-
-        let logId: string | null = null;
-        try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(totalFlowCost, `Render Flow (GEM_PIX_2) - Architectural x${numberOfImages}`);
-            }
-
-            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-            if (aspectRatio === '16:9' || aspectRatio === '4:3') {
-                aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-            } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
-                aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-            }
-
-            let promptForFlow = sourceImage 
-                ? `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. ${customPrompt}`
-                : `${customPrompt}, photorealistic architectural rendering, high detail, masterpiece`;
-
-            if (referenceImages.length > 0) promptForFlow += ` Also, take aesthetic inspiration from the provided reference image(s).`;
-
-            const collectedUrls: string[] = [];
-            let completedCount = 0;
-
-            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                try {
-                    // Update status: Step 1
-                    setStatusMessage(`[1/2] Đang tạo ảnh gốc... (${index + 1}/${numberOfImages})`);
-
-                    // 1. Generate Base Image
-                    const result = await externalVideoService.generateFlowImage(
-                        promptForFlow,
-                        sourceImage || undefined,
-                        aspectEnum,
-                        1
-                    );
-                    
-                    if (result.imageUrls && result.imageUrls.length > 0) {
-                        let finalUrl = result.imageUrls[0];
-                        
-                        // 2. Check for 2K Upscale Requirement
-                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-                        
-                        if (shouldUpscale) {
-                             setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
-                             try {
-                                 const mediaId = result.mediaIds[0];
-                                 if (mediaId) {
-                                     // Call upscale service
-                                     const upscaleResult = await externalVideoService.upscaleFlowImage(
-                                         mediaId,
-                                         result.projectId
-                                     );
-                                     if (upscaleResult && upscaleResult.imageUrl) {
-                                         finalUrl = upscaleResult.imageUrl;
-                                     }
-                                 }
-                             } catch (upscaleErr: any) {
-                                 console.warn("Upscale failed, falling back to base image", upscaleErr);
-                                 setUpscaleWarning("Một số ảnh không thể nâng cấp lên 2K do lỗi hệ thống (401), hiển thị ảnh gốc.");
-                                 // Don't fail the whole process, just use base image
-                             }
-                        }
-
-                        collectedUrls.push(finalUrl);
-                        completedCount++;
-                        
-                        // Update UI immediately with what we have
-                        onStateChange({ resultImages: [...collectedUrls] });
-                        setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
-                        
-                        historyService.addToHistory({
-                            tool: Tool.ArchitecturalRendering,
-                            prompt: `Flow Enhance: ${promptForFlow}`,
-                            sourceImageURL: sourceImage?.objectURL,
-                            resultImageURL: finalUrl,
-                        });
-                    } else {
-                        throw new Error("Không nhận được dữ liệu ảnh từ server.");
-                    }
-                } catch (e) {
-                    console.error(`Image ${index+1} generation failed`, e);
-                }
-            });
-
-            await Promise.all(promises);
-
-            const successCount = collectedUrls.length;
-            const failedCount = numberOfImages - successCount;
-
-            if (successCount === 0) {
-                throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại."); 
-            }
-
-            if (failedCount > 0 && logId) {
-                 const refundAmount = failedCount * flowCostPerImage;
-                 const { data: { user } } = await supabase.auth.getUser();
-                 if (user) {
-                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi (Flow)`, logId);
-                 }
-                 onStateChange({ error: `Hoàn tất ${successCount}/${numberOfImages} ảnh. Đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh lỗi.` });
-            }
-
-        } catch (err: any) {
-            let msg = err.message || 'Lỗi kết nối Flow Media.';
-            onStateChange({ error: msg });
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) await refundCredits(user.id, totalFlowCost, `Hoàn tiền Flow Media: ${msg}`, logId);
-        } finally {
-            onStateChange({ isLoading: false });
-            setStatusMessage(null);
-        }
-    };
-
 
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
@@ -430,27 +411,25 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-3 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            <span>Ví: <span className="font-bold text-text-primary dark:text-white">{userCredits} Credits</span></span>
+                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost}</span> Credits</span>
+                        </div>
+                        <div className="text-xs">
+                            {userCredits < cost ? (
+                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                            ) : (
+                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                            )}
                         </div>
                     </div>
                     
-                    {/* BUTTON ROW */}
+                    {/* BUTTON ROW - MERGED */}
                     <div className="flex flex-col sm:flex-row gap-4">
                         <button
                             onClick={handleGenerate}
                             disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost}
                             className="flex-1 flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg"
                         >
-                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : `Bắt đầu Render (${cost})`}
-                        </button>
-                        
-                        <button
-                            onClick={handleGenerateFlow}
-                            disabled={isLoading || (!sourceImage && !customPrompt.trim()) || isUpscaling || userCredits < (10 * numberOfImages)}
-                            className="flex-1 flex justify-center items-center gap-3 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg"
-                            title="Tạo ảnh chất lượng cao nhất bằng mô hình GEM_PIX_2"
-                        >
-                            {isLoading ? <><Spinner /> {statusMessage || 'Đang tối ưu...'}</> : `Render Cao Cấp (${10 * numberOfImages})`}
+                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : `Bắt đầu Render`}
                         </button>
                     </div>
 

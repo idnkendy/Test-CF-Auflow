@@ -366,7 +366,7 @@ export const initialToolStates = {
         resultImages: [],
         upscaledImage: null,
         numberOfImages: 1,
-        aspectRatio: '4:3',
+        aspectRatio: '16:9',
         resolution: 'Standard',
     } as ImageGeneratorState,
     [Tool.InteriorRendering]: {
@@ -383,7 +383,7 @@ export const initialToolStates = {
         resultImages: [],
         upscaledImage: null,
         numberOfImages: 1,
-        aspectRatio: '4:3',
+        aspectRatio: '16:9',
         resolution: 'Standard',
     } as InteriorGeneratorState,
     [Tool.UrbanPlanning]: {
@@ -429,7 +429,7 @@ export const initialToolStates = {
         numberOfImages: 1,
         renderMode: 'top-down',
         planType: 'interior',
-        aspectRatio: '4:3',
+        aspectRatio: '16:9',
         resolution: 'Standard',
     } as FloorPlanState,
     [Tool.Renovation]: {
@@ -441,7 +441,7 @@ export const initialToolStates = {
         error: null,
         renovatedImages: [],
         numberOfImages: 1,
-        aspectRatio: '4:3',
+        aspectRatio: '16:9',
         resolution: 'Standard',
     } as RenovationState,
     [Tool.ViewSync]: {
@@ -452,7 +452,7 @@ export const initialToolStates = {
         resultImages: [],
         numberOfImages: 1,
         sceneType: 'exterior',
-        aspectRatio: '4:3',
+        aspectRatio: '16:9',
         customPrompt: '',
         selectedPerspective: 'default',
         selectedAtmosphere: 'default',
@@ -493,7 +493,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
-        aspectRatio: '4:3', // Added default
+        aspectRatio: '16:9', // Added default
         resolution: 'Standard',
     } as MaterialSwapperState,
     [Tool.Upscale]: {
@@ -511,7 +511,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
-        aspectRatio: '4:3',
+        aspectRatio: '16:9',
         mode: 'moodboardToScene',
         resolution: 'Standard',
     } as MoodboardGeneratorState,
@@ -546,7 +546,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
-        aspectRatio: '4:3', // Added default
+        aspectRatio: '16:9', // Added default
         resolution: 'Standard',
     } as StagingState,
     [Tool.AITechnicalDrawings]: {
@@ -556,7 +556,7 @@ export const initialToolStates = {
         resultImage: null,
         drawingType: 'floor-plan',
         detailLevel: 'basic',
-        aspectRatio: '4:3', // Added default
+        aspectRatio: '16:9', // Added default
         resolution: 'Standard',
     } as AITechnicalDrawingsState,
     [Tool.SketchConverter]: {
@@ -611,7 +611,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
-        aspectRatio: '4:3',
+        aspectRatio: '16:9',
         resolution: 'Standard',
     } as LayoutGeneratorState,
     [Tool.DrawingGenerator]: {
@@ -631,7 +631,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
-        aspectRatio: '4:3',
+        aspectRatio: '16:9',
         diagramType: '',
         resolution: 'Standard',
     } as DiagramGeneratorState,
@@ -642,7 +642,7 @@ export const initialToolStates = {
         error: null,
         resultImages: [],
         numberOfImages: 1,
-        aspectRatio: '3:4',
+        aspectRatio: '16:9',
         posterStyle: 'luxury',
         resolution: 'Standard',
     } as RealEstatePosterState,
