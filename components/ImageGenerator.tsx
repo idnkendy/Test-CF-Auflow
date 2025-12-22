@@ -99,9 +99,9 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     setStatusMessage(`Đang trong hàng đợi (Vị trí: ${pos})...`);
                 } else {
                     setQueuePosition(null);
-                    // Do not overwrite specific status messages from Flow
-                    if (!statusMessage?.includes("[")) {
-                       setStatusMessage('Đang xử lý ảnh...');
+                    // Only override status message if not already set by Flow callback
+                    if (!statusMessage || !statusMessage.includes("[")) {
+                       // setStatusMessage('Đang xử lý ảnh...');
                     }
                 }
             };
@@ -152,7 +152,15 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const handleContextChange = (newVal: string) => { updatePrompt('context', newVal, context); onStateChange({ context: newVal }); };
     const handleLightingChange = (newVal: string) => { updatePrompt('lighting', newVal, lighting); onStateChange({ lighting: newVal }); };
     const handleWeatherChange = (newVal: string) => { updatePrompt('weather', newVal, weather); onStateChange({ weather: newVal }); };
-    const handleResolutionChange = (val: ImageResolution) => { onStateChange({ resolution: val }); };
+    
+    const handleResolutionChange = (val: ImageResolution) => { 
+        onStateChange({ resolution: val });
+        // Nếu chuyển về Standard, xóa ảnh tham chiếu để tránh gửi lên API
+        if (val === 'Standard') {
+            onStateChange({ referenceImages: [] });
+        }
+    };
+    
     const handleFileSelect = (fileData: FileData | null) => { onStateChange({ sourceImage: fileData, resultImages: [], upscaledImage: null }); }
     const handleReferenceFilesChange = (files: FileData[]) => { onStateChange({ referenceImages: files }); };
 
@@ -242,13 +250,14 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         if (sourceImage) inputImages.push(sourceImage);
                         if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
 
-                        // 1. Generate Base
+                        // 1. Generate Base (Added onProgress callback)
                         const result = await externalVideoService.generateFlowImage(
                             promptForService,
                             inputImages, 
                             aspectEnum,
                             1,
-                            modelName
+                            modelName,
+                            (msg) => setStatusMessage(msg) // Callback for granular status updates
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -272,7 +281,11 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                                     }
                                 } catch (upscaleErr: any) {
                                     console.warn("Upscale failed, falling back to base image", upscaleErr);
-                                    setUpscaleWarning("Một số ảnh không thể nâng cấp lên 2K, hiển thị ảnh gốc.");
+                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
+                                    // Refund logic for upscale failure (2K -> 1K difference: 5 credits)
+                                    if (user && logId) {
+                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
+                                    }
                                 }
                             }
                             
@@ -308,6 +321,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
             } else {
                 // --- GOOGLE API LOGIC (4K Only) ---
+                setStatusMessage('Đang xử lý với Gemini Pro...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
                         promptForService, 
@@ -382,7 +396,22 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         </div>
                          <div>
                             <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tối đa 5 ảnh)</label>
-                            <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                            {resolution === 'Standard' ? (
+                                <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
+                                    <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
+                                    <p className="text-sm text-text-secondary dark:text-gray-400">
+                                        Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
+                                    </p>
+                                    <button 
+                                        onClick={() => handleResolutionChange('1K')}
+                                        className="text-xs text-[#7f13ec] hover:underline font-semibold"
+                                    >
+                                        Nâng cao chất lượng ảnh ngay
+                                    </button>
+                                </div>
+                            ) : (
+                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                            )}
                         </div>
                     </div>
                     <div className="space-y-4 flex flex-col">
@@ -414,7 +443,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-3 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost}</span> Credits</span>
+                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
@@ -436,7 +465,19 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         </button>
                     </div>
 
-                     {error && <p className="mt-3 text-sm text-red-500 text-center font-medium">{error}</p>}
+                     {error && (
+                        <div className="mt-4 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl flex items-start gap-3 animate-fade-in">
+                            <div className="p-2 bg-red-100 dark:bg-red-800/30 rounded-full flex-shrink-0">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-red-600 dark:text-red-400" viewBox="0 0 20 20" fill="currentColor">
+                                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                            <div>
+                                <h4 className="text-sm font-bold text-red-800 dark:text-red-300">Đã xảy ra lỗi</h4>
+                                <p className="text-sm text-red-700 dark:text-red-400 mt-1 leading-relaxed">{error}</p>
+                            </div>
+                        </div>
+                     )}
                      {upscaleWarning && <p className="mt-3 text-sm text-yellow-500 text-center font-medium bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded">{upscaleWarning}</p>}
                 </div>
             </div>

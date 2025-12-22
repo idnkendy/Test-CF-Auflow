@@ -61,6 +61,14 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
     };
     const cost = numberOfImages * getCostPerImage();
 
+    const handleResolutionChange = (val: ImageResolution) => {
+        onStateChange({ resolution: val });
+        // Nếu chuyển về Standard, xóa ảnh hướng dẫn vì không hỗ trợ
+        if (val === 'Standard') {
+            onStateChange({ directionImage: null });
+        }
+    };
+
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
              onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
@@ -78,10 +86,19 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Routing Logic:
-        // 1. If 4K -> Google Pro
-        // 2. Else -> Flow (Standard/1K/2K) - Supports multiple inputs
-        const useFlow = resolution !== '4K';
+        // --- ROUTING LOGIC ---
+        // 1. Google Gemini API được dùng khi:
+        //    - Độ phân giải là 4K.
+        //    - HOẶC: Có ảnh vẽ hướng (directionImage) VÀ độ phân giải là 1K hoặc 2K.
+        //      (Vì Gemini Pro hiểu ngữ nghĩa mũi tên tốt hơn Flow/Flash).
+        //
+        // 2. Flow API được dùng cho các trường hợp còn lại:
+        //    - Standard (luôn dùng Flow - GEM_PIX)
+        //    - 1K/2K KHÔNG có vẽ hướng (dùng Flow - GEM_PIX_2)
+        
+        const hasDirection = !!directionImage;
+        const useGemini = (resolution === '4K') || (hasDirection && (resolution === '1K' || resolution === '2K'));
+        const useFlow = !useGemini;
 
         try {
             if (onDeductCredits) {
@@ -123,7 +140,9 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             let imageUrls: string[] = [];
 
             if (useFlow) {
-                // --- FLOW LOGIC (Standard, 1K, 2K) ---
+                // --- FLOW LOGIC ---
+                // Áp dụng cho: Standard, 1K (no dir), 2K (no dir)
+                
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
                 if (aspectRatio === '16:9' || aspectRatio === '4:3') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
@@ -131,14 +150,12 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                     aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
 
+                // Standard -> GEM_PIX (Flash)
+                // 1K / 2K -> GEM_PIX_2 (Pro)
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
-                // Prepare Image Inputs: Source Image first, then Direction Image (if any)
-                // This preserves order [Index 0: Source, Index 1: Reference]
+                // Ở chế độ Flow này, ta chắc chắn không dùng directionImage (vì nếu có thì đã qua Gemini)
                 const inputImages = [sourceImage];
-                if (directionImage) {
-                    inputImages.push(directionImage);
-                }
 
                 const collectedUrls: string[] = [];
                 let completedCount = 0;
@@ -148,7 +165,6 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                     try {
                         setStatusMessage(`[1/2] Đang tạo góc nhìn (${modelName})... (${index + 1}/${numberOfImages})`);
                         
-                        // Pass array of images
                         const result = await externalVideoService.generateFlowImage(
                             finalPrompt,
                             inputImages, 
@@ -160,7 +176,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            // 2K Upscale Check
+                            // 2K Upscale Logic (cho Flow)
                             const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
                             if (shouldUpscale) {
                                 setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
@@ -174,7 +190,10 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                                     }
                                 } catch (upscaleErr: any) {
                                     console.warn("Upscale failed", upscaleErr);
-                                    setUpscaleWarning("Không thể nâng cấp lên 2K, hiển thị ảnh gốc.");
+                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
+                                    if (user && logId) {
+                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
+                                    }
                                 }
                             }
                             
@@ -204,30 +223,32 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                 }
 
             } else {
-                // --- GOOGLE API LOGIC (4K Only) ---
-                if (resolution === '4K') {
-                    const promises = Array.from({ length: numberOfImages }).map(async () => {
-                        const images = await geminiService.generateHighQualityImage(
-                            finalPrompt, 
-                            aspectRatio, 
-                            resolution, 
-                            sourceImage, 
-                            jobId || undefined,
-                            directionImage ? [directionImage] : undefined
-                        );
-                        return images[0];
-                    });
-                    imageUrls = await Promise.all(promises);
-                } else {
-                    // Fallback
-                    const results = directionImage 
-                        ? await geminiService.editImageWithReference(finalPrompt, sourceImage, directionImage, numberOfImages)
-                        : await geminiService.editImage(finalPrompt, sourceImage, numberOfImages);
-                    imageUrls = results.map(r => r.imageUrl);
-                }
+                // --- GOOGLE GEMINI API LOGIC ---
+                // Áp dụng cho: 4K (All cases), 1K/2K (Có Direction Image)
+                
+                const modelLabel = hasDirection ? `Gemini Pro (${resolution} + Direction)` : `Gemini Pro (${resolution})`;
+                setStatusMessage(`Đang xử lý với ${modelLabel}...`);
+                
+                const promises = Array.from({ length: numberOfImages }).map(async () => {
+                    const images = await geminiService.generateHighQualityImage(
+                        finalPrompt, 
+                        aspectRatio, 
+                        resolution, 
+                        sourceImage, 
+                        jobId || undefined,
+                        directionImage ? [directionImage] : undefined // Truyền ảnh hướng nếu có
+                    );
+                    return images[0];
+                });
+                imageUrls = await Promise.all(promises);
 
                 onStateChange({ resultImages: imageUrls });
-                imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.ViewSync, prompt: finalPrompt, sourceImageURL: sourceImage.objectURL, resultImageURL: url }));
+                imageUrls.forEach(url => historyService.addToHistory({ 
+                    tool: Tool.ViewSync, 
+                    prompt: `${modelLabel}: ${finalPrompt}`, 
+                    sourceImageURL: sourceImage.objectURL, 
+                    resultImageURL: url 
+                }));
             }
 
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
@@ -257,8 +278,28 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border">
                         <label className="block text-sm font-medium mb-2">1. Tải Lên Ảnh Gốc</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} directionPreviewUrl={directionImage?.objectURL} />
-                        {sourceImage && <button onClick={() => setIsDirectionModalOpen(true)} className="w-full mt-4 bg-purple-600 text-white py-2 rounded-lg text-sm font-semibold">Vẽ Hướng Cần Tạo</button>}
-                        {directionImage && <p className="text-xs text-green-500 mt-2">*Đã nhận diện hướng vẽ. AI sẽ ưu tiên hướng này khi tạo ảnh.</p>}
+                        
+                        {sourceImage && (
+                            resolution === 'Standard' ? (
+                                <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 mt-4">
+                                    <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
+                                    <p className="text-sm text-text-secondary dark:text-gray-400">
+                                        Tính năng vẽ hướng chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
+                                    </p>
+                                    <button 
+                                        onClick={() => handleResolutionChange('1K')}
+                                        className="text-xs text-[#7f13ec] hover:underline font-semibold"
+                                    >
+                                        Nâng cao chất lượng ảnh ngay
+                                    </button>
+                                </div>
+                            ) : (
+                                <>
+                                    <button onClick={() => setIsDirectionModalOpen(true)} className="w-full mt-4 bg-purple-600 text-white py-2 rounded-lg text-sm font-semibold">Vẽ Hướng Cần Tạo</button>
+                                    {directionImage && <p className="text-xs text-green-500 mt-2">*Đã nhận diện hướng vẽ. AI sẽ ưu tiên hướng này khi tạo ảnh.</p>}
+                                </>
+                            )
+                        )}
                     </div>
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border space-y-4">
                         <OptionSelector id="perspective" label="2. Chọn Góc Máy (Nếu không vẽ hướng)" options={perspectiveAngles.map(a => ({ value: a.id, label: a.label }))} value={selectedPerspective} onChange={(val) => onStateChange({ selectedPerspective: val })} variant="grid" disabled={!!directionImage} />
@@ -267,7 +308,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                             <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
                             <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
                         </div>
-                        <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} />
+                        <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
                         
                         <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-1 border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">

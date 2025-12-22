@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { StagingState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService';
 import { refundCredits } from '../services/paymentService'; // Import refundCredits
 import { supabase } from '../services/supabaseClient'; // Import supabase
 import Spinner from './Spinner';
@@ -49,6 +51,8 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { prompt, sceneImage, objectImages, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
     // Calculate cost based on resolution
     const getCostPerImage = () => {
@@ -87,52 +91,151 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
+        setStatusMessage('Đang phân tích không gian...');
+        setUpscaleWarning(null);
 
         let logId: string | null = null;
+        let jobId: string | null = null;
+
+        // Routing Logic:
+        // Standard, 1K, 2K -> Flow (GEM_PIX / GEM_PIX_2)
+        // 4K -> Google Gemini API
+        const useFlow = resolution !== '4K';
+
+        // Build prompt with aspect ratio instruction
+        const ratioInstruction = `The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally.`;
+        const fullPrompt = `Integrate the objects from the provided reference images into the main scene image. Follow these instructions for placement and style: ${prompt}. Ensure the objects are realistically scaled, lit, and shadowed to match the environment of the main scene. ${ratioInstruction}`;
 
         try {
              if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `AI Staging (${numberOfImages} ảnh) - ${resolution}`);
             }
 
-            let results: { imageUrl: string }[] = [];
-            
-            // Build prompt with aspect ratio instruction
-            const ratioInstruction = `The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally.`;
-            const fullPrompt = `Integrate the objects from the provided reference images into the main scene image. Follow these instructions for placement and style: ${prompt}. Ensure the objects are realistically scaled, lit, and shadowed to match the environment of the main scene. ${ratioInstruction}`;
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                jobId = await jobService.createJob({
+                    user_id: user.id,
+                    tool_id: Tool.Staging,
+                    prompt: prompt,
+                    cost: cost,
+                    usage_log_id: logId
+                });
+            }
 
-            // High Quality (Pro) Logic
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
+
+            let imageUrls: string[] = [];
+
+            if (useFlow) {
+                // --- FLOW LOGIC (Standard, 1K, 2K) ---
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+                }
+
+                // Standard -> GEM_PIX (Flash)
+                // 1K / 2K -> GEM_PIX_2 (Pro)
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                
+                // Combine Scene + Objects for Flow Input
+                // Flow processes the first image as primary reference (Scene) and subsequent as style/content (Objects)
+                const inputImages = [sceneImage, ...objectImages];
+
+                const collectedUrls: string[] = [];
+                let completedCount = 0;
+                let lastError: any = null;
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    try {
+                        setStatusMessage(`[1/2] Đang xử lý staging (${modelName})... (${index + 1}/${numberOfImages})`);
+                        
+                        const result = await externalVideoService.generateFlowImage(
+                            fullPrompt,
+                            inputImages, 
+                            aspectEnum,
+                            1,
+                            modelName
+                        );
+
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+
+                            // 2K Upscale Check
+                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            if (shouldUpscale) {
+                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                try {
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
+                                        if (upscaleResult && upscaleResult.imageUrl) {
+                                            finalUrl = upscaleResult.imageUrl;
+                                        }
+                                    }
+                                } catch (upscaleErr: any) {
+                                    console.warn("Upscale failed", upscaleErr);
+                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
+                                    if (user && logId) {
+                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
+                                    }
+                                }
+                            }
+                            
+                            collectedUrls.push(finalUrl);
+                            completedCount++;
+                            onStateChange({ resultImages: [...collectedUrls] });
+                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                            
+                            historyService.addToHistory({
+                                tool: Tool.Staging,
+                                prompt: `Flow (${modelName}): ${fullPrompt}`,
+                                sourceImageURL: sceneImage?.objectURL,
+                                resultImageURL: finalUrl,
+                            });
+                        }
+                    } catch (e: any) {
+                        console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
+                    }
+                });
+
+                await Promise.all(promises);
+                imageUrls = collectedUrls;
+                if (collectedUrls.length === 0) {
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
+                }
+
+            } else {
+                // --- GOOGLE API LOGIC (4K Only) ---
+                setStatusMessage('Đang xử lý với Gemini Pro 4K...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    // Pass objectImages as referenceImages to generateHighQualityImage
                     const images = await geminiService.generateHighQualityImage(
                         fullPrompt, 
                         aspectRatio, 
-                        resolution, 
+                        resolution, // 4K
                         sceneImage, 
-                        undefined, 
-                        objectImages
+                        jobId || undefined, 
+                        objectImages // Pass objects as reference images
                     );
-                    return { imageUrl: images[0] };
+                    return images[0];
                 });
-                results = await Promise.all(promises);
-            }
-            // Standard (Flash) Logic
-            else {
-                results = await geminiService.generateStagingImage(fullPrompt, sceneImage, objectImages, numberOfImages);
+                imageUrls = await Promise.all(promises);
+                
+                onStateChange({ resultImages: imageUrls });
+                imageUrls.forEach(url => {
+                     historyService.addToHistory({
+                        tool: Tool.Staging,
+                        prompt: `Gemini Pro 4K: ${fullPrompt}`,
+                        sourceImageURL: sceneImage.objectURL,
+                        resultImageURL: url,
+                    });
+                });
             }
 
-            const imageUrls = results.map(r => r.imageUrl);
-            onStateChange({ resultImages: imageUrls });
-
-            imageUrls.forEach(url => {
-                 historyService.addToHistory({
-                    tool: Tool.Staging,
-                    prompt: prompt,
-                    sourceImageURL: sceneImage.objectURL,
-                    resultImageURL: url,
-                });
-            });
+            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
         } catch (err: any) {
             let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
@@ -141,13 +244,16 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
             }
             onStateChange({ error: errorMessage });
 
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
+
             // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Staging (${err.message})`);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Staging (${err.message})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
+            setStatusMessage(null);
         }
     };
 
@@ -238,9 +344,10 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                         disabled={isLoading || !sceneImage || objectImages.length === 0 || userCredits < cost}
                         className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> Đang xử lý...</> : 'Thực Hiện Staging'}
+                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Thực Hiện Staging'}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                    {upscaleWarning && <p className="mt-2 text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
                 </div>
 
                 {/* --- RESULTS --- */}
@@ -265,7 +372,12 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                         )}
                     </div>
                     <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                        {isLoading && <Spinner />}
+                        {isLoading && (
+                            <div className="flex flex-col items-center">
+                                <Spinner />
+                                <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                            </div>
+                        )}
                         
                         {!isLoading && resultImages.length === 1 && sceneImage && (
                             <ImageComparator

@@ -59,6 +59,10 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
+        // Nếu chuyển về Standard, xóa ảnh tham chiếu
+        if (val === 'Standard') {
+            onStateChange({ referenceImages: [] });
+        }
     };
 
     const constructRenovationPrompt = () => {
@@ -166,7 +170,11 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                     }
                                 } catch (upscaleErr: any) {
                                     console.warn("Upscale failed", upscaleErr);
-                                    setUpscaleWarning("Không thể nâng cấp lên 2K, hiển thị ảnh gốc.");
+                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
+                                    // Refund logic for upscale failure (2K -> 1K difference: 5 credits)
+                                    if (user && logId) {
+                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
+                                    }
                                 }
                             }
                             
@@ -361,8 +369,25 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             </div>
                             <div>
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu Phong Cách (Tùy chọn)</label>
-                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
-                                <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo.</p>
+                                {resolution === 'Standard' ? (
+                                    <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
+                                        <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
+                                        <p className="text-sm text-text-secondary dark:text-gray-400">
+                                            Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
+                                        </p>
+                                        <button 
+                                            onClick={() => handleResolutionChange('1K')}
+                                            className="text-xs text-[#7f13ec] hover:underline font-semibold"
+                                        >
+                                            Nâng cao chất lượng ảnh ngay
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <>
+                                        <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                                        <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo.</p>
+                                    </>
+                                )}
                             </div>
                         </div>
                         <div className="space-y-4 flex flex-col h-full">

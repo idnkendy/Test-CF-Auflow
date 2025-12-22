@@ -82,6 +82,7 @@ async function handleGeminiProxy(body, env, request) {
     return { data, status: response.status, ok: response.ok };
 }
 
+// ... existing helper functions (resetAllUsageCounts, incrementAccountUsage, getAllAccounts) ...
 async function resetAllUsageCounts(env) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
     const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
@@ -256,16 +257,43 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
     });
 }
 
+// Helper to safely parse upstream response
+const safeFetchUpstream = async (url, options) => {
+    try {
+        const res = await fetch(url, options);
+        const text = await res.text();
+        
+        // Handle Cloudflare HTML Error Pages from Upstream
+        if (text.trim().startsWith("<") || text.includes("<!DOCTYPE") || text.includes("<html")) {
+             console.error("Upstream returned HTML:", text.substring(0, 100));
+             return { 
+                 ok: false, 
+                 status: res.status, 
+                 error: { message: `Upstream Service Error (${res.status}). Server returned HTML instead of JSON.`, code: "UPSTREAM_HTML_ERROR" } 
+             };
+        }
+
+        try {
+            const data = JSON.parse(text);
+            return { ok: res.ok, status: res.status, data };
+        } catch (e) {
+            return { 
+                ok: false, 
+                status: res.status, 
+                error: { message: `Invalid JSON from Upstream.`, code: "INVALID_JSON" } 
+            };
+        }
+    } catch (err) {
+        return { ok: false, status: 502, error: { message: err.message, code: "NETWORK_ERROR" } };
+    }
+}
+
 // --- NEW ACTION: FLOW MEDIA CREATE (GEM_PIX_2) VIA PROXY (START TASK) ---
-// Updated to support multiple image inputs (Source + References)
 async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, dynamicToken, numberOfImages = 1, imageModelName = "GEM_PIX_2", inputImages = []) {
     return executeWithFailover(env, accounts, "CreateFlowImage", async (authData) => {
         const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
         
-        // Handle uploading multiple images
         const imageInputList = [];
-        
-        // Determine which images to upload. Priority: inputImages array, fallback to single imageData
         let imagesToUpload = [];
         if (inputImages && Array.isArray(inputImages) && inputImages.length > 0) {
             imagesToUpload = inputImages;
@@ -273,11 +301,9 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
             imagesToUpload = [imageData];
         }
 
-        // Loop upload to get mediaIds
         for (const imgBase64 of imagesToUpload) {
             if (imgBase64) {
                 const mediaId = await performUpload(authData, imgBase64, imageAspectRatio);
-                // All uploaded images are added as REFERENCE inputs
                 imageInputList.push({
                     "name": mediaId,
                     "imageInputType": "IMAGE_INPUT_TYPE_REFERENCE"
@@ -288,7 +314,6 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
         const flowUrl = `https://aisandbox-pa.googleapis.com/v1/projects/${projectId}/flowMedia:batchGenerateImages`;
         const sessionId = ";" + Date.now();
 
-        // Create multiple request objects (batch generation)
         const requests = [];
         for(let i=0; i<numberOfImages; i++) {
             requests.push({
@@ -302,7 +327,7 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
                 "imageModelName": imageModelName, 
                 "imageAspectRatio": imageAspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE",
                 "prompt": prompt || "enhance the resolution and quality of this image",
-                "imageInputs": imageInputList // Send array of uploaded mediaIds
+                "imageInputs": imageInputList 
             });
         }
 
@@ -320,7 +345,7 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
             "flow_url": flowUrl
         };
 
-        const res = await fetch(ONEWISE_PROXY_URL_CREATE, {
+        const result = await safeFetchUpstream(ONEWISE_PROXY_URL_CREATE, {
             method: 'POST',
             headers: {
                 'Authorization': ONEWISE_PROXY_AUTH,
@@ -329,15 +354,12 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
             body: JSON.stringify(payload)
         });
 
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Flow Media Trigger Failed (${res.status}): ${errText}`);
+        if (!result.ok) {
+            throw new Error(result.error?.message || `Flow Media Trigger Failed (${result.status})`);
         }
         
-        const data = await res.json();
-        
-        if (data.success && data.taskId) {
-            return { status: 'pending', taskId: data.taskId, projectId: projectId };
+        if (result.data.success && result.data.taskId) {
+            return { status: 'pending', taskId: result.data.taskId, projectId: projectId };
         }
         
         throw new Error("Invalid response from Flow Proxy (No Task ID)");
@@ -365,7 +387,8 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynami
             "flow_auth_token": cleanToken(token),
             "flow_url": flowUrl
         };
-        const res = await fetch(ONEWISE_PROXY_URL_CREATE, {
+        
+        const result = await safeFetchUpstream(ONEWISE_PROXY_URL_CREATE, {
             method: 'POST',
             headers: {
                 'Authorization': ONEWISE_PROXY_AUTH,
@@ -373,13 +396,13 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynami
             },
             body: JSON.stringify(payload)
         });
-        if (!res.ok) {
-            const errText = await res.text();
-            throw new Error(`Flow Upscale Failed (${res.status}): ${errText}`);
+
+        if (!result.ok) {
+            throw new Error(result.error?.message || `Flow Upscale Failed (${result.status})`);
         }
-        const data = await res.json();
-        if (data.success && data.taskId) {
-            return { status: 'pending', taskId: data.taskId };
+        
+        if (result.data.success && result.data.taskId) {
+            return { status: 'pending', taskId: result.data.taskId };
         }
         throw new Error("Invalid response from Flow Proxy (Upscale)");
     });
@@ -388,16 +411,16 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynami
 async function checkFlowStatus(env, accounts, taskId) {
     return executeWithFailover(env, accounts, "CheckFlowStatus", async (authData) => {
         const url = `${ONEWISE_PROXY_URL_CHECK}?taskId=${taskId}`;
-        const res = await fetch(url, {
+        const result = await safeFetchUpstream(url, {
             method: 'GET',
             headers: {
                 'Authorization': ONEWISE_PROXY_AUTH,
                 'Content-Type': 'application/json'
             }
         });
-        if (!res.ok) throw new Error(`Check Status Failed (${res.status})`);
-        const data = await res.json();
-        return data; 
+        
+        if (!result.ok) throw new Error(result.error?.message || `Check Status Failed (${result.status})`);
+        return result.data; 
     });
 }
 
@@ -542,7 +565,6 @@ export default {
                 const accounts = await getAllAccounts(env);
                 const count = body.numberOfImages || 1;
                 const modelName = body.imageModelName || "GEM_PIX_2";
-                // Pass array of images (inputImages)
                 const result = await triggerFlowMediaCreate(env, accounts, body.prompt, body.image, body.imageAspectRatio, body.dynamicToken, count, modelName, body.images);
                 return sendJson(result);
             } else if (action === 'flow_upscale') {

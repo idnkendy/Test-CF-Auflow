@@ -140,6 +140,10 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
+        // Nếu chuyển về Standard, xóa ảnh tham chiếu
+        if (val === 'Standard') {
+            onStateChange({ referenceImages: [] });
+        }
     };
 
     const handleFileSelect = (fileData: FileData | null) => {
@@ -277,7 +281,11 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                     }
                                 } catch (upscaleErr: any) {
                                     console.warn("Upscale failed, falling back", upscaleErr);
-                                    setUpscaleWarning("Không thể nâng cấp lên 2K, hiển thị ảnh gốc.");
+                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
+                                    // Refund logic for upscale failure (2K -> 1K difference: 5 credits)
+                                    if (user && logId) {
+                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
+                                    }
                                 }
                             }
                             
@@ -406,7 +414,22 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             </div>
                              <div>
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tối đa 5 ảnh)</label>
-                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                                {resolution === 'Standard' ? (
+                                    <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
+                                        <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
+                                        <p className="text-sm text-text-secondary dark:text-gray-400">
+                                            Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
+                                        </p>
+                                        <button 
+                                            onClick={() => handleResolutionChange('1K')}
+                                            className="text-xs text-[#7f13ec] hover:underline font-semibold"
+                                        >
+                                            Nâng cao chất lượng ảnh ngay
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                                )}
                             </div>
                         </div>
 

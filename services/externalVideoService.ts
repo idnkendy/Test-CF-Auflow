@@ -105,9 +105,37 @@ export const resizeAndCropImage = async (
     });
 };
 
+const formatErrorMessage = (msg: string): string => {
+    if (!msg) return "Lỗi không xác định. Vui lòng thử lại sau.";
+    
+    // Safety / Policy Errors
+    if (msg.includes("SAFETY") || msg.includes("safety") || msg.includes("blocked")) 
+        return "Nội dung vi phạm chính sách an toàn của AI (Safety Filter). Vui lòng điều chỉnh prompt nhẹ nhàng hơn.";
+    
+    // Captcha / Auth - UPDATED
+    if (msg.includes("reCAPTCHA") || msg.includes("captcha") || msg.includes("401") || msg.includes("UNAUTHENTICATED") || msg.includes("auth")) 
+        return "Google hiện đang xảy ra lỗi (Captcha). Vui lòng thử lại sau";
+
+    // Timeout / System
+    if (msg.includes("timeout") || msg.includes("deadline")) 
+        return "Hết thời gian chờ phản hồi từ máy chủ. Vui lòng thử lại.";
+    
+    if (msg.includes("503") || msg.includes("overloaded")) 
+        return "Máy chủ AI đang quá tải. Vui lòng thử lại sau 1 phút.";
+
+    if (msg.includes("quota") || msg.includes("exhausted"))
+        return "Hệ thống đang bận (Quota limit). Vui lòng chờ giây lát.";
+
+    // Ensure "Vui lòng thử lại sau" suffix exists if simple error
+    if (!msg.toLowerCase().includes("vui lòng") && !msg.includes("try again") && msg.length < 50) {
+        return `${msg}. Vui lòng thử lại sau.`;
+    }
+    return msg;
+};
+
 const fetchJson = async (endpoint: string, options?: RequestInit) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 45000);
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // Increased timeout to 60s
     
     let url = endpoint;
     if (BACKEND_URL) {
@@ -145,16 +173,20 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
             if (JSON.stringify(data).includes("SAFETY") || msg.includes("SAFETY")) throw new Error("SAFETY_ERROR");
             if (res.status === 429 || msg.includes("429") || msg.includes("RESOURCE_EXHAUSTED")) throw new Error("QUOTA_ERROR");
             if (res.status === 401 || res.status === 403 || msg.includes("UNAUTHENTICATED")) throw new Error("AUTH_ERROR");
-            throw new Error(msg);
+            throw new Error(formatErrorMessage(msg));
         }
         
-        if (data.status === 'failed' || data.code === 'failed') {
+        if (data.status === 'failed' || data.code === 'failed' || data.success === false) {
              const failMsg = data.message || "Unknown error";
-             if (failMsg.includes("reCAPTCHA") || failMsg.includes("failed")) {
-                 throw new Error(`SYSTEM_ERROR: ${failMsg}`);
+             if (failMsg.includes("reCAPTCHA")) {
+                 throw new Error(formatErrorMessage(failMsg));
              }
              if (failMsg.includes("SAFETY")) throw new Error("SAFETY_ERROR");
-             throw new Error(failMsg);
+             
+             // Check if it's processing state disguised as failure (should happen in flow check, but handled here just in case)
+             if (data.code === 'processing') return data;
+
+             throw new Error(formatErrorMessage(failMsg));
         }
 
         return data;
@@ -163,6 +195,10 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
         let msg = err.message || "Lỗi kết nối";
         if (msg.includes("aborted") || msg.includes("signal") || msg.includes("timeout")) msg = "TIMEOUT_ERROR";
         if (msg.includes("Failed to fetch")) msg = "NETWORK_ERROR";
+        
+        // Final normalization for reCAPTCHA if missed
+        if (msg.includes("reCAPTCHA")) msg = "Google hiện đang xảy ra lỗi (Captcha). Vui lòng thử lại sau";
+        
         throw new Error(msg);
     }
 };
@@ -176,12 +212,15 @@ export const generateFlowImage = async (
     inputImages: FileData[] | FileData = [], 
     aspectRatio: string = "IMAGE_ASPECT_RATIO_LANDSCAPE",
     numberOfImages: number = 1,
-    imageModelName: string = "GEM_PIX_2" 
+    imageModelName: string = "GEM_PIX_2",
+    onProgress?: (message: string) => void // New Callback
 ): Promise<{ imageUrls: string[], mediaIds: string[], projectId?: string }> => {
     
     // Normalize inputImages to array
     const imagesToProcess = Array.isArray(inputImages) ? inputImages : (inputImages ? [inputImages] : []);
     const processedImages: string[] = [];
+
+    if (onProgress) onProgress("Đang tối ưu hóa ảnh đầu vào...");
 
     // Resize and crop all images
     for (const img of imagesToProcess) {
@@ -194,6 +233,7 @@ export const generateFlowImage = async (
         }
     }
 
+    if (onProgress) onProgress("Đang kết nối hệ thống AI...");
     const dynamicToken = await getOneWiseToken();
 
     console.log("[Checkpoint 1] Creating Flow Task...");
@@ -223,10 +263,11 @@ export const generateFlowImage = async (
     const projectId = createRes.projectId;
     
     console.log(`[Checkpoint 2] Task Created: ${taskId}. Start Polling...`);
+    if (onProgress) onProgress("Đã gửi yêu cầu. Đang chờ xử lý...");
 
     // 2. POLL STATUS
-    const POLLING_DELAY = 10000;
-    const MAX_RETRIES = 20;
+    const POLLING_DELAY = 5000; // Faster polling initially
+    const MAX_RETRIES = 60; // Up to 5 minutes
 
     for (let i = 0; i < MAX_RETRIES; i++) {
         await wait(POLLING_DELAY);
@@ -241,30 +282,26 @@ export const generateFlowImage = async (
                 })
             });
 
-            if (i % 2 === 0) console.log(`[Checkpoint 3] Poll ${i + 1}/${MAX_RETRIES}:`, statusRes);
-
             // HANDLE PROCESSING STATUS CORRECTLY
-            // If code is 'processing', it's NOT a failure, just not done yet.
             if (statusRes.code === 'processing') {
-                if (i % 2 === 0) console.log(`[Flow] Processing step ${statusRes.step}: ${statusRes.message}`);
+                const step = statusRes.step || '...';
+                const msg = statusRes.message || 'Đang xử lý';
+                if (onProgress) onProgress(`[Bước ${step}] ${msg}`);
                 continue;
             }
 
             if (statusRes.result?.error) {
                 const nestedErr = statusRes.result.error;
                 if (nestedErr.code === 401 || nestedErr.status === 'UNAUTHENTICATED') {
-                    throw new Error("Lỗi xác thực hệ thống (401). Vui lòng thử lại sau.");
+                    throw new Error("Google hiện đang xảy ra lỗi (Captcha). Vui lòng thử lại sau");
                 }
                 const errMsg = nestedErr.message || "Lỗi xử lý từ hệ thống AI";
-                throw new Error(`${errMsg}. Vui lòng thử lại sau.`);
+                throw new Error(formatErrorMessage(errMsg));
             }
 
             if (statusRes.code === 'failed' || statusRes.success === false) {
                  const msg = statusRes.message || "Lỗi xử lý không xác định";
-                 if (msg.includes("reCAPTCHA")) {
-                     throw new Error(`Lỗi xác thực hệ thống (Captcha). Vui lòng thử lại sau.`);
-                 }
-                 throw new Error(`${msg}. Vui lòng thử lại sau.`);
+                 throw new Error(formatErrorMessage(msg));
             }
 
             if (statusRes.result?.media && statusRes.result.media.length > 0) {
@@ -302,7 +339,7 @@ export const generateFlowImage = async (
                 });
                 
                 if (urls.length > 0) {
-                    console.log(`[Checkpoint 5] Success! Found ${urls.length} images and ${mediaIds.length} IDs.`);
+                    if (onProgress) onProgress("Hoàn tất! Đang tải ảnh...");
                     return { imageUrls: urls, mediaIds, projectId };
                 }
             }
@@ -312,14 +349,17 @@ export const generateFlowImage = async (
             }
 
         } catch (pollErr: any) {
-            if (pollErr.message && (pollErr.message.includes("SYSTEM_ERROR") || pollErr.message.includes("Vui lòng thử lại sau"))) {
+            // Rethrow critical errors that shouldn't be retried
+            const msg = pollErr.message || "";
+            if (msg.includes("SYSTEM_ERROR") || msg.includes("Vui lòng thử lại sau") || msg.includes("Captcha") || msg.includes("SAFETY")) {
                  throw pollErr;
             }
             console.warn("Polling retry:", pollErr);
+            if (onProgress) onProgress("Kết nối chậm, đang thử lại...");
         }
     }
     
-    throw new Error("Hết thời gian chờ xử lý. Vui lòng thử lại sau.");
+    throw new Error("Hết thời gian chờ xử lý (Timeout). Vui lòng thử lại sau.");
 };
 
 export const upscaleFlowImage = async (
@@ -373,14 +413,15 @@ export const upscaleFlowImage = async (
             if (statusRes.result?.error) {
                 const nestedErr = statusRes.result.error;
                 if (nestedErr.code === 401 || nestedErr.status === 'UNAUTHENTICATED') {
-                    throw new Error("Lỗi xác thực hệ thống (401). Vui lòng thử lại sau.");
+                    throw new Error("Google hiện đang xảy ra lỗi (Captcha). Vui lòng thử lại sau");
                 }
                 const errMsg = nestedErr.message || "Lỗi xử lý từ hệ thống AI";
-                throw new Error(`${errMsg}. Vui lòng thử lại sau.`);
+                throw new Error(formatErrorMessage(errMsg));
             }
 
             if (statusRes.code === 'failed' || statusRes.success === false) {
-                 throw new Error(`${statusRes.message || "Lỗi xử lý upscale"}. Vui lòng thử lại sau.`);
+                 const msg = statusRes.message || "Lỗi xử lý upscale";
+                 throw new Error(formatErrorMessage(msg));
             }
 
             if (statusRes.result) {
@@ -403,7 +444,8 @@ export const upscaleFlowImage = async (
             }
 
         } catch (pollErr: any) {
-            if (pollErr.message && (pollErr.message.includes("SYSTEM_ERROR") || pollErr.message.includes("Vui lòng thử lại sau"))) {
+            const msg = pollErr.message || "";
+            if (msg.includes("SYSTEM_ERROR") || msg.includes("Vui lòng thử lại sau") || msg.includes("Captcha")) {
                  throw pollErr;
             }
             console.warn("Polling upscale retry:", pollErr);
