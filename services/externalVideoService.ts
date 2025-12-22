@@ -226,7 +226,7 @@ export const generateFlowImage = async (
 
     // 2. POLL STATUS
     const POLLING_DELAY = 10000;
-    const MAX_RETRIES = 30;
+    const MAX_RETRIES = 20;
 
     for (let i = 0; i < MAX_RETRIES; i++) {
         await wait(POLLING_DELAY);
@@ -242,6 +242,13 @@ export const generateFlowImage = async (
             });
 
             if (i % 2 === 0) console.log(`[Checkpoint 3] Poll ${i + 1}/${MAX_RETRIES}:`, statusRes);
+
+            // HANDLE PROCESSING STATUS CORRECTLY
+            // If code is 'processing', it's NOT a failure, just not done yet.
+            if (statusRes.code === 'processing') {
+                if (i % 2 === 0) console.log(`[Flow] Processing step ${statusRes.step}: ${statusRes.message}`);
+                continue;
+            }
 
             if (statusRes.result?.error) {
                 const nestedErr = statusRes.result.error;
@@ -342,7 +349,7 @@ export const upscaleFlowImage = async (
     console.log(`[Checkpoint 7] Upscale Task Created: ${taskId}`);
 
     const POLLING_DELAY = 10000;
-    const MAX_RETRIES = 30;
+    const MAX_RETRIES = 20;
 
     for (let i = 0; i < MAX_RETRIES; i++) {
         await wait(POLLING_DELAY);
@@ -356,6 +363,12 @@ export const upscaleFlowImage = async (
                     taskId: taskId 
                 })
             });
+
+            // HANDLE PROCESSING STATUS CORRECTLY
+            if (statusRes.code === 'processing') {
+                if (i % 2 === 0) console.log(`[Upscale] Processing step ${statusRes.step}: ${statusRes.message}`);
+                continue;
+            }
 
             if (statusRes.result?.error) {
                 const nestedErr = statusRes.result.error;
