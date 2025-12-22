@@ -142,6 +142,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
                 const collectedUrls: string[] = [];
                 let completedCount = 0;
+                let lastError: any = null;
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
@@ -189,14 +190,18 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                                 resultImageURL: finalUrl,
                             });
                         }
-                    } catch (e) {
+                    } catch (e: any) {
                         console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
                     }
                 });
 
                 await Promise.all(promises);
                 imageUrls = collectedUrls;
-                if (collectedUrls.length === 0) throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại.");
+                if (collectedUrls.length === 0) {
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
+                }
 
             } else {
                 // --- GOOGLE API LOGIC (4K Only) ---

@@ -231,6 +231,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 let completedCount = 0;
+                let lastError: any = null;
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
@@ -289,8 +290,9 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         } else {
                             throw new Error("Không nhận được dữ liệu ảnh từ server.");
                         }
-                    } catch (e) {
+                    } catch (e: any) {
                         console.error(`Image ${index+1} generation failed`, e);
+                        lastError = e;
                         // Don't throw here to allow partial success
                     }
                 });
@@ -298,7 +300,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 await Promise.all(promises);
 
                 if (collectedUrls.length === 0) {
-                    throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại.");
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
                 }
                 
                 if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);

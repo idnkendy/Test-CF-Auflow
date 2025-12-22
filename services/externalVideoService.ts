@@ -226,7 +226,7 @@ export const generateFlowImage = async (
 
     // 2. POLL STATUS
     const POLLING_DELAY = 10000;
-    const MAX_RETRIES = 60;
+    const MAX_RETRIES = 30;
 
     for (let i = 0; i < MAX_RETRIES; i++) {
         await wait(POLLING_DELAY);
@@ -246,17 +246,18 @@ export const generateFlowImage = async (
             if (statusRes.result?.error) {
                 const nestedErr = statusRes.result.error;
                 if (nestedErr.code === 401 || nestedErr.status === 'UNAUTHENTICATED') {
-                    throw new Error("SYSTEM_ERROR: Lỗi xác thực hệ thống (401).");
+                    throw new Error("Lỗi xác thực hệ thống (401). Vui lòng thử lại sau.");
                 }
-                throw new Error(nestedErr.message || "Lỗi xử lý từ hệ thống AI.");
+                const errMsg = nestedErr.message || "Lỗi xử lý từ hệ thống AI";
+                throw new Error(`${errMsg}. Vui lòng thử lại sau.`);
             }
 
             if (statusRes.code === 'failed' || statusRes.success === false) {
-                 const msg = statusRes.message || "Lỗi xử lý không xác định.";
+                 const msg = statusRes.message || "Lỗi xử lý không xác định";
                  if (msg.includes("reCAPTCHA")) {
-                     throw new Error(`SYSTEM_ERROR: Lỗi xác thực hệ thống (Captcha).`);
+                     throw new Error(`Lỗi xác thực hệ thống (Captcha). Vui lòng thử lại sau.`);
                  }
-                 throw new Error(msg);
+                 throw new Error(`${msg}. Vui lòng thử lại sau.`);
             }
 
             if (statusRes.result?.media && statusRes.result.media.length > 0) {
@@ -300,18 +301,18 @@ export const generateFlowImage = async (
             }
             
             if (statusRes.status === 'FAILED') {
-                 throw new Error("Quá trình xử lý ảnh thất bại.");
+                 throw new Error("Quá trình xử lý ảnh thất bại. Vui lòng thử lại sau.");
             }
 
         } catch (pollErr: any) {
-            if (pollErr.message && pollErr.message.includes("SYSTEM_ERROR")) {
+            if (pollErr.message && (pollErr.message.includes("SYSTEM_ERROR") || pollErr.message.includes("Vui lòng thử lại sau"))) {
                  throw pollErr;
             }
             console.warn("Polling retry:", pollErr);
         }
     }
     
-    throw new Error("Hết thời gian chờ xử lý (Timeout). Vui lòng thử lại.");
+    throw new Error("Hết thời gian chờ xử lý. Vui lòng thử lại sau.");
 };
 
 export const upscaleFlowImage = async (
@@ -341,7 +342,7 @@ export const upscaleFlowImage = async (
     console.log(`[Checkpoint 7] Upscale Task Created: ${taskId}`);
 
     const POLLING_DELAY = 10000;
-    const MAX_RETRIES = 60;
+    const MAX_RETRIES = 30;
 
     for (let i = 0; i < MAX_RETRIES; i++) {
         await wait(POLLING_DELAY);
@@ -359,13 +360,14 @@ export const upscaleFlowImage = async (
             if (statusRes.result?.error) {
                 const nestedErr = statusRes.result.error;
                 if (nestedErr.code === 401 || nestedErr.status === 'UNAUTHENTICATED') {
-                    throw new Error("SYSTEM_ERROR: Lỗi xác thực hệ thống (401).");
+                    throw new Error("Lỗi xác thực hệ thống (401). Vui lòng thử lại sau.");
                 }
-                throw new Error(nestedErr.message || "Lỗi xử lý từ hệ thống AI.");
+                const errMsg = nestedErr.message || "Lỗi xử lý từ hệ thống AI";
+                throw new Error(`${errMsg}. Vui lòng thử lại sau.`);
             }
 
             if (statusRes.code === 'failed' || statusRes.success === false) {
-                 throw new Error(statusRes.message || "Lỗi xử lý upscale.");
+                 throw new Error(`${statusRes.message || "Lỗi xử lý upscale"}. Vui lòng thử lại sau.`);
             }
 
             if (statusRes.result) {
@@ -384,18 +386,18 @@ export const upscaleFlowImage = async (
             }
             
             if (statusRes.status === 'FAILED') {
-                 throw new Error("Quá trình upscale thất bại.");
+                 throw new Error("Quá trình upscale thất bại. Vui lòng thử lại sau.");
             }
 
         } catch (pollErr: any) {
-            if (pollErr.message && pollErr.message.includes("SYSTEM_ERROR")) {
+            if (pollErr.message && (pollErr.message.includes("SYSTEM_ERROR") || pollErr.message.includes("Vui lòng thử lại sau"))) {
                  throw pollErr;
             }
             console.warn("Polling upscale retry:", pollErr);
         }
     }
 
-    throw new Error("Hết thời gian chờ upscale.");
+    throw new Error("Hết thời gian chờ upscale. Vui lòng thử lại sau.");
 };
 
 async function _executeVideoGeneration(
