@@ -110,8 +110,8 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
             <h2 className="text-2xl font-bold">AI Moodboard</h2>
             <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border space-y-6">
                 <div className="grid grid-cols-2 gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-                    <button onClick={() => onStateChange({ mode: 'moodboardToScene', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'moodboardToScene' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Moodboard -> Không gian</button>
-                    <button onClick={() => onStateChange({ mode: 'sceneToMoodboard', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'sceneToMoodboard' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Không gian -> Moodboard</button>
+                    <button onClick={() => onStateChange({ mode: 'moodboardToScene', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'moodboardToScene' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Moodboard &rarr; Không gian</button>
+                    <button onClick={() => onStateChange({ mode: 'sceneToMoodboard', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'sceneToMoodboard' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Không gian &rarr; Moodboard</button>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <ImageUpload onFileSelect={(f) => onStateChange({ sourceImage: f, resultImages: [] })} previewUrl={sourceImage?.objectURL} />
