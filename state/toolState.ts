@@ -61,6 +61,7 @@ export interface EditByNoteState {
     resultImages: string[];
     numberOfImages: number;
     resolution: ImageResolution;
+    aspectRatio: AspectRatio;
 }
 
 export interface PricingState {
@@ -654,6 +655,7 @@ export const initialToolStates = {
         resultImages: [],
         numberOfImages: 1,
         resolution: 'Standard',
+        aspectRatio: '16:9', // Added default
     } as EditByNoteState,
     [Tool.Pricing]: {} as PricingState,
     [Tool.Profile]: { activeTab: 'profile' } as ProfileState,
