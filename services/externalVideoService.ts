@@ -577,7 +577,8 @@ async function _executeVideoGeneration(
                 throw new Error(`GENERATION_FAILED: ${failReason}`);
             }
         } catch (e: any) {
-            if (e.message.includes("SAFETY_ERROR") || e.message.includes("AUTH_ERROR")) throw e;
+            // FIX: Stop polling immediately on critical errors to trigger refund/fail handling
+            if (e.message.includes("SAFETY_ERROR") || e.message.includes("AUTH_ERROR") || e.message.includes("NotFound") || e.message.includes("404")) throw e;
         }
     }
     throw new Error("TIMEOUT_ERROR");

@@ -5,10 +5,17 @@ const TEST_ACCESS_TOKEN = "";
 const TEST_MEDIA_ID = ""; 
 const TEST_PROJECT_ID = ""; 
 const DEFAULT_SUPABASE_URL = 'https://mtlomjjlgvsjpudxlspq.supabase.co';
+
+// QUAN TRỌNG: DÁN SERVICE ROLE KEY (SECRET) VÀO ĐÂY ĐỂ WORKER CÓ QUYỀN TRỪ USAGE
+// NẾU KHÔNG CÓ KHÓA NÀY, VIỆC CẬP NHẬT DATABASE SẼ THẤT BẠI (LỖI 401/403)
+const SUPABASE_SERVICE_ROLE_KEY = ""; 
+
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMzAwMjcsImV4cCI6MjA3ODkwNjAyN30.6K-rSAFVJxQPLVjZKdJpBspb5tHE1dZiry4lS6u6JzQ";
-const ONEWISE_PROXY_URL_CREATE = "https://new-rest.onewise.app/api/fix/create-video-veo3";
-const ONEWISE_PROXY_URL_CHECK = "https://new-rest.onewise.app/api/fix/task-status";
-const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjI4NTg2Mn0.zLqDOTRuYAnavQyNWFoZL6NdEVXBUqbdfujnLwY199E";
+
+// UPDATED PROXY CONFIGURATION
+const ONEWISE_PROXY_URL_CREATE = "https://flow-api.nanoai.pics/api/fix/create-video-veo3";
+const ONEWISE_PROXY_URL_CHECK = "https://flow-api.nanoai.pics/api/fix/task-status";
+const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjM2OTk4Mn0.ZcM4BG7XzFj0xvOvZxsm5dHJH55gp-DEkh8DJ2_IsYw";
 
 const HEADERS = {
     'content-type': 'text/plain;charset=UTF-8', 
@@ -30,7 +37,7 @@ async function getGeminiKeySecurely(env) {
     if (env.GEMINI_API_KEY) return cleanToken(env.GEMINI_API_KEY);
     if (FALLBACK_GEMINI_API_KEY && FALLBACK_GEMINI_API_KEY.length > 10) return cleanToken(FALLBACK_GEMINI_API_KEY);
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
-    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
+    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
     if (sbUrl && sbKey) {
         try {
             const response = await fetch(`${sbUrl}/rest/v1/api_keys?select=key_value&is_active=eq.true`, {
@@ -82,12 +89,17 @@ async function handleGeminiProxy(body, env, request) {
     return { data, status: response.status, ok: response.ok };
 }
 
-// ... existing helper functions (resetAllUsageCounts, incrementAccountUsage, getAllAccounts) ...
 async function resetAllUsageCounts(env) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
-    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
+    // Use Service Key logic: Env > Hardcoded Service Key > Default (Anon - will fail)
+    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
+    
+    if (sbKey === DEFAULT_SUPABASE_KEY) {
+        console.warn("[ResetUsage] Warning: Using ANON key. DB Updates might fail due to RLS.");
+    }
+
     try {
-        await fetch(`${sbUrl}/rest/v1/video_accounts?is_active=eq.true`, {
+        const res = await fetch(`${sbUrl}/rest/v1/video_accounts?is_active=eq.true`, {
             method: 'PATCH',
             headers: {
                 'apikey': sbKey,
@@ -97,14 +109,17 @@ async function resetAllUsageCounts(env) {
             },
             body: JSON.stringify({ usage_count: 0 })
         });
+        if (!res.ok) console.error(`[ResetUsage] Failed: ${res.status} ${await res.text()}`);
     } catch (e) { console.error("Failed to reset usage counts:", e); }
 }
 
 async function incrementAccountUsage(env, accountId, currentUsage) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
-    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
+    // Use Service Key logic: Env > Hardcoded Service Key > Default (Anon - will fail)
+    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
+
     try {
-        await fetch(`${sbUrl}/rest/v1/video_accounts?id=eq.${accountId}`, {
+        const res = await fetch(`${sbUrl}/rest/v1/video_accounts?id=eq.${accountId}`, {
             method: 'PATCH',
             headers: {
                 'apikey': sbKey,
@@ -114,12 +129,21 @@ async function incrementAccountUsage(env, accountId, currentUsage) {
             },
             body: JSON.stringify({ usage_count: (currentUsage || 0) + 1 })
         });
+        
+        if (!res.ok) {
+            const errText = await res.text();
+            console.error(`[DB Update] Failed to increment usage for ${accountId}: ${res.status} - ${errText}`);
+        } else {
+            console.log(`[DB Update] Incremented usage for ${accountId} to ${(currentUsage || 0) + 1}`);
+        }
     } catch (e) { console.error(`[DB Update] Exception incrementing usage for account ${accountId}:`, e); }
 }
 
 async function getAllAccounts(env) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
-    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
+    // Can use Default Key for reading if RLS allows Public Read
+    const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
+    
     try {
         const response = await fetch(`${sbUrl}/rest/v1/video_accounts?select=id,access_token,auth_cookies,project_id,usage_count,usage_limit&is_active=eq.true&access_token=not.is.null&order=updated_at.desc`, {
             method: 'GET',
@@ -129,7 +153,7 @@ async function getAllAccounts(env) {
                 'Content-Type': 'application/json'
             }
         });
-        if (!response.ok) throw new Error("Lỗi kết nối DB Supabase");
+        if (!response.ok) throw new Error(`Lỗi kết nối DB Supabase: ${response.status}`);
         let accounts = await response.json();
         if (!accounts || accounts.length === 0) throw new Error("Hệ thống đang cập nhật tài khoản Video. Vui lòng thử lại sau.");
         let availableAccounts = accounts.filter(acc => {
@@ -159,7 +183,12 @@ async function executeWithFailover(env, accounts, operationName, callback) {
         if (!account.project_id) continue;
         try {
             const result = await callback(account);
-            if (operationName !== 'CheckStatus' && operationName !== 'UploadImage' && operationName !== 'CheckFlowStatus') {
+            
+            // Explicitly whitelist operations that consume quota to ensure accurate accounting
+            // CreateFlowImage MUST increment usage as per requirement.
+            const QUOTA_CONSUMING_OPS = ['CreateVideo', 'CreateFlowImage', 'UpscaleFlowImage', 'UpscaleVideo', 'Upscale'];
+            
+            if (QUOTA_CONSUMING_OPS.includes(operationName)) {
                  incrementAccountUsage(env, account.id, account.usage_count).catch(err => console.error("Failed to increment usage post-success:", err));
             }
             return result; 
@@ -217,43 +246,79 @@ async function uploadImage(env, accounts, base64Data, imageAspectRatio) {
     });
 }
 
+// UPDATED: Video Generation via Proxy
 async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRatio, imageData, imageAspectRatio) {
     return executeWithFailover(env, accounts, "CreateVideo", async (authData) => {
-        const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
+        const { access_token: token, project_id: projectId } = authData;
         let activeMediaId = mediaId;
         if (imageData) {
             activeMediaId = await performUpload(authData, imageData, imageAspectRatio);
         }
+        
         const sceneId = crypto.randomUUID();
+        const sessionId = ";" + Date.now();
         const aspectRatioEnum = videoAspectRatio || "VIDEO_ASPECT_RATIO_LANDSCAPE";
-        const modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
-            ? "veo_3_1_i2v_s_fast_portrait_ultra" 
-            : "veo_3_1_i2v_s_fast_ultra";
-        const payload = {
-            "clientContext": {
-                "sessionId": ";" + Date.now(),
-                "projectId": projectId,
-                "tool": "PINHOLE",
-                "userPaygateTier": "PAYGATE_TIER_TWO"
-            },
-            "requests": [{
-                "aspectRatio": aspectRatioEnum,
-                "seed": Math.floor(Date.now() / 1000), 
-                "textInput": { "prompt": prompt },
-                "videoModelKey": modelKey, 
-                "startImage": { "mediaId": activeMediaId },
-                "metadata": { "sceneId": sceneId }
-            }]
+        const isI2V = !!activeMediaId;
+        
+        // Determine Model Key
+        let modelKey = "";
+        if (isI2V) {
+             modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
+                ? "veo_3_1_i2v_s_fast_portrait_ultra" 
+                : "veo_3_1_i2v_s_fast_ultra";
+        } else {
+             modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT")
+                ? "veo_3_1_t2v_fast_portrait_ultra"
+                : "veo_3_1_t2v_fast_ultra";
+        }
+
+        const requestItem = {
+            "aspectRatio": aspectRatioEnum,
+            "seed": Math.floor(Date.now() / 1000), 
+            "textInput": { "prompt": prompt },
+            "videoModelKey": modelKey, 
+            "metadata": { "sceneId": sceneId }
         };
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage', {
+
+        if (isI2V) {
+            requestItem.startImage = { "mediaId": activeMediaId };
+        }
+
+        const googleUrl = isI2V 
+            ? 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage'
+            : 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoText';
+
+        const payload = {
+            "body_json": {
+                "clientContext": {
+                    "sessionId": sessionId,
+                    "projectId": projectId,
+                    "tool": "PINHOLE",
+                    "userPaygateTier": "PAYGATE_TIER_TWO"
+                },
+                "requests": [requestItem]
+            },
+            "flow_auth_token": cleanToken(token),
+            "flow_url": googleUrl
+        };
+
+        const res = await safeFetchUpstream(ONEWISE_PROXY_URL_CREATE, {
             method: 'POST',
-            headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' },
+            headers: { 
+                'Authorization': ONEWISE_PROXY_AUTH,
+                'Content-Type': 'application/json'
+            },
             body: JSON.stringify(payload)
         });
-        if (!res.ok) throw new Error(`Trigger Failed (${res.status})`);
-        const data = await res.json();
-        const operationName = data.operations?.[0]?.operation?.name || data.operations?.[0]?.name;
-        return { task_id: operationName, scene_id: sceneId };
+
+        if (!res.ok) {
+             throw new Error(res.error?.message || `Proxy Trigger Failed (${res.status})`);
+        }
+        
+        if (res.data && res.data.taskId) {
+             return { task_id: res.data.taskId, scene_id: sceneId };
+        }
+        throw new Error("Proxy response missing taskId");
     });
 }
 
@@ -263,7 +328,6 @@ const safeFetchUpstream = async (url, options) => {
         const res = await fetch(url, options);
         const text = await res.text();
         
-        // Handle Cloudflare HTML Error Pages from Upstream
         if (text.trim().startsWith("<") || text.includes("<!DOCTYPE") || text.includes("<html")) {
              console.error("Upstream returned HTML:", text.substring(0, 100));
              return { 
@@ -288,7 +352,7 @@ const safeFetchUpstream = async (url, options) => {
     }
 }
 
-// --- NEW ACTION: FLOW MEDIA CREATE (GEM_PIX_2) VIA PROXY (START TASK) ---
+// --- FLOW MEDIA CREATE (GEM_PIX_2) VIA PROXY (START TASK) ---
 async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, dynamicToken, numberOfImages = 1, imageModelName = "GEM_PIX_2", inputImages = []) {
     return executeWithFailover(env, accounts, "CreateFlowImage", async (authData) => {
         const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
@@ -366,7 +430,7 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
     });
 }
 
-// --- NEW ACTION: FLOW MEDIA UPSCALE ---
+// --- FLOW MEDIA UPSCALE ---
 async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynamicToken) {
     return executeWithFailover(env, accounts, "UpscaleFlowImage", async (authData) => {
         const { access_token: token } = authData;
@@ -408,20 +472,19 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynami
     });
 }
 
+// Optimized CheckFlowStatus for Flow Media
 async function checkFlowStatus(env, accounts, taskId) {
-    return executeWithFailover(env, accounts, "CheckFlowStatus", async (authData) => {
-        const url = `${ONEWISE_PROXY_URL_CHECK}?taskId=${taskId}`;
-        const result = await safeFetchUpstream(url, {
-            method: 'GET',
-            headers: {
-                'Authorization': ONEWISE_PROXY_AUTH,
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        if (!result.ok) throw new Error(result.error?.message || `Check Status Failed (${result.status})`);
-        return result.data; 
+    const url = `${ONEWISE_PROXY_URL_CHECK}?taskId=${taskId}`;
+    const result = await safeFetchUpstream(url, {
+        method: 'GET',
+        headers: {
+            'Authorization': ONEWISE_PROXY_AUTH,
+            'Content-Type': 'application/json'
+        }
     });
+    
+    if (!result.ok) throw new Error(result.error?.message || `Check Status Failed (${result.status})`);
+    return result.data; 
 }
 
 async function triggerUpscale(env, accounts, mediaId) {
@@ -443,7 +506,7 @@ async function triggerUpscale(env, accounts, mediaId) {
                 "userPaygateTier": "PAYGATE_TIER_TWO"
             }
         };
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoUpsampleVideo', {
+        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:uploadUserImage', {
             method: 'POST',
             headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' },
             body: JSON.stringify(payload)
@@ -465,7 +528,7 @@ async function checkStatus(env, accounts, task_id, scene_id) {
                 "status": "MEDIA_GENERATION_STATUS_ACTIVE"
             }]
         };
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', {
+        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchCheckAsyncVideoGenerationStatus', {
             method: 'POST',
             headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' },
             body: JSON.stringify(payload)
@@ -496,7 +559,7 @@ async function handleSePayWebhook(request, env) {
         const transactionCode = match ? match[0].toUpperCase() : null;
         if (!transactionCode) return new Response(JSON.stringify({ success: false, message: "No transaction code" }), { status: 200 });
         const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
-        const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || DEFAULT_SUPABASE_KEY);
+        const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
         const response = await fetch(`${sbUrl}/rest/v1/rpc/webhook_approve_transaction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` },
@@ -582,8 +645,58 @@ export default {
                 const result = await triggerUpscale(env, accounts, body.mediaId);
                 return sendJson(result);
             } else if (action === 'check') {
+                let currentTaskId = body.task_id;
+                let currentSceneId = body.scene_id;
+
+                // LOGIC: Resolve Proxy ID to Google ID before checking status
+                // 1. Check if ID is a Proxy UUID (36 chars with hyphens)
+                if (currentTaskId && typeof currentTaskId === 'string' && currentTaskId.length === 36 && currentTaskId.includes('-')) {
+                     try {
+                         // STEP 1: Call Proxy to get Real Google Operation Name & Scene ID
+                         const proxyUrl = `${ONEWISE_PROXY_URL_CHECK}?taskId=${currentTaskId}`;
+                         const proxyRes = await safeFetchUpstream(proxyUrl, {
+                             method: 'GET',
+                             headers: {
+                                 'Authorization': ONEWISE_PROXY_AUTH,
+                                 'Content-Type': 'application/json'
+                             }
+                         });
+
+                         if (proxyRes.ok && proxyRes.data?.success) {
+                             // STEP 2: Extract Data based on user provided JSON structure
+                             const operations = proxyRes.data.result?.operations;
+                             
+                             if (operations && operations.length > 0) {
+                                 const opData = operations[0];
+                                 const googleName = opData.operation?.name;
+                                 const googleSceneId = opData.sceneId;
+
+                                 if (googleName && googleSceneId) {
+                                     // Found real IDs, update variables for the next step
+                                     currentTaskId = googleName;
+                                     currentSceneId = googleSceneId;
+                                 } else {
+                                     // Proxy has the task but hasn't received Google IDs yet
+                                     return sendJson({ status: 'processing', message: "Waiting for Google operation allocation..." });
+                                 }
+                             } else {
+                                 // Valid proxy response but no operations found yet
+                                 return sendJson({ status: 'processing', message: "Initializing task..." });
+                             }
+                         } else {
+                             // Proxy call failed or task not found
+                             return sendJson({ status: 'failed', message: "Task not found in Proxy system" });
+                         }
+                     } catch (e) {
+                         console.error("Proxy ID Resolution Error:", e);
+                         return sendJson({ status: 'failed', message: `Proxy Resolution Error: ${e.message}` });
+                     }
+                }
+
+                // STEP 3: Execute Main Check Status using Google API (checkStatus function)
+                // This uses the resolved Google Operation Name and Scene ID
                 const accounts = await getAllAccounts(env);
-                const result = await checkStatus(env, accounts, body.task_id, body.scene_id);
+                const result = await checkStatus(env, accounts, currentTaskId, currentSceneId);
                 return sendJson(result);
             } else {
                 return sendJson({ status: "ok", message: "Cloudflare Worker is running", request_path: path });
