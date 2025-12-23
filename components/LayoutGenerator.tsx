@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { LayoutGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService'; // Flow Import
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -25,8 +27,19 @@ interface LayoutGeneratorProps {
 const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     
-    const cost = numberOfImages * 5; // Standard cost
+    const getCostPerImage = () => {
+        switch (resolution) {
+            case 'Standard': return 5;
+            case '1K': return 15;
+            case '2K': return 20;
+            case '4K': return 30;
+            default: return 5;
+        }
+    };
+    const cost = numberOfImages * getCostPerImage();
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImages: [] });
@@ -48,67 +61,92 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
+        setStatusMessage('Đang thiết kế layout...');
+        setUpscaleWarning(null);
 
         const fullPrompt = `Architectural Layout & Presentation Task: "${prompt}". 
         ${sourceImage ? 'Use the provided image as the primary visual reference/design base.' : ''}
-        Ensure the final output has a professional graphic composition, clear linework, and coherent layout style.
-        The final generated image must strictly have a ${aspectRatio} aspect ratio.`;
+        Ensure the final output has a professional graphic composition, clear linework, and coherent layout style.`;
 
+        const useFlow = resolution !== '4K';
         let logId: string | null = null;
+        let jobId: string | null = null;
 
         try {
             if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Tạo Layout (${numberOfImages} ảnh)`);
+                logId = await onDeductCredits(cost, `Tạo Layout (${numberOfImages} ảnh) - ${resolution}`);
             }
-
-            let results: { imageUrl: string }[] = [];
-
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage || undefined);
-                    return { imageUrl: images[0] };
-                });
-                results = await Promise.all(promises);
-            } else {
-                if (sourceImage) {
-                    // editImage wrapper usually doesn't explicitly support arbitrary aspect ratio change easily without outpainting, 
-                    // but prompt instructions help. For best results, use generateStandardImage if no sourceImage, 
-                    // or editImage if sourceImage exists (preserving source ratio mostly).
-                    // However, user requested aspect ratio control.
-                    // We will pass the instruction in prompt.
-                    results = await geminiService.editImage(fullPrompt, sourceImage, numberOfImages);
-                } else {
-                    const imageUrls = await geminiService.generateStandardImage(fullPrompt, aspectRatio, numberOfImages, undefined);
-                    results = imageUrls.map(url => ({ imageUrl: url }));
-                }
-            }
-
-            const imageUrls = results.map(r => r.imageUrl);
-            onStateChange({ resultImages: imageUrls });
-
-            imageUrls.forEach(url => {
-                historyService.addToHistory({
-                    tool: Tool.LayoutGenerator,
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                jobId = await jobService.createJob({
+                    user_id: user.id,
+                    tool_id: Tool.LayoutGenerator,
                     prompt: fullPrompt,
-                    sourceImageURL: sourceImage?.objectURL,
-                    resultImageURL: url,
+                    cost: cost,
+                    usage_log_id: logId
                 });
-            });
+            }
+            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
+
+            let imageUrls: string[] = [];
+
+            if (useFlow) {
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9' || aspectRatio === '4:3') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16' || aspectRatio === '3:4') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                const collectedUrls: string[] = [];
+                const inputImages = sourceImage ? [sourceImage] : [];
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    setStatusMessage(`[1/2] Đang tạo layout (${index + 1}/${numberOfImages})...`);
+                    const result = await externalVideoService.generateFlowImage(
+                        fullPrompt, inputImages, aspectEnum, 1, modelName, (msg) => setStatusMessage(msg)
+                    );
+                    
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        if (resolution === '2K' && result.mediaIds?.length > 0) {
+                            setStatusMessage(`[2/2] Đang nâng cấp 2K...`);
+                            try {
+                                const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
+                                if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                            } catch (e) {
+                                setUpscaleWarning("Lỗi upscale 2K, hoàn 5 credits.");
+                                if (user && logId) await refundCredits(user.id, 5, "Hoàn tiền lỗi Upscale", logId);
+                            }
+                        }
+                        collectedUrls.push(finalUrl);
+                        onStateChange({ resultImages: [...collectedUrls] });
+                        historyService.addToHistory({ tool: Tool.LayoutGenerator, prompt: `Flow: ${fullPrompt}`, sourceImageURL: sourceImage?.objectURL, resultImageURL: finalUrl });
+                    }
+                });
+                await Promise.all(promises);
+                imageUrls = collectedUrls;
+            } else {
+                setStatusMessage('Đang xử lý với Gemini 4K...');
+                const promises = Array.from({ length: numberOfImages }).map(async () => {
+                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage || undefined, jobId || undefined);
+                    return images[0];
+                });
+                imageUrls = await Promise.all(promises);
+                onStateChange({ resultImages: imageUrls });
+                imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.LayoutGenerator, prompt: fullPrompt, sourceImageURL: sourceImage?.objectURL, resultImageURL: url }));
+            }
+
+            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
         } catch (err: any) {
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) {
-                errorMessage += " (Credits đã được hoàn lại)";
-            }
-            onStateChange({ error: errorMessage });
-
-            // Refund logic
+            let msg = err.message;
+            if (logId) msg += " (Credits đã hoàn lại)";
+            onStateChange({ error: msg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo layout (${err.message})`);
-            }
+            if (user && logId && onDeductCredits) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi layout (${err.message})`, logId);
         } finally {
             onStateChange({ isLoading: false });
+            setStatusMessage(null);
         }
     };
 
@@ -127,8 +165,6 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Layout & Presentation</h2>
-            <p className="text-text-secondary dark:text-gray-300 -mt-8 mb-6">Tạo bảng trình bày (presentation board), sơ đồ phân tích, hoặc bố cục mặt bằng từ ý tưởng.</p>
-
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
@@ -155,18 +191,17 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                         </div>
                     </div>
                     
-                    <div>
-                        <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
-                    </div>
+                    <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
 
                     <button
                         onClick={handleGenerate}
                         disabled={isLoading || userCredits < cost}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> Đang tạo...</> : 'Tạo Layout'}
+                        {isLoading ? <><Spinner /> {statusMessage || 'Đang tạo...'}</> : 'Tạo Layout'}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                    {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
 
                 <div>
@@ -196,14 +231,16 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                         )}
                     </div>
                     <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                        {isLoading && <Spinner />}
-                        {!isLoading && resultImages.length === 1 && sourceImage && (
+                        {isLoading ? (
+                            <div className="flex flex-col items-center">
+                                <Spinner />
+                                <p className="mt-2 text-gray-400">{statusMessage}</p>
+                            </div>
+                        ) : resultImages.length === 1 && sourceImage ? (
                             <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
-                        )}
-                        {!isLoading && resultImages.length > 0 && !sourceImage && (
+                        ) : resultImages.length > 0 && !sourceImage ? (
                              <img src={resultImages[0]} alt="Result" className="w-full h-full object-contain" />
-                        )}
-                        {!isLoading && resultImages.length === 0 && (
+                        ) : (
                              <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
                         )}
                     </div>

@@ -8,10 +8,6 @@ import { AspectRatio, FileData, ImageResolution } from "../types";
 // KHÓA BÍ MẬT (Phải khớp với v_secret trong SQL function)
 const XOR_SECRET = 'OPZEN_SUPER_SECRET_2025';
 
-// TOKEN SERVICE CONFIG
-const ONEWISE_API_URL = "https://new-rest.onewise.app/api/fix/get-token";
-const ONEWISE_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjIzOTAxOX0.0QD08i_xgEepl3XuMNvrdX1-dj217j6aF0AcdPzHs3A";
-
 // Hàm xóa API Key khỏi chuỗi văn bản để bảo mật
 const scrubErrorText = (text: string): string => {
     if (!text) return "";
@@ -47,34 +43,54 @@ const normalizeCode = (code: string): string => {
 
 // --- API KEY MANAGEMENT ---
 
+const getGeminiApiKey = async (): Promise<string> => {
+    try {
+        // Gọi RPC để lấy key ngẫu nhiên (đã mã hóa hoặc plain text tùy server config)
+        const { data: encryptedKey, error } = await supabase.rpc('get_random_api_key');
+
+        if (error) {
+            // Fallback: Nếu không có RPC, query trực tiếp bảng api_keys
+            if (error.message?.includes('function') && error.message?.includes('not found')) {
+                 const { data: keys } = await supabase
+                    .from('api_keys')
+                    .select('key_value')
+                    .eq('is_active', true);
+                 
+                 if (keys && keys.length > 0) {
+                     const randomIndex = Math.floor(Math.random() * keys.length);
+                     return keys[randomIndex].key_value;
+                 }
+            }
+            console.error("Supabase RPC/DB Error:", error);
+            throw new Error("Không thể kết nối đến hệ thống cấp Key.");
+        }
+
+        if (!encryptedKey) throw new Error("Hệ thống đang bận, vui lòng thử lại sau giây lát.");
+        
+        // Giải mã key nhận được
+        const apiKey = normalizeCode(decryptCode(encryptedKey));
+        
+        if (!apiKey || apiKey.length < 10) {
+             // Fallback nếu giải mã ra chuỗi rỗng (trường hợp key chưa encrypt trong DB cũ)
+             if (encryptedKey.startsWith("AIza")) return encryptedKey;
+             throw new Error("API Key không hợp lệ.");
+        }
+
+        return apiKey;
+    } catch (err: any) {
+        // Fallback biến môi trường nếu có
+        if (process.env.API_KEY) return process.env.API_KEY;
+        throw new Error(err.message || "Lỗi lấy API Key.");
+    }
+};
+
 /**
- * Fetches a fresh token from OneWise API to use as the API Key.
- * Falls back to process.env.API_KEY if the fetch fails.
+ * Fetches a valid Google Gemini API Key and returns a client instance.
+ * Used for Text, Vision, and 4K Image generation.
  */
 const getDynamicAIClient = async () => {
-    try {
-        const response = await fetch(ONEWISE_API_URL, {
-            method: 'GET',
-            headers: {
-                'Authorization': ONEWISE_AUTH_TOKEN,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.token) {
-                // Initialize client with the fetched dynamic token
-                return new GoogleGenAI({ apiKey: data.token });
-            }
-        }
-        console.warn("OneWise Token Fetch failed or returned unsuccessful, falling back to Env Key.");
-    } catch (e) {
-        console.warn("Network error fetching OneWise token, falling back to Env Key:", e);
-    }
-
-    // Fallback
-    return new GoogleGenAI({ apiKey: process.env.API_KEY });
+    const key = await getGeminiApiKey();
+    return new GoogleGenAI({ apiKey: key });
 };
 
 // --- HELPER: Memory Optimization (Base64 -> Blob URL) ---

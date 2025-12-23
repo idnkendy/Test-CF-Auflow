@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService'; // Import Flow
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { MoodboardGeneratorState } from '../state/toolState';
 import { refundCredits } from '../services/paymentService';
@@ -25,6 +26,8 @@ interface MoodboardGeneratorProps {
 const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, aspectRatio, mode, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     
     const getCostPerImage = () => {
         switch (resolution) {
@@ -48,9 +51,14 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
+        setStatusMessage('Đang phân tích...');
+        setUpscaleWarning(null);
 
         let logId: string | null = null;
         let jobId: string | null = null;
+
+        // Use Flow for everything except 4K
+        const useFlow = resolution !== '4K';
 
         try {
             if (onDeductCredits) {
@@ -75,32 +83,98 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                 : `Extract materials and colors from this scene into a clean vertical moodboard layout.`;
 
             let imageUrls: string[] = [];
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+
+            if (useFlow) {
+                // --- FLOW LOGIC ---
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9' || aspectRatio === '4:3') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16' || aspectRatio === '3:4') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                const collectedUrls: string[] = [];
+                let completedCount = 0;
+                let lastError: any = null;
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    try {
+                        setStatusMessage(`[1/2] Đang tạo ảnh (${modelName})... (${index + 1}/${numberOfImages})`);
+                        
+                        const result = await externalVideoService.generateFlowImage(
+                            fullPrompt,
+                            [sourceImage], // Moodboard needs source
+                            aspectEnum,
+                            1,
+                            modelName,
+                            (msg) => setStatusMessage(msg)
+                        );
+
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+                            // 2K Upscale Check
+                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            if (shouldUpscale) {
+                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                try {
+                                    const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
+                                    if (upscaleResult && upscaleResult.imageUrl) finalUrl = upscaleResult.imageUrl;
+                                } catch (upscaleErr) {
+                                    console.warn("Upscale failed", upscaleErr);
+                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
+                                    if (user && logId) await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K`, logId);
+                                }
+                            }
+                            collectedUrls.push(finalUrl);
+                            completedCount++;
+                            onStateChange({ resultImages: [...collectedUrls] });
+                            
+                            historyService.addToHistory({
+                                tool: Tool.Moodboard,
+                                prompt: `Flow (${modelName}): ${fullPrompt}`,
+                                sourceImageURL: sourceImage.objectURL,
+                                resultImageURL: finalUrl,
+                            });
+                        }
+                    } catch (e: any) {
+                        console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
+                    }
+                });
+
+                await Promise.all(promises);
+                if (collectedUrls.length === 0) throw new Error(lastError ? lastError.message : "Không thể tạo ảnh.");
+                imageUrls = collectedUrls;
+
+            } else {
+                // --- GEMINI 4K ---
+                setStatusMessage('Đang xử lý với Gemini Pro 4K...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                     return images[0];
                 });
                 imageUrls = await Promise.all(promises);
-            } else {
-                const results = await geminiService.editImage(fullPrompt, sourceImage, numberOfImages);
-                imageUrls = results.map(r => r.imageUrl);
+                
+                onStateChange({ resultImages: imageUrls });
+                imageUrls.forEach(url => {
+                    historyService.addToHistory({ tool: Tool.Moodboard, prompt: `Gemini Pro: ${fullPrompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: url });
+                });
             }
 
-            onStateChange({ resultImages: imageUrls });
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
             
-            imageUrls.forEach(url => {
-                historyService.addToHistory({ tool: Tool.Moodboard, prompt: fullPrompt, sourceImageURL: sourceImage.objectURL, resultImageURL: url });
-            });
         } catch (err: any) {
-            onStateChange({ error: err.message });
+            let errorMsg = err.message || "Lỗi không xác định";
+            if (logId) errorMsg += " (Credits đã được hoàn lại)";
+            onStateChange({ error: errorMsg });
+            
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi moodboard (${err.message})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
+            setStatusMessage(null);
         }
     };
 
@@ -118,18 +192,25 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                     <div className="space-y-4">
                         <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder="Mô tả..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                         <div className="grid grid-cols-2 gap-4">
-                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
-                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
+                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
                         </div>
-                        <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} />
+                        <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} disabled={isLoading} />
                         <button onClick={handleGenerate} disabled={isLoading || !sourceImage || userCredits < cost} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg transition-colors">
-                            {isLoading ? <Spinner /> : 'Tạo Moodboard'}
+                            {isLoading ? <><Spinner /> {statusMessage || 'Đang tạo...'}</> : 'Tạo Moodboard'}
                         </button>
+                        {error && <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>}
+                        {upscaleWarning && <p className="text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
                     </div>
                 </div>
             </div>
             <div className="aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden">
-                {isLoading ? <Spinner /> : resultImages.length > 0 ? <ResultGrid images={resultImages} toolName="moodboard" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
+                {isLoading ? (
+                    <div className="flex flex-col items-center">
+                        <Spinner />
+                        <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                    </div>
+                ) : resultImages.length > 0 ? <ResultGrid images={resultImages} toolName="moodboard" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
             </div>
         </div>
     );

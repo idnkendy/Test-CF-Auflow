@@ -6,6 +6,7 @@ import { EditByNoteState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService'; // Flow import
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -37,25 +38,14 @@ interface Annotation {
     strokeWidth?: number;
 }
 
-const COLORS = [
-    { id: 'red', value: '#DC2626', label: 'Đỏ' },
-    { id: 'white', value: '#FFFFFF', label: 'Trắng' },
-    { id: 'black', value: '#000000', label: 'Đen' },
-];
-
 const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { sourceImage, isLoading, error, resultImages, numberOfImages, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [isEditorOpen, setIsEditorOpen] = useState(false);
     const [annotations, setAnnotations] = useState<Annotation[]>([]);
-    const [selectedId, setSelectedId] = useState<string | null>(null);
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
-    const [currentColor, setCurrentColor] = useState<string>('#DC2626');
-    const [zoom, setZoom] = useState(1.0);
-    const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
-
-    const containerRef = useRef<HTMLDivElement>(null);
-    const imageRef = useRef<HTMLImageElement>(null);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
     const getCost = () => {
         switch (resolution) {
@@ -80,12 +70,18 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
+        setStatusMessage('Đang xử lý...');
+        setUpscaleWarning(null);
+
         let logId: string | null = null;
         let jobId: string | null = null;
+        
+        const useFlow = resolution !== '4K';
+        const prompt = "Apply the edits pointed at by the arrows and described in the notes. Then remove the annotations.";
 
         try {
             if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh)`);
+                logId = await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh) - ${resolution}`);
             }
 
             const { data: { user } } = await supabase.auth.getUser();
@@ -101,35 +97,70 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            // Simplified: In a real scenario, you'd flatten annotations to a composite image.
-            // For now, we simulate the high-level logic.
-            const prompt = "Apply the edits pointed at by the arrows and described in the notes. Then remove the annotations.";
-            
             let imageUrls: string[] = [];
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+
+            if (useFlow) {
+                // --- FLOW LOGIC ---
+                // Defaulting to SQUARE/LANDSCAPE. Edit By Note typically retains source aspect ratio 
+                // but Flow requires enum. We'll use LANDSCAPE as standard proxy.
+                const aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                const collectedUrls: string[] = [];
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    setStatusMessage(`[1/2] Đang chỉnh sửa (${index + 1}/${numberOfImages})...`);
+                    const result = await externalVideoService.generateFlowImage(
+                        prompt,
+                        [sourceImage], // Ideally this should be the annotated image composite
+                        aspectEnum,
+                        1,
+                        modelName,
+                        (msg) => setStatusMessage(msg)
+                    );
+
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        if (resolution === '2K' && result.mediaIds?.length > 0) {
+                            setStatusMessage(`[2/2] Đang nâng cấp 2K...`);
+                            try {
+                                const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
+                                if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                            } catch (e) {
+                                setUpscaleWarning("Lỗi upscale 2K, hoàn 5 credits.");
+                                if (user && logId) await refundCredits(user.id, 5, "Hoàn tiền lỗi Upscale", logId);
+                            }
+                        }
+                        collectedUrls.push(finalUrl);
+                        onStateChange({ resultImages: [...collectedUrls] });
+                        historyService.addToHistory({ tool: Tool.EditByNote, prompt: `Flow: ${prompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: finalUrl });
+                    }
+                });
+                await Promise.all(promises);
+                imageUrls = collectedUrls;
+            } else {
+                // --- GEMINI 4K ---
+                setStatusMessage('Đang xử lý với Gemini 4K...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(prompt, '1:1', resolution, sourceImage, jobId || undefined);
                     return images[0];
                 });
                 imageUrls = await Promise.all(promises);
-            } else {
-                const results = await geminiService.editImage(prompt, sourceImage, numberOfImages);
-                imageUrls = results.map(r => r.imageUrl);
+                onStateChange({ resultImages: imageUrls });
+                imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.EditByNote, prompt: prompt, sourceImageURL: sourceImage.objectURL, resultImageURL: url }));
             }
 
-            onStateChange({ resultImages: imageUrls });
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
-            imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.EditByNote, prompt: prompt, sourceImageURL: sourceImage.objectURL, resultImageURL: url }));
         } catch (err: any) {
-            onStateChange({ error: err.message });
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
+            let msg = err.message;
+            if (logId) msg += " (Credits đã hoàn lại)";
+            onStateChange({ error: msg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ghi chú (${err.message})`, logId);
-            }
+            if (user && logId && onDeductCredits) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi edit (${err.message})`, logId);
         } finally {
             onStateChange({ isLoading: false });
+            setStatusMessage(null);
         }
     };
 
@@ -156,19 +187,22 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     <ImageUpload onFileSelect={(f) => onStateChange({ sourceImage: f, resultImages: [] })} previewUrl={sourceImage?.objectURL} />
                     {sourceImage && <button onClick={() => setIsEditorOpen(true)} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg shadow-lg">Mở Trình Vẽ Ghi Chú</button>}
                     <div className="grid grid-cols-2 gap-4">
-                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
-                        <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} />
-                    </div>
-                    <div className="flex justify-between text-sm">
-                        <span>Chi phí: <b>{cost} Credits</b></span>
-                        <span>{userCredits < cost ? 'Không đủ' : `Còn: ${userCredits}`}</span>
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                        <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} disabled={isLoading} />
                     </div>
                     <button onClick={handleGenerate} disabled={isLoading || !sourceImage || userCredits < cost} className="w-full py-3 bg-[#7f13ec] text-white font-bold rounded-xl shadow-lg">
-                        {isLoading ? <Spinner /> : 'Tạo Ảnh'}
+                        {isLoading ? <><Spinner /> {statusMessage || 'Đang sửa...'}</> : 'Tạo Ảnh'}
                     </button>
+                    {error && <div className="p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
+                    {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
                 <div className="aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden">
-                    {isLoading ? <Spinner /> : resultImages.length > 0 ? <ImageComparator originalImage={sourceImage?.objectURL || ''} resultImage={resultImages[0]} /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
+                    {isLoading ? (
+                        <div className="flex flex-col items-center">
+                            <Spinner />
+                            <p className="mt-2 text-gray-400">{statusMessage}</p>
+                        </div>
+                    ) : resultImages.length > 0 ? <ImageComparator originalImage={sourceImage?.objectURL || ''} resultImage={resultImages[0]} /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
                 </div>
             </div>
         </div>

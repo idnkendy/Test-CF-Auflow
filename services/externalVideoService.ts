@@ -48,9 +48,14 @@ const getImageDimensions = (fileData: FileData): Promise<{width: number, height:
     });
 };
 
+/**
+ * Resizes and crops image based on aspect ratio AND tier.
+ * tier: 'standard' (Flash/1K limit) | 'pro' (Pro/2K limit)
+ */
 export const resizeAndCropImage = async (
     fileData: FileData, 
-    aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
+    aspectRatio: '16:9' | '9:16' | '1:1' | 'default' = '16:9',
+    tier: 'standard' | 'pro' = 'pro'
 ): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -64,12 +69,22 @@ export const resizeAndCropImage = async (
                 effectiveRatio = img.width >= img.height ? '16:9' : '9:16';
             }
 
+            // Define dimensions based on Tier
+            // Standard (GEM_PIX) often fails with > 1MP images
+            const isStandard = tier === 'standard';
+
             if (effectiveRatio === '16:9') {
-                targetWidth = 2048;
-                targetHeight = 1152;
-            } else { 
-                targetWidth = 1152;
-                targetHeight = 2048;
+                targetWidth = isStandard ? 1280 : 2048;
+                targetHeight = isStandard ? 720 : 1152;
+            } else if (effectiveRatio === '9:16') { 
+                targetWidth = isStandard ? 720 : 1152;
+                targetHeight = isStandard ? 1280 : 2048;
+            } else if (effectiveRatio === '1:1') {
+                targetWidth = isStandard ? 1024 : 1024; // 1:1 is safe at 1024 for both
+                targetHeight = isStandard ? 1024 : 1024;
+            } else {
+                targetWidth = isStandard ? 1280 : 2048;
+                targetHeight = isStandard ? 720 : 1152;
             }
 
             const canvas = document.createElement('canvas');
@@ -87,14 +102,19 @@ export const resizeAndCropImage = async (
             ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, targetWidth, targetHeight);
 
-            const scale = Math.min(targetWidth / img.width, targetHeight / img.height);
-            const renderWidth = img.width * scale;
-            const renderHeight = img.height * scale;
+            // Center crop logic (COVER)
+            const scaleCover = Math.max(targetWidth / img.width, targetHeight / img.height);
+            
+            const renderWidth = img.width * scaleCover;
+            const renderHeight = img.height * scaleCover;
             const offsetX = (targetWidth - renderWidth) / 2;
             const offsetY = (targetHeight - renderHeight) / 2;
 
             ctx.drawImage(img, offsetX, offsetY, renderWidth, renderHeight);
-            const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            
+            // Adjust compression quality based on tier
+            const quality = isStandard ? 0.85 : 0.9;
+            const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
             resolve(compressedDataUrl);
         };
 
@@ -125,6 +145,9 @@ const formatErrorMessage = (msg: string): string => {
 
     if (msg.includes("quota") || msg.includes("exhausted"))
         return "Hệ thống đang bận (Quota limit). Vui lòng chờ giây lát.";
+
+    if (msg.includes("INVALID_ARGUMENT"))
+        return "Lỗi dữ liệu đầu vào (Invalid Argument). Ảnh quá lớn hoặc tỷ lệ không phù hợp với Standard Mode.";
 
     // Ensure "Vui lòng thử lại sau" suffix exists if simple error
     if (!msg.toLowerCase().includes("vui lòng") && !msg.includes("try again") && msg.length < 50) {
@@ -222,11 +245,26 @@ export const generateFlowImage = async (
 
     if (onProgress) onProgress("Đang tối ưu hóa ảnh đầu vào...");
 
+    // Determine correct crop ratio based on requested Aspect Enum
+    let ratioType: '16:9' | '9:16' | '1:1' = '16:9';
+    if (aspectRatio.includes("PORTRAIT")) {
+        ratioType = "9:16";
+    } else if (aspectRatio.includes("SQUARE")) {
+        ratioType = "1:1"; // Important: Support Square cropping
+    } else {
+        ratioType = "16:9";
+    }
+
+    // Determine Tier based on model name
+    // GEM_PIX (Flash) = standard (1280px limit)
+    // GEM_PIX_2 (Pro) = pro (2048px limit)
+    const tier = (imageModelName === 'GEM_PIX') ? 'standard' : 'pro';
+
     // Resize and crop all images
     for (const img of imagesToProcess) {
         try {
-            const ratioType = aspectRatio.includes("PORTRAIT") ? "9:16" : "16:9";
-            const imageData = await resizeAndCropImage(img, ratioType);
+            // Pass Tier to resize logic
+            const imageData = await resizeAndCropImage(img, ratioType, tier);
             processedImages.push(imageData);
         } catch (e) {
             processedImages.push(`data:${img.mimeType};base64,${img.base64}`);
@@ -472,7 +510,8 @@ async function _executeVideoGeneration(
         }
 
         try {
-            const compressed = await resizeAndCropImage(startImage, aspectRatio);
+            // Video generation is always Pro tier (Video Model), so we use default 'pro' or explicit 'pro'
+            const compressed = await resizeAndCropImage(startImage, aspectRatio, 'pro');
             imageBase64 = compressed.split(',')[1];
         } catch (e) {
             imageBase64 = startImage.base64;

@@ -5,6 +5,7 @@ import { FloorPlanState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService'; // Flow Import
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -27,6 +28,8 @@ interface FloorPlanProps {
 const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { prompt, layoutPrompt, sourceImage, referenceImages, isLoading, error, resultImages, numberOfImages, renderMode, planType, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -55,9 +58,14 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
+        setStatusMessage('Đang phân tích bản vẽ...');
+        setUpscaleWarning(null);
 
         let logId: string | null = null;
         let jobId: string | null = null;
+        
+        // Use Flow for Standard, 1K, 2K. Only use Gemini for 4K.
+        const useFlow = resolution !== '4K';
 
         try {
             if (onDeductCredits) {
@@ -85,32 +93,72 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
             }
 
             let imageUrls: string[] = [];
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+
+            if (useFlow) {
+                // --- FLOW LOGIC ---
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9' || aspectRatio === '4:3') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16' || aspectRatio === '3:4') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                const collectedUrls: string[] = [];
+                // Combine source and references
+                const inputImages = [sourceImage, ...referenceImages];
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    setStatusMessage(`[1/2] Đang render (${modelName})... (${index + 1}/${numberOfImages})`);
+                    const result = await externalVideoService.generateFlowImage(
+                        fullPrompt,
+                        inputImages,
+                        aspectEnum,
+                        1,
+                        modelName,
+                        (msg) => setStatusMessage(msg)
+                    );
+
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        // 2K Upscale Check
+                        if (resolution === '2K' && result.mediaIds && result.mediaIds.length > 0) {
+                            setStatusMessage(`[2/2] Đang nâng cấp 2K...`);
+                            try {
+                                const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
+                                if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                            } catch (e) {
+                                setUpscaleWarning("Lỗi upscale 2K, hoàn 5 credits.");
+                                if (user && logId) await refundCredits(user.id, 5, "Hoàn tiền lỗi Upscale", logId);
+                            }
+                        }
+                        collectedUrls.push(finalUrl);
+                        onStateChange({ resultImages: [...collectedUrls] });
+                        historyService.addToHistory({ tool: Tool.FloorPlan, prompt: `Flow: ${fullPrompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: finalUrl });
+                    }
+                });
+                await Promise.all(promises);
+                imageUrls = collectedUrls;
+
+            } else {
+                // --- GEMINI 4K ---
+                setStatusMessage('Đang xử lý với Gemini Pro 4K...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined, referenceImages);
                     return images[0];
                 });
                 imageUrls = await Promise.all(promises);
-            } else {
-                imageUrls = await geminiService.generateStandardImage(fullPrompt, aspectRatio, numberOfImages, sourceImage || undefined, jobId || undefined);
+                onStateChange({ resultImages: imageUrls });
+                imageUrls.forEach(url => {
+                     historyService.addToHistory({ tool: Tool.FloorPlan, prompt: fullPrompt, sourceImageURL: sourceImage.objectURL, resultImageURL: url });
+                });
             }
-
-            onStateChange({ resultImages: imageUrls });
             
             if (jobId && imageUrls.length > 0) {
                 await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
             }
 
-            imageUrls.forEach(url => {
-                 historyService.addToHistory({
-                    tool: Tool.FloorPlan,
-                    prompt: fullPrompt,
-                    sourceImageURL: sourceImage.objectURL,
-                    resultImageURL: url,
-                });
-            });
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi.' });
+            let msg = err.message;
+            if (logId) msg += " (Credits đã hoàn lại)";
+            onStateChange({ error: msg });
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
@@ -118,6 +166,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
             }
         } finally {
             onStateChange({ isLoading: false });
+            setStatusMessage(null);
         }
     };
     
@@ -178,16 +227,26 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                             </div>
                             <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
 
-                             <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mt-4">
-                                <span className="text-sm">Chi phí: <b>{cost} Credits</b></span>
-                                <span className="text-xs">{userCredits < cost ? 'Không đủ' : `Còn: ${userCredits}`}</span>
+                             <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mt-4 border border-gray-200 dark:border-gray-700">
+                                <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                                </div>
+                                <div className="text-xs">
+                                    {userCredits < cost ? (
+                                        <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                    ) : (
+                                        <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                    )}
+                                </div>
                             </div>
                             <button onClick={handleGenerate} disabled={isLoading || !sourceImage || userCredits < cost} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors">
-                                {isLoading ? <Spinner /> : 'Bắt đầu Render'}
+                                {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Bắt đầu Render'}
                             </button>
                         </div>
                     </div>
-                    {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
+                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>}
+                    {upscaleWarning && <p className="mt-3 text-sm text-yellow-500 text-center font-medium bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded">{upscaleWarning}</p>}
                 </div>
             </div>
 
@@ -197,7 +256,12 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                     {resultImages.length === 1 && <button onClick={handleDownload} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm">Tải xuống</button>}
                 </div>
                 <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden">
-                    {isLoading ? <Spinner /> : resultImages.length === 1 && sourceImage ? <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} /> : resultImages.length > 1 ? <ResultGrid images={resultImages} toolName="floorplan-render" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
+                    {isLoading ? (
+                        <div className="flex flex-col items-center">
+                            <Spinner />
+                            <p className="mt-2 text-gray-400">{statusMessage}</p>
+                        </div>
+                    ) : resultImages.length === 1 && sourceImage ? <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} /> : resultImages.length > 1 ? <ResultGrid images={resultImages} toolName="floorplan-render" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
                 </div>
             </div>
         </div>

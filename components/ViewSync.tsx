@@ -3,7 +3,6 @@ import React, { useState } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { ViewSyncState } from '../state/toolState';
 import { refundCredits } from '../services/paymentService';
@@ -86,20 +85,6 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // --- ROUTING LOGIC ---
-        // 1. Google Gemini API được dùng khi:
-        //    - Độ phân giải là 4K.
-        //    - HOẶC: Có ảnh vẽ hướng (directionImage) VÀ độ phân giải là 1K hoặc 2K.
-        //      (Vì Gemini Pro hiểu ngữ nghĩa mũi tên tốt hơn Flow/Flash).
-        //
-        // 2. Flow API được dùng cho các trường hợp còn lại:
-        //    - Standard (luôn dùng Flow - GEM_PIX)
-        //    - 1K/2K KHÔNG có vẽ hướng (dùng Flow - GEM_PIX_2)
-        
-        const hasDirection = !!directionImage;
-        const useGemini = (resolution === '4K') || (hasDirection && (resolution === '1K' || resolution === '2K'));
-        const useFlow = !useGemini;
-
         try {
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Đồng bộ view (${numberOfImages} ảnh) - ${resolution}`);
@@ -139,95 +124,10 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
             let imageUrls: string[] = [];
 
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                // Áp dụng cho: Standard, 1K (no dir), 2K (no dir)
-                
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-                }
-
-                // Standard -> GEM_PIX (Flash)
-                // 1K / 2K -> GEM_PIX_2 (Pro)
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                
-                // Ở chế độ Flow này, ta chắc chắn không dùng directionImage (vì nếu có thì đã qua Gemini)
-                const inputImages = [sourceImage];
-
-                const collectedUrls: string[] = [];
-                let completedCount = 0;
-                let lastError: any = null;
-
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage(`[1/2] Đang tạo góc nhìn (${modelName})... (${index + 1}/${numberOfImages})`);
-                        
-                        const result = await externalVideoService.generateFlowImage(
-                            finalPrompt,
-                            inputImages, 
-                            aspectEnum,
-                            1,
-                            modelName
-                        );
-
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-
-                            // 2K Upscale Logic (cho Flow)
-                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
-                            if (shouldUpscale) {
-                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
-                                        if (upscaleResult && upscaleResult.imageUrl) {
-                                            finalUrl = upscaleResult.imageUrl;
-                                        }
-                                    }
-                                } catch (upscaleErr: any) {
-                                    console.warn("Upscale failed", upscaleErr);
-                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    if (user && logId) {
-                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
-                                    }
-                                }
-                            }
-                            
-                            collectedUrls.push(finalUrl);
-                            completedCount++;
-                            onStateChange({ resultImages: [...collectedUrls] });
-                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
-                            
-                            historyService.addToHistory({
-                                tool: Tool.ViewSync,
-                                prompt: `Flow (${modelName}): ${finalPrompt}`,
-                                sourceImageURL: sourceImage?.objectURL,
-                                resultImageURL: finalUrl,
-                            });
-                        }
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
-                    }
-                });
-
-                await Promise.all(promises);
-                imageUrls = collectedUrls;
-                if (collectedUrls.length === 0) {
-                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
-                    throw new Error(errorMsg);
-                }
-
-            } else {
-                // --- GOOGLE GEMINI API LOGIC ---
-                // Áp dụng cho: 4K (All cases), 1K/2K (Có Direction Image)
-                
-                const modelLabel = hasDirection ? `Gemini Pro (${resolution} + Direction)` : `Gemini Pro (${resolution})`;
-                setStatusMessage(`Đang xử lý với ${modelLabel}...`);
+            // --- GOOGLE GEMINI API LOGIC (ALL RESOLUTIONS) ---
+            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+                // High Quality Mode (Pro Model)
+                setStatusMessage(`Đang xử lý với Gemini Pro (${resolution})...`);
                 
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
@@ -236,20 +136,33 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                         resolution, 
                         sourceImage, 
                         jobId || undefined,
-                        directionImage ? [directionImage] : undefined // Truyền ảnh hướng nếu có
+                        directionImage ? [directionImage] : undefined // Truyền ảnh hướng nếu có (chỉ Pro mới hiểu)
                     );
                     return images[0];
                 });
                 imageUrls = await Promise.all(promises);
-
-                onStateChange({ resultImages: imageUrls });
-                imageUrls.forEach(url => historyService.addToHistory({ 
-                    tool: Tool.ViewSync, 
-                    prompt: `${modelLabel}: ${finalPrompt}`, 
-                    sourceImageURL: sourceImage.objectURL, 
-                    resultImageURL: url 
-                }));
+            } else {
+                // Standard Mode (Flash Model)
+                // Note: Standard mode does NOT support directionImage via generateStandardImage currently
+                setStatusMessage('Đang xử lý với Gemini Flash...');
+                imageUrls = await geminiService.generateStandardImage(
+                    finalPrompt, 
+                    aspectRatio, 
+                    numberOfImages, 
+                    sourceImage, 
+                    jobId || undefined
+                );
             }
+
+            onStateChange({ resultImages: imageUrls });
+            
+            // Log history
+            imageUrls.forEach(url => historyService.addToHistory({ 
+                tool: Tool.ViewSync, 
+                prompt: `Gemini API: ${finalPrompt}`, 
+                sourceImageURL: sourceImage.objectURL, 
+                resultImageURL: url 
+            }));
 
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
             

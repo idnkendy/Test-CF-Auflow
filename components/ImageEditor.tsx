@@ -4,8 +4,10 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { ImageEditorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
-import { refundCredits } from '../services/paymentService'; // Import refundCredits
-import { supabase } from '../services/supabaseClient'; // Import supabase
+import * as externalVideoService from '../services/externalVideoService'; // Import externalVideoService
+import { refundCredits } from '../services/paymentService'; 
+import { supabase } from '../services/supabaseClient'; 
+import * as jobService from '../services/jobService'; // Added import
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ResultGrid from './common/ResultGrid';
@@ -52,6 +54,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [detectedAspectRatio, setDetectedAspectRatio] = useState<AspectRatio>('1:1');
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
 
     const handleFileSelect = (fileData: FileData | null) => {
@@ -106,59 +110,177 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
+        setStatusMessage('Đang phân tích yêu cầu...');
+        setUpscaleWarning(null);
 
         let logId: string | null = null;
+        let jobId: string | null = null;
+
+        // Routing Logic:
+        // Use Flow if resolution is Standard/1K/2K AND NO MASK IS USED.
+        // If Mask is used, we MUST use Google Gemini API because it handles specific inpainting better.
+        // If 4K, use Google Gemini API.
+        const useFlow = resolution !== '4K' && !maskImage;
 
         try {
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Chỉnh sửa ảnh (${numberOfImages} ảnh) - ${resolution}`);
             }
-
-            let results: { imageUrl: string }[] = [];
-
-            // High Quality (Pro) Logic
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    // generateHighQualityImage accepts sourceImage, referenceImages AND maskImage now
-                    const images = await geminiService.generateHighQualityImage(
-                        prompt, 
-                        detectedAspectRatio, // Use detected aspect ratio
-                        resolution, 
-                        sourceImage, 
-                        undefined, 
-                        referenceImages,
-                        maskImage || undefined // Pass mask image here
-                    );
-                    return { imageUrl: images[0] };
-                });
-                results = await Promise.all(promises);
-            }
-            // Standard (Flash) Logic
-            else {
-                if (referenceImages && referenceImages.length > 0) {
-                    if (maskImage) {
-                        results = await geminiService.editImageWithMaskAndMultipleReferences(prompt, sourceImage, maskImage, referenceImages, numberOfImages);
-                    } else {
-                        results = await geminiService.editImageWithMultipleReferences(prompt, sourceImage, referenceImages, numberOfImages);
-                    }
-                } else if (maskImage) {
-                    results = await geminiService.editImageWithMask(prompt, sourceImage, maskImage, numberOfImages);
-                } else {
-                    results = await geminiService.editImage(prompt, sourceImage, numberOfImages);
-                }
-            }
-
-            const imageUrls = results.map(r => r.imageUrl);
-            onStateChange({ resultImages: imageUrls });
-
-            imageUrls.forEach(url => {
-                historyService.addToHistory({
-                    tool: Tool.ImageEditing,
+            
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                jobId = await jobService.createJob({
+                    user_id: user.id,
+                    tool_id: Tool.ImageEditing,
                     prompt: prompt,
-                    sourceImageURL: sourceImage.objectURL,
-                    resultImageURL: url,
+                    cost: cost,
+                    usage_log_id: logId
                 });
-            });
+            }
+
+            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
+
+            let imageUrls: string[] = [];
+
+            if (useFlow) {
+                // --- FLOW LOGIC (Standard, 1K, 2K - No Mask) ---
+                
+                // Map Aspect Ratio to Enum
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (detectedAspectRatio === '16:9' || detectedAspectRatio === '4:3') {
+                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                } else if (detectedAspectRatio === '9:16' || detectedAspectRatio === '3:4') {
+                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+                }
+
+                // Standard -> GEM_PIX (Flash)
+                // 1K / 2K -> GEM_PIX_2 (Pro)
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                
+                // Construct prompt for Flow
+                const flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described.`;
+                
+                // Input Images: Source + References
+                const inputImages = [sourceImage, ...referenceImages];
+
+                const collectedUrls: string[] = [];
+                let completedCount = 0;
+                let lastError: any = null;
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    try {
+                        setStatusMessage(`[1/2] Đang xử lý (${modelName})... (${index + 1}/${numberOfImages})`);
+                        
+                        const result = await externalVideoService.generateFlowImage(
+                            flowPrompt,
+                            inputImages, 
+                            aspectEnum,
+                            1,
+                            modelName,
+                            (msg) => setStatusMessage(msg)
+                        );
+
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+
+                            // 2K Upscale Check
+                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            if (shouldUpscale) {
+                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                try {
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
+                                        if (upscaleResult && upscaleResult.imageUrl) {
+                                            finalUrl = upscaleResult.imageUrl;
+                                        }
+                                    }
+                                } catch (upscaleErr: any) {
+                                    console.warn("Upscale failed", upscaleErr);
+                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
+                                    if (user && logId) {
+                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
+                                    }
+                                }
+                            }
+                            
+                            collectedUrls.push(finalUrl);
+                            completedCount++;
+                            onStateChange({ resultImages: [...collectedUrls] });
+                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                            
+                            historyService.addToHistory({
+                                tool: Tool.ImageEditing,
+                                prompt: `Flow (${modelName}): ${flowPrompt}`,
+                                sourceImageURL: sourceImage?.objectURL,
+                                resultImageURL: finalUrl,
+                            });
+                        }
+                    } catch (e: any) {
+                        console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
+                    }
+                });
+
+                await Promise.all(promises);
+                imageUrls = collectedUrls;
+                if (collectedUrls.length === 0) {
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
+                }
+
+            } else {
+                // --- GOOGLE API LOGIC (4K OR MASK) ---
+                setStatusMessage('Đang xử lý với Gemini API...');
+                let results: { imageUrl: string }[] = [];
+
+                // High Quality (Pro) Logic - 4K
+                if (resolution === '4K' || ((resolution as string) !== 'Standard' && maskImage)) {
+                    // Pro models handle mask via composite logic in service
+                    const promises = Array.from({ length: numberOfImages }).map(async () => {
+                        const images = await geminiService.generateHighQualityImage(
+                            prompt, 
+                            detectedAspectRatio, 
+                            resolution === 'Standard' ? '1K' : resolution, 
+                            sourceImage, 
+                            jobId || undefined, 
+                            referenceImages,
+                            maskImage || undefined 
+                        );
+                        return { imageUrl: images[0] };
+                    });
+                    results = await Promise.all(promises);
+                }
+                // Standard (Flash) Logic with Mask
+                else {
+                    if (referenceImages && referenceImages.length > 0) {
+                        if (maskImage) {
+                            results = await geminiService.editImageWithMaskAndMultipleReferences(prompt, sourceImage, maskImage, referenceImages, numberOfImages);
+                        } else {
+                            results = await geminiService.editImageWithMultipleReferences(prompt, sourceImage, referenceImages, numberOfImages);
+                        }
+                    } else if (maskImage) {
+                        results = await geminiService.editImageWithMask(prompt, sourceImage, maskImage, numberOfImages);
+                    } else {
+                        results = await geminiService.editImage(prompt, sourceImage, numberOfImages);
+                    }
+                }
+
+                imageUrls = results.map(r => r.imageUrl);
+                onStateChange({ resultImages: imageUrls });
+
+                imageUrls.forEach(url => {
+                    historyService.addToHistory({
+                        tool: Tool.ImageEditing,
+                        prompt: `Gemini API: ${prompt}`,
+                        sourceImageURL: sourceImage.objectURL,
+                        resultImageURL: url,
+                    });
+                });
+            }
+
+            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
+
         } catch (err: any) {
             let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
             if (logId) {
@@ -166,13 +288,16 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
             }
             onStateChange({ error: errorMessage });
 
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
+
             // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ảnh (${err.message})`);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ảnh (${err.message})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
+            setStatusMessage(null);
         }
     };
 
@@ -264,8 +389,25 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Ảnh Tham Chiếu (Tùy chọn)</label>
-                        <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
-                        <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo phong cách hoặc chi tiết.</p>
+                        {resolution === 'Standard' && !maskImage ? (
+                             <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
+                                <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
+                                <p className="text-sm text-text-secondary dark:text-gray-400">
+                                    Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên) hoặc khi dùng Mask.
+                                </p>
+                                <button 
+                                    onClick={() => handleResolutionChange('1K')}
+                                    className="text-xs text-[#7f13ec] hover:underline font-semibold"
+                                >
+                                    Nâng cao chất lượng ảnh ngay
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                                <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo phong cách hoặc chi tiết.</p>
+                            </>
+                        )}
                     </div>
                 </div>
 
@@ -311,9 +453,10 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         disabled={isLoading || !sourceImage || !prompt || userCredits < cost}
                         className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> Đang xử lý...</> : 'Bắt đầu Chỉnh sửa'}
+                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Chỉnh sửa'}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                    {upscaleWarning && <p className="mt-2 text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
                  </div>
             </div>
 
@@ -339,7 +482,12 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     )}
                 </div>
                 <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                    {isLoading && <Spinner />}
+                    {isLoading && (
+                        <div className="flex flex-col items-center">
+                            <Spinner />
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                        </div>
+                    )}
                     
                     {!isLoading && resultImages.length === 1 && sourceImage && (
                         <ImageComparator
