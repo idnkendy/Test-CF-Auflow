@@ -1,4 +1,5 @@
 
+// ... existing imports
 import React, { useState } from 'react';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { RenovationState } from '../state/toolState';
@@ -19,7 +20,6 @@ import MaskingModal from './MaskingModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import MultiImageUpload from './common/MultiImageUpload';
 import OptionSelector from './common/OptionSelector';
-
 
 const renovationSuggestions = [
     { label: 'Nâng tầng', prompt: 'Nâng thêm 1 tầng cho công trình, giữ phong cách kiến trúc hiện có.' },
@@ -44,11 +44,10 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
-    // Calculate cost based on resolution
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -59,7 +58,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
-        // Nếu chuyển về Standard, xóa ảnh tham chiếu
         if (val === 'Standard') {
             onStateChange({ referenceImages: [] });
         }
@@ -90,15 +88,12 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         }
 
         onStateChange({ isLoading: true, error: null, renovatedImages: [] });
-        setStatusMessage('Đang lên phương án...');
+        setStatusMessage('Đang xử lý. Vui lòng đợi...');
         setUpscaleWarning(null);
 
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Routing Logic:
-        // Use Flow if resolution is Standard/1K/2K AND NO MASK IS USED.
-        // If Mask is used, we MUST use Google API (Pro/Flash) because current Flow wrapper doesn't support mask input effectively.
         const useFlow = resolution !== '4K' && !maskImage;
         const promptForService = constructRenovationPrompt();
 
@@ -125,9 +120,9 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
             if (useFlow) {
                 // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                if (aspectRatio === '16:9') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                } else if (aspectRatio === '9:16') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
 
@@ -138,9 +133,8 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage(`[1/2] Đang tạo ảnh (${modelName})... (${index + 1}/${numberOfImages})`);
+                        setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                         
-                        // Prepare input images array (Source + References)
                         const inputImages: FileData[] = [];
                         if (sourceImage) inputImages.push(sourceImage);
                         if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
@@ -159,7 +153,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
 
                             if (shouldUpscale) {
-                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
@@ -171,7 +165,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 } catch (upscaleErr: any) {
                                     console.warn("Upscale failed", upscaleErr);
                                     setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    // Refund logic for upscale failure (2K -> 1K difference: 5 credits)
                                     if (user && logId) {
                                         await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
                                     }
@@ -181,7 +174,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             collectedUrls.push(finalUrl);
                             completedCount++;
                             onStateChange({ renovatedImages: [...collectedUrls] });
-                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                            setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                             
                             historyService.addToHistory({
                                 tool: Tool.Renovation,
@@ -204,8 +197,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
 
             } else {
-                // --- GOOGLE API LOGIC (4K OR MASKING) ---
-                // Google API handles masks properly
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
                     const promises = Array.from({ length: numberOfImages }).map(async () => {
                         const images = await geminiService.generateHighQualityImage(
@@ -221,7 +213,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     });
                     imageUrls = await Promise.all(promises);
                 } else {
-                    // Standard Flash
                     let results: { imageUrl: string }[] = [];
                     if (referenceImages && referenceImages.length > 0) {
                         if (maskImage) {
@@ -265,50 +256,14 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         }
     };
     
-    // ... (rest of component) ...
-    const handleFileSelect = (fileData: FileData | null) => {
-        onStateChange({ sourceImage: fileData, renovatedImages: [], maskImage: null });
-    }
-
-    const handleReferenceFilesChange = (files: FileData[]) => {
-        onStateChange({ referenceImages: files });
-    };
-
-    const handleSuggestionSelect = (selectedPrompt: string) => {
-        if (selectedPrompt) {
-            const newPrompt = prompt.trim() ? `${prompt.trim()}. ${selectedPrompt}` : selectedPrompt;
-            onStateChange({ prompt: newPrompt });
-        }
-    };
-
-    const handleDownload = () => {
-        if (renovatedImages.length !== 1) return;
-        const link = document.createElement('a');
-        link.href = renovatedImages[0];
-        link.download = "renovated-image.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-    
-    const handleApplyMask = (mask: FileData) => {
-        onStateChange({ maskImage: mask });
-        setIsMaskingModalOpen(false);
-    };
-
-    const handleRemoveMask = (e?: React.MouseEvent) => {
-        if (e) e.preventDefault();
-        onStateChange({ maskImage: null });
-    };
-
-    const scrollToTop = () => {
-        const mainContainer = document.querySelector('main');
-        if (mainContainer) {
-            mainContainer.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-        }
-    };
+    // ... (Handlers) ...
+    const handleFileSelect = (fileData: FileData | null) => { onStateChange({ sourceImage: fileData, renovatedImages: [], maskImage: null }); }
+    const handleReferenceFilesChange = (files: FileData[]) => { onStateChange({ referenceImages: files }); };
+    const handleSuggestionSelect = (selectedPrompt: string) => { if (selectedPrompt) { const newPrompt = prompt.trim() ? `${prompt.trim()}. ${selectedPrompt}` : selectedPrompt; onStateChange({ prompt: newPrompt }); } };
+    const handleDownload = () => { if (renovatedImages.length !== 1) return; const link = document.createElement('a'); link.href = renovatedImages[0]; link.download = "renovated-image.png"; document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+    const handleApplyMask = (mask: FileData) => { onStateChange({ maskImage: mask }); setIsMaskingModalOpen(false); };
+    const handleRemoveMask = (e?: React.MouseEvent) => { if (e) e.preventDefault(); onStateChange({ maskImage: null }); };
+    const scrollToTop = () => { const mainContainer = document.querySelector('main'); if (mainContainer) { mainContainer.scrollTo({ top: 0, behavior: 'smooth' }); } else { window.scrollTo({ top: 0, behavior: 'smooth' }); } };
 
     return (
         <div className="flex flex-col gap-8">
@@ -333,7 +288,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 <ImageUpload 
                                     onFileSelect={handleFileSelect} 
                                     previewUrl={sourceImage?.objectURL} 
-                                    maskPreviewUrl={maskImage?.objectURL} // Pass mask to overlay on preview
+                                    maskPreviewUrl={maskImage?.objectURL}
                                 />
                                 {sourceImage && (
                                     <div className="mt-4">
@@ -344,7 +299,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                                 onClick={(e) => { 
                                                     e.preventDefault(); 
                                                     setIsMaskingModalOpen(true); 
-                                                    scrollToTop(); // Force scroll to top
+                                                    scrollToTop();
                                                 }}
                                                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
                                                 title="Vẽ vùng chọn"
@@ -446,9 +401,9 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             <button
                                 onClick={handleGenerate}
                                 disabled={isLoading || !sourceImage || userCredits < cost}
-                                className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                                className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                             >
-                                {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Cải Tạo'}
+                                {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Cải Tạo'}
                             </button>
                         </div>
                     </div>
@@ -481,7 +436,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     {isLoading && (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
                         </div>
                     )}
                     

@@ -33,7 +33,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -92,8 +92,8 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
 
             if (useFlow) {
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16' || aspectRatio === '3:4') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+                if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
@@ -196,7 +196,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                     <button
                         onClick={handleGenerate}
                         disabled={isLoading || userCredits < cost}
-                        className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                        className="w-full flex justify-center items-center gap-2 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang tạo...'}</> : 'Tạo Layout'}
                     </button>
@@ -238,7 +238,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                             </div>
                         ) : resultImages.length === 1 && sourceImage ? (
                             <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
-                        ) : resultImages.length > 0 && !sourceImage ? (
+                        ) : resultImages.length > 0 ? (
                              <img src={resultImages[0]} alt="Result" className="w-full h-full object-contain" />
                         ) : (
                              <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>

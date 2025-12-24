@@ -74,7 +74,7 @@ const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits =
         if (!floorPlanImage) return 5; // Text only analysis
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;

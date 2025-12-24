@@ -36,7 +36,7 @@ const VirtualTour: React.FC<VirtualTourProps> = ({ state, onStateChange, userCre
     const getCostPerStep = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;

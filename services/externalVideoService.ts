@@ -1,7 +1,7 @@
 
 import { FileData } from "../types";
 
-// ... existing config ...
+// ... existing config and helpers ...
 // @ts-ignore
 const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev"; 
 
@@ -9,6 +9,18 @@ const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const POLL_INTERVAL = 10000;
 const TIMEOUT_DURATION = 300000; 
 const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL);
+
+// UUID Helper for browser/node compatibility
+const generateUUID = () => {
+    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+        return crypto.randomUUID();
+    }
+    // Fallback UUID generator
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+    });
+};
 
 const getImageDimensions = (fileData: FileData): Promise<{width: number, height: number}> => {
     return new Promise((resolve) => {
@@ -30,6 +42,8 @@ export const resizeAndCropImage = async (
 ): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
+        // Fix CORS: Important for drawing remote blob/url to canvas
+        img.crossOrigin = "Anonymous";
         img.src = fileData.objectURL || `data:${fileData.mimeType};base64,${fileData.base64}`;
         
         img.onload = () => {
@@ -214,7 +228,10 @@ export const generateFlowImage = async (
     const imagesToProcess = Array.isArray(inputImages) ? inputImages : (inputImages ? [inputImages] : []);
     const processedImages: string[] = [];
 
-    if (onProgress) onProgress("Đang tối ưu hóa ảnh đầu vào...");
+    // CONSTANT LOADING MESSAGE
+    const LOADING_MSG = "Đang xử lý. Vui lòng đợi...";
+
+    if (onProgress) onProgress(LOADING_MSG);
 
     // Determine correct crop ratio based on requested Aspect Enum
     let ratioType: '16:9' | '9:16' | '1:1' = '16:9';
@@ -242,8 +259,6 @@ export const generateFlowImage = async (
         }
     }
 
-    console.log("[Checkpoint 1] Creating Flow Task...");
-
     // 1. CREATE TASK - Send 'images' array to backend
     const createRes = await fetchJson('/flow-create', {
         method: 'POST',
@@ -267,8 +282,7 @@ export const generateFlowImage = async (
     const taskId = createRes.taskId;
     const projectId = createRes.projectId;
     
-    console.log(`[Checkpoint 2] Task Created: ${taskId}. Start Polling...`);
-    if (onProgress) onProgress("Đã gửi yêu cầu. Đang chờ xử lý...");
+    if (onProgress) onProgress(LOADING_MSG);
 
     // 2. POLL STATUS
     const POLLING_DELAY = 5000; // Faster polling initially
@@ -289,9 +303,7 @@ export const generateFlowImage = async (
 
             // HANDLE PROCESSING STATUS CORRECTLY
             if (statusRes.code === 'processing') {
-                const step = statusRes.step || '...';
-                const msg = statusRes.message || 'Đang xử lý';
-                if (onProgress) onProgress(`[Bước ${step}] ${msg}`);
+                if (onProgress) onProgress(LOADING_MSG);
                 continue;
             }
 
@@ -312,8 +324,6 @@ export const generateFlowImage = async (
             if (statusRes.result?.media && statusRes.result.media.length > 0) {
                 const urls: string[] = [];
                 const mediaIds: string[] = [];
-
-                console.log("[Checkpoint 4-FULL] Result Structure:", JSON.stringify(statusRes.result));
 
                 statusRes.result.media.forEach((mediaItem: any) => {
                      let mId = mediaItem.mediaGenerationId || mediaItem.image?.id || mediaItem.id;
@@ -344,7 +354,7 @@ export const generateFlowImage = async (
                 });
                 
                 if (urls.length > 0) {
-                    if (onProgress) onProgress("Hoàn tất! Đang tải ảnh...");
+                    if (onProgress) onProgress(LOADING_MSG);
                     return { imageUrls: urls, mediaIds, projectId };
                 }
             }
@@ -359,8 +369,7 @@ export const generateFlowImage = async (
             if (msg.includes("SYSTEM_ERROR") || msg.includes("Vui lòng thử lại sau") || msg.includes("Captcha") || msg.includes("SAFETY")) {
                  throw pollErr;
             }
-            console.warn("Polling retry:", pollErr);
-            if (onProgress) onProgress("Kết nối chậm, đang thử lại...");
+            if (onProgress) onProgress(LOADING_MSG);
         }
     }
     
@@ -372,8 +381,6 @@ export const upscaleFlowImage = async (
     projectId: string | undefined,
 ): Promise<{ imageUrl: string }> => {
     
-    console.log(`[Checkpoint 6] Starting Upscale for ID: ${mediaId}`);
-
     const createRes = await fetchJson('/flow-upscale', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -389,7 +396,6 @@ export const upscaleFlowImage = async (
     }
 
     const taskId = createRes.taskId;
-    console.log(`[Checkpoint 7] Upscale Task Created: ${taskId}`);
 
     const POLLING_DELAY = 10000;
     const MAX_RETRIES = 20;
@@ -409,7 +415,6 @@ export const upscaleFlowImage = async (
 
             // HANDLE PROCESSING STATUS CORRECTLY
             if (statusRes.code === 'processing') {
-                if (i % 2 === 0) console.log(`[Upscale] Processing step ${statusRes.step}: ${statusRes.message}`);
                 continue;
             }
 
@@ -434,7 +439,6 @@ export const upscaleFlowImage = async (
                 }
 
                 if (encodedImage) {
-                    console.log(`[Checkpoint 8] Upscale Success.`);
                     const finalUrl = encodedImage.startsWith('data:') 
                         ? encodedImage 
                         : `data:image/jpeg;base64,${encodedImage}`;
@@ -451,7 +455,6 @@ export const upscaleFlowImage = async (
             if (msg.includes("SYSTEM_ERROR") || msg.includes("Vui lòng thử lại sau") || msg.includes("Captcha")) {
                  throw pollErr;
             }
-            console.warn("Polling upscale retry:", pollErr);
         }
     }
 
@@ -585,6 +588,9 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
         });
         const { task_id, scene_id } = triggerData;
 
+        // Use safe UUID instead of randomUUID inside browser contexts if needed
+        const sceneIdSafe = scene_id || generateUUID();
+
         const maxRetries = 120;
         let attempts = 0;
 
@@ -595,7 +601,7 @@ export const upscaleVideoExternal = async (mediaId: string): Promise<string> => 
             const checkData = await fetchJson('/check', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'check', task_id, scene_id, token })
+                body: JSON.stringify({ action: 'check', task_id, scene_id: sceneIdSafe, token })
             });
 
             if (checkData.status === 'completed' && checkData.video_url) {

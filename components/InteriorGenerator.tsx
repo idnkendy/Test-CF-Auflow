@@ -1,4 +1,5 @@
 
+// ... existing imports
 import React, { useState, useCallback } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -19,6 +20,7 @@ import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
 
+// ... Options arrays (styleOptions, roomTypeOptions, etc.) ...
 const styleOptions = [
     { value: 'none', label: 'Tự động' },
     { value: 'Hiện đại', label: 'Hiện đại' },
@@ -77,10 +79,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     
-    const escapeRegExp = (string: string) => {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    };
-
+    // ... prompt update logic ...
+    const escapeRegExp = (string: string) => { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
     const updatePrompt = useCallback((type: 'style' | 'roomType' | 'lighting' | 'colorPalette', newValue: string, oldValue: string) => {
         const getPromptPart = (partType: string, value: string): string => {
             if (value === 'none' || !value) return '';
@@ -92,150 +92,48 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 default: return '';
             }
         };
-
-        const oldPart = getPromptPart(type, oldValue);
-        const newPart = getPromptPart(type, newValue);
-
-        let nextPrompt = customPrompt;
-
-        if (oldPart && nextPrompt.includes(oldPart)) {
-            const escapedOldPart = escapeRegExp(oldPart);
-            nextPrompt = newPart 
-                ? nextPrompt.replace(oldPart, newPart) 
-                : nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), '');
-        } else if (newPart) {
-            nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart;
-        }
-
-        const cleanedPrompt = nextPrompt
-            .replace(/,+/g, ',')
-            .split(',')
-            .map(p => p.trim())
-            .filter(p => p.length > 0)
-            .join(', ');
-            
+        const oldPart = getPromptPart(type, oldValue); const newPart = getPromptPart(type, newValue); let nextPrompt = customPrompt;
+        if (oldPart && nextPrompt.includes(oldPart)) { const escapedOldPart = escapeRegExp(oldPart); nextPrompt = newPart ? nextPrompt.replace(oldPart, newPart) : nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), ''); } else if (newPart) { nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart; }
+        const cleanedPrompt = nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ');
         onStateChange({ customPrompt: cleanedPrompt });
-            
     }, [customPrompt, onStateChange]);
 
-    const handleStyleChange = (newVal: string) => {
-        updatePrompt('style', newVal, style);
-        onStateChange({ style: newVal });
-    };
-
-    const handleRoomTypeChange = (newVal: string) => {
-        updatePrompt('roomType', newVal, roomType);
-        onStateChange({ roomType: newVal });
-    };
-
-    const handleLightingChange = (newVal: string) => {
-        updatePrompt('lighting', newVal, lighting);
-        onStateChange({ lighting: newVal });
-    };
-    
-    const handleColorPaletteChange = (newVal: string) => {
-        updatePrompt('colorPalette', newVal, colorPalette);
-        onStateChange({ colorPalette: newVal });
-    };
-
-    const handleResolutionChange = (val: ImageResolution) => {
-        onStateChange({ resolution: val });
-        // Nếu chuyển về Standard, xóa ảnh tham chiếu
-        if (val === 'Standard') {
-            onStateChange({ referenceImages: [] });
-        }
-    };
-
-    const handleFileSelect = (fileData: FileData | null) => {
-        onStateChange({
-            sourceImage: fileData,
-            resultImages: [],
-            upscaledImage: null,
-        });
-    }
-    
-    const handleReferenceFilesChange = (files: FileData[]) => {
-        onStateChange({ referenceImages: files });
-    };
-
-    const getCostPerImage = () => {
-        switch (resolution) {
-            case 'Standard': return 5;
-            case '1K': return 15;
-            case '2K': return 20;
-            case '4K': return 30;
-            default: return 5;
-        }
-    };
-    
+    const handleStyleChange = (newVal: string) => { updatePrompt('style', newVal, style); onStateChange({ style: newVal }); };
+    const handleRoomTypeChange = (newVal: string) => { updatePrompt('roomType', newVal, roomType); onStateChange({ roomType: newVal }); };
+    const handleLightingChange = (newVal: string) => { updatePrompt('lighting', newVal, lighting); onStateChange({ lighting: newVal }); };
+    const handleColorPaletteChange = (newVal: string) => { updatePrompt('colorPalette', newVal, colorPalette); onStateChange({ colorPalette: newVal }); };
+    const handleResolutionChange = (val: ImageResolution) => { onStateChange({ resolution: val }); if (val === 'Standard') { onStateChange({ referenceImages: [] }); } };
+    const handleFileSelect = (fileData: FileData | null) => { onStateChange({ sourceImage: fileData, resultImages: [], upscaledImage: null, }); }
+    const handleReferenceFilesChange = (files: FileData[]) => { onStateChange({ referenceImages: files }); };
+    const getCostPerImage = () => { switch (resolution) { case 'Standard': return 5; case '1K': return 10; case '2K': return 20; case '4K': return 30; default: return 5; } };
     const cost = numberOfImages * getCostPerImage();
-
-    // Unified Prompt Logic
-    const constructInteriorPrompt = () => {
-        let basePrompt = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition of the interior scene from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${customPrompt}. Make it photorealistic interior design.`;
-        
-        if (referenceImages && referenceImages.length > 0) {
-             basePrompt += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`;
-        }
-        
-        // Unified Persona
-        basePrompt = `You are a professional interior designer. ${basePrompt}`;
-        return basePrompt;
-    };
+    const constructInteriorPrompt = () => { let basePrompt = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition of the interior scene from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${customPrompt}. Make it photorealistic interior design.`; if (referenceImages && referenceImages.length > 0) { basePrompt += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`; } basePrompt = `You are a professional interior designer. ${basePrompt}`; return basePrompt; };
 
     const handleGenerate = async () => {
-        if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
-             return;
-        }
-
-        if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên một hình ảnh phác thảo hoặc không gian.' });
-            return;
-        }
-        if (!customPrompt.trim()) {
-            onStateChange({ error: 'Lời nhắc (prompt) không được để trống.' });
-            return;
-        }
+        if (onDeductCredits && userCredits < cost) { onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` }); return; }
+        if (!sourceImage) { onStateChange({ error: 'Vui lòng tải lên một hình ảnh phác thảo hoặc không gian.' }); return; }
+        if (!customPrompt.trim()) { onStateChange({ error: 'Lời nhắc (prompt) không được để trống.' }); return; }
 
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
-        setStatusMessage('Đang khởi tạo...');
+        setStatusMessage('Đang xử lý. Vui lòng đợi...');
         setUpscaleWarning(null);
 
         const promptForService = constructInteriorPrompt();
-        
         let jobId: string | null = null;
         let logId: string | null = null;
-
-        // Routing: Flow for Standard/1K/2K, Google for 4K
         const useFlow = resolution !== '4K';
 
         try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Render nội thất (${numberOfImages} ảnh) - ${resolution || 'Standard'}`);
-            }
-
+            if (onDeductCredits) { logId = await onDeductCredits(cost, `Render nội thất (${numberOfImages} ảnh) - ${resolution || 'Standard'}`); }
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                 jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.InteriorRendering,
-                    prompt: customPrompt,
-                    cost: cost,
-                    usage_log_id: logId
-                });
-            }
-
+            if (user && logId) { jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.InteriorRendering, prompt: customPrompt, cost: cost, usage_log_id: logId }); }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-                }
+                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
@@ -244,14 +142,12 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage(`[1/2] Đang tạo ảnh (${modelName})... (${index + 1}/${numberOfImages})`);
+                        setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                         
-                        // Prepare input images array (Source + References)
                         const inputImages: FileData[] = [];
                         if (sourceImage) inputImages.push(sourceImage);
                         if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
 
-                        // 1. Generate Base
                         const result = await externalVideoService.generateFlowImage(
                             promptForService,
                             inputImages,
@@ -263,18 +159,14 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            // 2. Check for 2K Upscale
                             const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
 
                             if (shouldUpscale) {
-                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(
-                                            mediaId,
-                                            result.projectId
-                                        );
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
                                         if (upscaleResult && upscaleResult.imageUrl) {
                                             finalUrl = upscaleResult.imageUrl;
                                         }
@@ -282,7 +174,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                 } catch (upscaleErr: any) {
                                     console.warn("Upscale failed, falling back", upscaleErr);
                                     setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    // Refund logic for upscale failure (2K -> 1K difference: 5 credits)
                                     if (user && logId) {
                                         await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
                                     }
@@ -292,14 +183,9 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             collectedUrls.push(finalUrl);
                             completedCount++;
                             onStateChange({ resultImages: [...collectedUrls] });
-                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                            setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                             
-                            historyService.addToHistory({
-                                tool: Tool.InteriorRendering,
-                                prompt: `Flow (${modelName}): ${promptForService}`,
-                                sourceImageURL: sourceImage?.objectURL,
-                                resultImageURL: finalUrl,
-                            });
+                            historyService.addToHistory({ tool: Tool.InteriorRendering, prompt: `Flow (${modelName}): ${promptForService}`, sourceImageURL: sourceImage?.objectURL, resultImageURL: finalUrl });
                         }
                     } catch (e: any) {
                         console.error(`Image ${index+1} failed`, e);
@@ -332,12 +218,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 onStateChange({ resultImages: imageUrls });
                 if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
                 
-                imageUrls.forEach(url => historyService.addToHistory({
-                    tool: Tool.InteriorRendering,
-                    prompt: `Gemini Pro 4K: ${promptForService}`,
-                    sourceImageURL: sourceImage?.objectURL,
-                    resultImageURL: url,
-                }));
+                imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.InteriorRendering, prompt: `Gemini Pro 4K: ${promptForService}`, sourceImageURL: sourceImage?.objectURL, resultImageURL: url, }));
             }
 
         } catch (err: any) {
@@ -352,49 +233,19 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         }
     };
 
-    // ... (Upscale, Download, Sync functions remain the same)
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
-        const resultImage = resultImages[0];
-
         onStateChange({ isUpscaling: true, error: null });
-
+        setStatusMessage('Đang xử lý. Vui lòng đợi...');
         try {
-            // FIX: Use safe helper
-            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImage);
-
-            const upscalePrompt = "Upscale this interior design rendering to a high resolution. Enhance the details, textures, and lighting to make it look photorealistic and professional. Do not change the composition or the core design.";
-            
-            const result = await geminiService.editImage(upscalePrompt, imageToUpscale, 1);
+            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImages[0]);
+            const result = await geminiService.editImage("Upscale this interior design rendering to a high resolution.", imageToUpscale, 1);
             onStateChange({ upscaledImage: result[0].imageUrl });
-        } catch (err: any) {
-            onStateChange({ error: err.message || "Failed to upscale image." });
-        } finally {
-            onStateChange({ isUpscaling: false });
-        }
+        } catch (err: any) { onStateChange({ error: err.message || "Failed to upscale image." }); } finally { onStateChange({ isUpscaling: false }); setStatusMessage(null); }
     };
     
-    const handleDownload = () => {
-        const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null);
-        if (!url) return;
-        
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = "generated-interior.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-    };
-
-    const handleSendImageToSync = async (imageUrl: string) => {
-        try {
-            // FIX: Use safe helper
-            const fileData = await geminiService.getFileDataFromUrl(imageUrl);
-            onSendToViewSync(fileData);
-        } catch (e) {
-            onStateChange({ error: "Không thể chuyển ảnh, định dạng không hợp lệ." });
-        }
-    };
+    const handleDownload = () => { const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null); if (!url) return; const link = document.createElement('a'); link.href = url; link.download = "generated-interior.png"; document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+    const handleSendImageToSync = async (imageUrl: string) => { try { const fileData = await geminiService.getFileDataFromUrl(imageUrl); onSendToViewSync(fileData); } catch (e) { onStateChange({ error: "Không thể chuyển ảnh, định dạng không hợp lệ." }); } };
 
     return (
         <div className="flex flex-col gap-8">
@@ -496,7 +347,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             disabled={isLoading || !sourceImage || isUpscaling || userCredits < cost}
                             className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                         >
-                           {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Render'}
+                           {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}
                         </button>
                     </div>
                     {error && <p className="mt-3 text-sm text-red-500 text-center font-medium">{error}</p>}
@@ -555,7 +406,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                     {isLoading && (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
                         </div>
                     )}
                     {!isLoading && upscaledImage && resultImages.length === 1 && (

@@ -61,7 +61,7 @@ export interface EditByNoteState {
     resultImages: string[];
     numberOfImages: number;
     resolution: ImageResolution;
-    aspectRatio: AspectRatio;
+    aspectRatio: AspectRatio; // Added
 }
 
 export interface PricingState {
@@ -283,6 +283,7 @@ export interface ImageEditorState {
     resultImages: string[];
     numberOfImages: number;
     resolution: ImageResolution;
+    aspectRatio: AspectRatio; // Added
 }
 
 export interface StagingState {
@@ -538,6 +539,7 @@ export const initialToolStates = {
         resultImages: [],
         numberOfImages: 1,
         resolution: 'Standard',
+        aspectRatio: '1:1', // Default Aspect Ratio
     } as ImageEditorState,
     [Tool.Staging]: {
         prompt: 'Đặt các đồ vật này vào không gian một cách hợp lý và tự nhiên.',

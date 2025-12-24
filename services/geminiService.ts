@@ -45,6 +45,11 @@ const normalizeCode = (code: string): string => {
 
 const getGeminiApiKey = async (): Promise<string> => {
     try {
+        // Fallback biến môi trường nếu có (Check safely for browser env)
+        if (typeof process !== 'undefined' && process.env && process.env.API_KEY) {
+            return process.env.API_KEY;
+        }
+
         // Gọi RPC để lấy key ngẫu nhiên (đã mã hóa hoặc plain text tùy server config)
         const { data: encryptedKey, error } = await supabase.rpc('get_random_api_key');
 
@@ -78,8 +83,6 @@ const getGeminiApiKey = async (): Promise<string> => {
 
         return apiKey;
     } catch (err: any) {
-        // Fallback biến môi trường nếu có
-        if (process.env.API_KEY) return process.env.API_KEY;
         throw new Error(err.message || "Lỗi lấy API Key.");
     }
 };
@@ -212,7 +215,7 @@ const createCompositeImage = async (source: FileData, mask: FileData): Promise<s
 const processContentResponseAsync = async (response: any): Promise<string[]> => {
     const images: string[] = [];
     
-    if (response.candidates && response.candidates.length > 0) {
+    if (response && response.candidates && response.candidates.length > 0) {
         const candidate = response.candidates[0];
         
         if (candidate.finishReason && candidate.finishReason !== 'STOP') {
@@ -234,7 +237,8 @@ const processContentResponseAsync = async (response: any): Promise<string[]> => 
 
     if (images.length === 0) {
         // Fix: Guideline recommends using response.text for direct text extraction.
-        const text = response.text;
+        // Also safeguard against undefined response
+        const text = response?.text;
         if (text) {
              throw new Error(`AI phản hồi văn bản nhưng không có ảnh: "${text.substring(0, 200)}...". Vui lòng thử lại với mô tả rõ ràng hơn hoặc đổi sang chế độ 2K/4K.`);
         }
@@ -276,7 +280,7 @@ const handleGeminiError = (e: any) => {
         throw new Error("Lỗi: IP không được hỗ trợ. Vui lòng bật VPN hoặc đổi vùng.");
     }
     
-    if (msg.includes('suspended') || msg.includes('API_KEY_INVALID') || msg.includes('400') && msg.includes('API key')) {
+    if (msg.includes('suspended') || msg.includes('API_KEY_INVALID') || (msg.includes('400') && msg.includes('API key'))) {
         throw new Error("Lỗi: API Key hiện tại gặp sự cố hoặc bị tạm ngưng. Hệ thống đang tự động điều chuyển, vui lòng thử lại sau giây lát.");
     }
 
@@ -356,7 +360,7 @@ export const generateStandardImage = async (
                     model: model,
                     contents: { parts },
                     config: {
-                        systemInstruction: "You are an AI image generation engine. Your ONLY task is to output image data based on the provided description. Do NOT provide conversational text or explanations. Do NOT acknowledge instructions. Just generate the visual result."
+                        systemInstruction: "You are an AI image generation engine. Output only the generated visual result."
                     }
                 });
                 return await processContentResponseAsync(response);
@@ -445,7 +449,7 @@ export const generateHighQualityImage = async (
                 model: model,
                 contents: { parts },
                 config: {
-                    systemInstruction: "You are a professional architectural renderer. Your task is to output only high-quality images. Do not respond with text. Do not confirm the task. Output only the generated visual candidate.",
+                    systemInstruction: "You are a professional architectural renderer. Output only high-quality images.",
                     imageConfig: {
                         aspectRatio: aspectRatio,
                         imageSize: resolution === 'Standard' ? '1K' : resolution
@@ -465,7 +469,7 @@ export const editImage = async (
     image: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    const urls = await generateStandardImage(prompt, '4:3', numberOfImages, image);
+    const urls = await generateStandardImage(prompt, '1:1', numberOfImages, image);
     return urls.map(url => ({ imageUrl: url }));
 };
 
@@ -475,7 +479,6 @@ export const editImageWithMask = async (
     mask: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
@@ -492,7 +495,7 @@ export const editImageWithMask = async (
                     model: model,
                     contents: { parts },
                     config: {
-                        systemInstruction: "You are an expert image editor. Output only the modified image. No text allowed."
+                        systemInstruction: "You are an expert image editor. Output only the modified image."
                     }
                 });
                 return await processContentResponseAsync(response);
@@ -517,7 +520,6 @@ export const editImageWithReference = async (
     referenceImage: FileData | null, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
@@ -532,7 +534,7 @@ export const editImageWithReference = async (
                     model: model,
                     contents: { parts },
                     config: {
-                        systemInstruction: "Output only image data. No conversation."
+                        systemInstruction: "Output only image data."
                     }
                 });
                 return await processContentResponseAsync(response);
@@ -558,7 +560,6 @@ export const editImageWithMaskAndReference = async (
     referenceImage: FileData, 
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
@@ -601,7 +602,6 @@ export const editImageWithMultipleReferences = async (
     referenceImages: FileData[],
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
@@ -645,7 +645,6 @@ export const editImageWithMaskAndMultipleReferences = async (
     referenceImages: FileData[],
     numberOfImages: number = 1
 ): Promise<{ imageUrl: string }[]> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     
@@ -686,9 +685,7 @@ export const editImageWithMaskAndMultipleReferences = async (
 // --- TEXT GENERATION FUNCTIONS ---
 
 export const generateText = async (prompt: string): Promise<string> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
-    // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
     const model = 'gemini-3-flash-preview';
     
     return retryOperation(async () => {
@@ -711,9 +708,7 @@ export const generatePromptSuggestions = async (
     count: number,
     customInstruction: string = ''
 ): Promise<Record<string, string[]> | null> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
-    // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
     const model = 'gemini-3-flash-preview';
     
     const allCategories = [
@@ -771,9 +766,7 @@ export const generatePromptSuggestions = async (
 };
 
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
-    // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
     const model = 'gemini-3-flash-preview';
     
     const parts: any[] = [{ text: `Act as an expert architectural prompt engineer. Enhance the following user input into a detailed, professional prompt suitable for high-quality AI rendering (like Midjourney or Gemini). Focus on lighting, materials, atmosphere, and camera specifications. \n\nUser Input: "${userInput}"` }];
@@ -799,9 +792,7 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 
 // --- VIDEO PROMPT GENERATION ---
 export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
-    // Fix: Updated to gemini-3-flash-preview for text tasks as per guidelines.
     const model = 'gemini-3-flash-preview';
     
     const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI. 
@@ -833,7 +824,6 @@ export const generateVideo = async (prompt: string, startImage?: FileData, jobId
 };
 
 export const generateStagingImage = async (prompt: string, sceneImage: FileData, objectImages: FileData[], numberOfImages: number = 1): Promise<{ imageUrl: string }[]> => {
-    // Acquire dynamic client
     const ai = await getDynamicAIClient();
     const model = 'gemini-2.5-flash-image';
     

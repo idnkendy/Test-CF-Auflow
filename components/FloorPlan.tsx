@@ -34,7 +34,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -97,8 +97,8 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
             if (useFlow) {
                 // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16' || aspectRatio === '3:4') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
@@ -240,7 +240,11 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                                     )}
                                 </div>
                             </div>
-                            <button onClick={handleGenerate} disabled={isLoading || !sourceImage || userCredits < cost} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors">
+                            <button 
+                                onClick={handleGenerate} 
+                                disabled={isLoading || !sourceImage || userCredits < cost} 
+                                className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg"
+                            >
                                 {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Bắt đầu Render'}
                             </button>
                         </div>

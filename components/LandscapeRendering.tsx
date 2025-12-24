@@ -145,7 +145,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -211,9 +211,9 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
             if (useFlow) {
                 // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                if (aspectRatio === '16:9') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                } else if (aspectRatio === '9:16') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
 

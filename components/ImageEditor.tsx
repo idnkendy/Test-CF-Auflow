@@ -17,6 +17,7 @@ import ImageComparator from './ImageComparator';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import MultiImageUpload from './common/MultiImageUpload';
 import ResolutionSelector from './common/ResolutionSelector';
+import AspectRatioSelector from './common/AspectRatioSelector';
 
 interface ImageEditorProps {
     state: ImageEditorState;
@@ -29,8 +30,6 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
     const ratio = width / height;
     const ratios: { [key in AspectRatio]: number } = {
         "1:1": 1,
-        "3:4": 3/4,
-        "4:3": 4/3,
         "9:16": 9/16,
         "16:9": 16/9
     };
@@ -49,11 +48,10 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 };
 
 const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { prompt, sourceImage, maskImage, referenceImages, isLoading, error, resultImages, numberOfImages, resolution } = state;
+    const { prompt, sourceImage, maskImage, referenceImages, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
-    const [detectedAspectRatio, setDetectedAspectRatio] = useState<AspectRatio>('1:1');
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
@@ -62,15 +60,22 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         if (fileData?.objectURL) {
             const img = new Image();
             img.onload = () => {
-                setDetectedAspectRatio(getClosestAspectRatio(img.width, img.height));
+                const detected = getClosestAspectRatio(img.width, img.height);
+                onStateChange({
+                    sourceImage: fileData,
+                    resultImages: [],
+                    maskImage: null,
+                    aspectRatio: detected // Auto-detect and set ratio
+                });
             };
             img.src = fileData.objectURL;
+        } else {
+            onStateChange({
+                sourceImage: fileData,
+                resultImages: [],
+                maskImage: null,
+            });
         }
-        onStateChange({
-            sourceImage: fileData,
-            resultImages: [],
-            maskImage: null,
-        });
     };
 
     const handleReferenceFilesChange = (files: FileData[]) => {
@@ -81,7 +86,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -122,6 +127,9 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         // If 4K, use Google Gemini API.
         const useFlow = resolution !== '4K' && !maskImage;
 
+        // Use selected Aspect Ratio
+        const effectiveAspectRatio = aspectRatio || '1:1';
+
         try {
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Chỉnh sửa ảnh (${numberOfImages} ảnh) - ${resolution}`);
@@ -147,9 +155,9 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 
                 // Map Aspect Ratio to Enum
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (detectedAspectRatio === '16:9' || detectedAspectRatio === '4:3') {
+                if (effectiveAspectRatio === '16:9') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (detectedAspectRatio === '9:16' || detectedAspectRatio === '3:4') {
+                } else if (effectiveAspectRatio === '9:16') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
 
@@ -158,7 +166,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
                 // Construct prompt for Flow
-                const flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described.`;
+                const flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described. Ensure aspect ratio is ${effectiveAspectRatio}.`;
                 
                 // Input Images: Source + References
                 const inputImages = [sourceImage, ...referenceImages];
@@ -240,7 +248,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     const promises = Array.from({ length: numberOfImages }).map(async () => {
                         const images = await geminiService.generateHighQualityImage(
                             prompt, 
-                            detectedAspectRatio, 
+                            effectiveAspectRatio, 
                             resolution === 'Standard' ? '1K' : resolution, 
                             sourceImage, 
                             jobId || undefined, 
@@ -426,7 +434,10 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                      </div>
                      
                      <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                         <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                         <div className="grid grid-cols-2 gap-4">
+                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                            <AspectRatioSelector value={aspectRatio || '1:1'} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                         </div>
                      </div>
 
                      <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">

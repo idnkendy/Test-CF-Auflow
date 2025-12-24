@@ -10,8 +10,6 @@ interface AspectRatioSelectorProps {
 
 const options: { value: AspectRatio; label: string }[] = [
     { value: '1:1', label: 'Vuông' },
-    { value: '4:3', label: 'Ngang' },
-    { value: '3:4', label: 'Dọc' },
     { value: '16:9', label: 'Rộng' },
     { value: '9:16', label: 'Story' },
 ];

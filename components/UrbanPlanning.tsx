@@ -141,7 +141,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -207,9 +207,9 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             if (useFlow) {
                 // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                if (aspectRatio === '16:9' ) {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                } else if (aspectRatio === '9:16' ) {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
 
@@ -300,9 +300,10 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                     return images[0];
                 });
                 const imageUrls = await Promise.all(promises);
+                
                 onStateChange({ resultImages: imageUrls });
                 if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-
+                
                 imageUrls.forEach(url => historyService.addToHistory({
                     tool: Tool.UrbanPlanning,
                     prompt: `Gemini Pro 4K: ${promptForService}`,
@@ -427,7 +428,11 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                                 {userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
                             </div>
                         </div>
-                        <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost} className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold rounded-lg transition-colors">
+                        <button 
+                            onClick={handleGenerate} 
+                            disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost} 
+                            className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
+                        >
                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Render'}
                         </button>
                     </div>

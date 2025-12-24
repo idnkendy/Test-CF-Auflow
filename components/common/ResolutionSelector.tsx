@@ -11,7 +11,7 @@ interface ResolutionSelectorProps {
 
 const options: { value: ImageResolution; label: string; badge?: string; cost: number; desc: string }[] = [
     { value: 'Standard', label: 'Tiêu chuẩn', badge: 'Nhanh', cost: 5, desc: 'Nano Flash' },
-    { value: '1K', label: 'HD (1K)', badge: 'Chi tiết', cost: 15, desc: 'Nano Pro' },
+    { value: '1K', label: 'HD (1K)', badge: 'Chi tiết', cost: 10, desc: 'Nano Pro' },
     { value: '2K', label: '2K QHD', badge: 'Sắc nét', cost: 20, desc: 'Nano Pro' },
     { value: '4K', label: '4K UHD', badge: 'Siêu thực', cost: 30, desc: 'Nano Pro' },
 ];

@@ -6,7 +6,7 @@ import { EditByNoteState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService'; // Flow import
+import * as externalVideoService from '../services/externalVideoService'; 
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -52,8 +52,6 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
     const ratio = width / height;
     const ratios: { [key in AspectRatio]: number } = {
         "1:1": 1,
-        "3:4": 3/4,
-        "4:3": 4/3,
         "9:16": 9/16,
         "16:9": 16/9
     };
@@ -72,7 +70,6 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 };
 
 const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    // Add aspectRatio to destructuring, defaulting to what's in state or '1:1'
     const { sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio = '1:1' } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     
@@ -97,7 +94,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     const [draggingAnnotationId, setDraggingAnnotationId] = useState<string | null>(null);
     const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
     const [panOffset, setPanOffset] = useState<{x: number, y: number}>({ x: 0, y: 0 });
-    const [zoom, setZoom] = useState(1.0); // Start at 100% to fit screen better initially
+    const [zoom, setZoom] = useState(1.0); 
     
     // Refs
     const containerRef = useRef<HTMLDivElement>(null);
@@ -111,7 +108,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     }, []);
 
-    // Effect to reset annotations ONLY when sourceImage changes (new file uploaded)
     useEffect(() => {
         if (sourceImage) {
             setAnnotations([]);
@@ -119,7 +115,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     }, [sourceImage]);
 
-    // Lock body scroll when editor is open to prevent background scrolling
     useEffect(() => {
         if (isEditorOpen) {
             document.body.style.overflow = 'hidden';
@@ -131,7 +126,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         };
     }, [isEditorOpen]);
 
-    // Update controls when selection changes
     useEffect(() => {
         if (selectedId) {
             const item = annotations.find(a => a.id === selectedId);
@@ -161,13 +155,11 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const img = new Image();
             img.onload = () => {
                 const detected = getClosestAspectRatio(img.width, img.height);
-                // Automatically set aspect ratio state to match the image
                 onStateChange({ aspectRatio: detected }); 
             };
             img.src = fileData.objectURL;
         }
         onStateChange({ sourceImage: fileData, resultImages: [] });
-        // Correct place to reset: New File Loaded
         setAnnotations([]);
         setAnnotatedPreview(null);
         setPanOffset({ x: 0, y: 0 });
@@ -263,11 +255,9 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
-        // If clicking on canvas (not on an item)
         if (activeTool === 'move') {
             setIsDragging(true);
             setStartPos({ x: clientX - panOffset.x, y: clientY - panOffset.y });
-            // Deselect if clicking empty space
             if (e.target === containerRef.current || e.target === imageRef.current) {
                 setSelectedId(null);
             }
@@ -298,7 +288,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             };
             setAnnotations(prev => [...prev, newNote]);
             setSelectedId(newNote.id);
-            setActiveTool('move'); // Switch back to move after placing text
+            setActiveTool('move');
         }
     };
 
@@ -307,7 +297,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
-        // 1. Panning Canvas
         if (isDragging && activeTool === 'move' && startPos) {
             e.preventDefault();
             setPanOffset({
@@ -315,14 +304,12 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 y: clientY - startPos.y
             });
         } 
-        // 2. Drawing Arrow
         else if (isDragging && activeTool === 'arrow' && startPos) {
             const imgCoords = toImageCoords(coords.x, coords.y);
             setAnnotations(prev => prev.map(a => 
                 a.id === 'temp_arrow' ? { ...a, toX: imgCoords.x, toY: imgCoords.y } : a
             ));
         }
-        // 3. Dragging Annotation
         else if (draggingAnnotationId && startPos) {
             e.preventDefault();
             const imgCoords = toImageCoords(coords.x, coords.y);
@@ -346,7 +333,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 return a;
             }));
             
-            setStartPos(imgCoords); // Reset start pos to current for continuous delta
+            setStartPos(imgCoords);
         }
     };
 
@@ -368,9 +355,8 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     return prev.filter(a => a.id !== 'temp_arrow');
                 }
 
-                // Finalize arrow
                 const newId = Date.now().toString();
-                setSelectedId(newId); // Auto select new arrow
+                setSelectedId(newId);
                 return prev.map(a => 
                     a.id === 'temp_arrow' ? { ...a, id: newId } : a
                 );
@@ -405,7 +391,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
     const handleCloseEditor = async () => {
         if (sourceImage) {
-            // Include background for preview
             const previewUrl = await flattenVisualsToImage(true); 
             setAnnotatedPreview(previewUrl ? `data:image/png;base64,${previewUrl}` : null);
         }
@@ -422,7 +407,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         if (!ctx) return null;
 
         const img = imageRef.current;
-        // Use natural dimensions for high quality
         canvas.width = img.naturalWidth;
         canvas.height = img.naturalHeight;
 
@@ -436,7 +420,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         const scaleX = img.naturalWidth / clientWidth;
         const safeScale = (scaleX && isFinite(scaleX)) ? scaleX : 1;
 
-        // Draw Arrows
         annotations.filter(a => a.type === 'arrow').forEach(arrow => {
             if (arrow.toX === undefined || arrow.toY === undefined) return;
             
@@ -469,7 +452,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             ctx.fill();
         });
 
-        // Draw Text
         annotations.filter(a => a.type === 'text').forEach(note => {
             if (!note.text) return;
             const fontSize = (note.fontSize || 24) * safeScale;
@@ -480,7 +462,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const x = note.x * safeScale;
             const y = note.y * safeScale;
             
-            // Multiline split
             const lines = note.text.split('\n');
             const lineHeight = fontSize * 1.2;
             const maxLineWidth = Math.max(...lines.map(line => ctx.measureText(line).width));
@@ -489,18 +470,14 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const bgWidth = maxLineWidth + (padding * 2);
             const bgHeight = (lineHeight * lines.length) + padding;
 
-            // Box
             ctx.save();
             ctx.strokeStyle = '#9ca3af'; 
             ctx.lineWidth = 2 * safeScale;
             ctx.setLineDash([5 * safeScale, 5 * safeScale]); 
-            // Draw box centered
             ctx.strokeRect(x - bgWidth/2, y - bgHeight/2, bgWidth, bgHeight);
             ctx.restore();
             
-            // Text Color
             ctx.fillStyle = note.color; 
-            // Draw each line centered
             lines.forEach((line, i) => {
                 const lineY = y - ((lines.length - 1) * lineHeight) / 2 + (i * lineHeight);
                 ctx.fillText(line, x, lineY);
@@ -521,25 +498,19 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             return;
         }
 
-        // --- ENHANCED PROMPT LOGIC ---
-        // Match arrows to their closest text notes
         const arrows = annotations.filter(a => a.type === 'arrow');
         const textNotes = annotations.filter(a => a.type === 'text');
         
-        // Let's create specific instructions
         let promptInstructions: string[] = [];
         
         if (arrows.length > 0) {
-            // Find closest text for each arrow
             arrows.forEach((arrow, index) => {
                 if (arrow.toX === undefined || arrow.toY === undefined) return;
                 
-                // Find closest text
                 let closestText = "";
                 let minDist = Infinity;
                 
                 textNotes.forEach(note => {
-                    // Use simple euclidean dist from arrow tail to text center
                     const dist = Math.sqrt(Math.pow(note.x - arrow.x, 2) + Math.pow(note.y - arrow.y, 2));
                     if (dist < minDist) {
                         minDist = dist;
@@ -565,7 +536,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             : `Requests: ${generalText}`;
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang xử lý...');
+        setStatusMessage('Đang xử lý. Vui lòng đợi...');
         setUpscaleWarning(null);
 
         let logId: string | null = null;
@@ -574,32 +545,25 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         const useFlow = resolution !== '4K';
 
         try {
-            // --- CRITICAL CHANGE: COMPOSITE IMAGE GENERATION ---
-            // Instead of passing a mask, we bake the annotations into the source image.
-            
-            // 1. Create Offscreen Image from Source
             const tempImg = new Image();
             tempImg.src = sourceImage.objectURL;
             await new Promise(r => tempImg.onload = r);
             
-            // 2. Temporarily swap ref to perform drawing (hacky but reuses logic)
             const originalRef = imageRef.current;
             // @ts-ignore
             imageRef.current = tempImg; 
             
-            // 3. Flatten Visuals WITH Background (True) -> Creates the merged input image
             const compositeBase64 = await flattenVisualsToImage(true); 
             
             // @ts-ignore
-            imageRef.current = originalRef; // Restore ref
+            imageRef.current = originalRef; 
 
             if (!compositeBase64) throw new Error("Failed to create composite image.");
 
-            // 4. Create the Input FileData from the Composite
             const compositeImage: FileData = {
                 base64: compositeBase64,
                 mimeType: 'image/png',
-                objectURL: '' // Not needed for API call
+                objectURL: '' 
             };
 
             const fullPrompt = `
@@ -616,7 +580,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 ${structuredPrompt}
             `;
 
-            // 1. Credit Deduction
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Chỉnh sửa Ghi chú (${numberOfImages} ảnh) - ${resolution}`);
             }
@@ -637,25 +600,22 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             let imageUrls: string[] = [];
 
             if (useFlow) {
-                // --- FLOW LOGIC ---
-                // Aspect Ratio Logic - USE USER SELECTED RATIO
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                if (aspectRatio === '16:9') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                } else if (aspectRatio === '9:16') {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
 
-                // Model Selection
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    setStatusMessage(`[1/2] Đang chỉnh sửa (${modelName})... (${index + 1}/${numberOfImages})`);
+                    setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                     
                     const result = await externalVideoService.generateFlowImage(
                         fullPrompt,
-                        [compositeImage], // Use composite image
+                        [compositeImage], 
                         aspectEnum,
                         1,
                         modelName,
@@ -664,10 +624,9 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
                         let finalUrl = result.imageUrls[0];
-                        // 2K Upscale Check
                         const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
                         if (shouldUpscale) {
-                            setStatusMessage(`[2/2] Đang nâng cấp 2K...`);
+                            setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                             try {
                                 const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
                                 if (upscaleResult && upscaleResult.imageUrl) finalUrl = upscaleResult.imageUrl;
@@ -693,14 +652,13 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 imageUrls = collectedUrls;
 
             } else {
-                // --- GEMINI 4K ---
-                setStatusMessage('Đang xử lý với Gemini 4K...');
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
                         fullPrompt, 
-                        aspectRatio, // USE USER SELECTED RATIO
+                        aspectRatio, 
                         resolution, 
-                        compositeImage, // Use merged source
+                        compositeImage,
                         jobId || undefined
                     );
                     return { imageUrl: images[0] };
@@ -721,7 +679,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
-            // Note: We deliberately do NOT clear annotations here, so user can refine further.
             setSelectedId(null);
 
         } catch (err: any) {
@@ -733,7 +690,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
 
-            // 2. Refund Logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ghi chú (${err.message})`, logId);
@@ -758,19 +714,15 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            {/* --- FULL SCREEN EDITOR OVERLAY (PORTAL) --- */}
             {isEditorOpen && sourceImage && createPortal(
                 <div className="fixed inset-0 z-[9999] bg-[#121212] flex flex-col animate-fade-in select-none touch-none overflow-hidden">
                     
-                    {/* TOP TOOLBAR */}
                     <div className="h-16 bg-[#191919] border-b border-[#302839] flex items-center px-4 justify-between gap-4 z-50 flex-shrink-0">
-                        {/* 1. Label */}
                         <div className="flex items-center gap-2 text-white font-bold min-w-fit">
                             <span className="material-symbols-outlined text-[#7f13ec]">edit_note</span>
                             <span className="hidden sm:inline">Ghi chú</span>
                         </div>
 
-                        {/* 2. Main Tools */}
                         <div className="flex bg-[#252525] rounded-lg p-1 gap-1 border border-[#302839]">
                             <button
                                 onClick={() => setActiveTool('move')}
@@ -795,9 +747,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             </button>
                         </div>
 
-                        {/* 3. Settings (Sliders & Colors & Delete) */}
                         <div className="flex-grow flex items-center gap-4 sm:gap-8 justify-center overflow-x-auto no-scrollbar px-2">
-                            {/* Font Size Slider */}
                             <div className="flex flex-col w-24 sm:w-32">
                                 <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between">
                                     <span>Cỡ chữ</span>
@@ -812,7 +762,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 />
                             </div>
 
-                            {/* Stroke Width Slider */}
                             <div className="flex flex-col w-24 sm:w-32">
                                 <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between">
                                     <span>Độ dày</span>
@@ -827,7 +776,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 />
                             </div>
 
-                            {/* Color Palette */}
                             <div className="flex gap-2 items-center border-l border-[#302839] pl-4">
                                 {COLORS.map(color => (
                                     <button
@@ -841,7 +789,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 ))}
                             </div>
 
-                            {/* Delete Button (New) */}
                             <div className="flex items-center border-l border-[#302839] pl-4">
                                 <button
                                     onClick={deleteSelected}
@@ -858,7 +805,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             </div>
                         </div>
 
-                        {/* 4. Actions */}
                         <div className="flex items-center gap-2 sm:gap-3 min-w-fit">
                             <button
                                 onClick={undoLast}
@@ -885,7 +831,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                         </div>
                     </div>
 
-                    {/* CANVAS AREA */}
                     <div 
                         className="flex-grow bg-[#0f0f0f] relative overflow-hidden flex items-center justify-center cursor-crosshair h-full w-full"
                         onMouseDown={handleMouseDown}
@@ -907,11 +852,10 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 src={sourceImage.objectURL} 
                                 alt="Editing Source" 
                                 className="max-w-none pointer-events-none"
-                                style={{ maxHeight: '85vh', maxWidth: '90vw' }} // Ensure it fits but keeps aspect ratio
+                                style={{ maxHeight: '85vh', maxWidth: '90vw' }}
                                 draggable={false}
                             />
                             
-                            {/* SVG Layer for Arrows */}
                             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
                                 <defs>
                                     {COLORS.map(color => (
@@ -933,7 +877,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                             onMouseDown={(e) => handleAnnotationDragStart(arrow.id, e)}
                                             className="pointer-events-auto cursor-move group"
                                         >
-                                            {/* Transparent hit area for easier selection */}
                                             <line 
                                                 x1={arrow.x} y1={arrow.y}
                                                 x2={arrow.toX} y2={arrow.toY}
@@ -949,7 +892,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                                 className="transition-colors"
                                                 style={{ filter: isSelected ? 'drop-shadow(0 0 4px white)' : 'none' }}
                                             />
-                                            {/* Drag Handle at Tip */}
                                             {isSelected && (
                                                 <circle cx={arrow.toX} cy={arrow.toY} r="8" fill="white" stroke="#7f13ec" strokeWidth="2" />
                                             )}
@@ -958,7 +900,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 })}
                             </svg>
 
-                            {/* HTML Layer for Text Bubbles */}
                             {annotations.filter(a => a.type === 'text').map(note => {
                                 const isSelected = selectedId === note.id;
                                 return (
@@ -980,17 +921,15 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                                     <span className="material-symbols-outlined text-xs block">open_with</span>
                                                 </div>
                                             )}
-                                            {/* Changed input to textarea for multiline support */}
                                             <textarea 
                                                 autoFocus={note.text === ''}
                                                 value={note.text}
                                                 onChange={(e) => handleTextChange(note.id, e.target.value)}
                                                 placeholder="Nhập..."
-                                                // Auto-resize logic via ref
                                                 ref={(el) => {
                                                     if (el) {
-                                                        el.style.height = 'auto'; // Reset to calculate shrink
-                                                        el.style.height = `${el.scrollHeight}px`; // Set to content height
+                                                        el.style.height = 'auto';
+                                                        el.style.height = `${el.scrollHeight}px`;
                                                     }
                                                 }}
                                                 style={{ 
@@ -1003,7 +942,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                                 className={`
                                                     bg-transparent border-none outline-none font-bold text-center placeholder-gray-500/50 resize-none overflow-hidden block
                                                 `}
-                                                onMouseDown={(e) => e.stopPropagation()} // Allow text selection
+                                                onMouseDown={(e) => e.stopPropagation()} 
                                             />
                                             {isSelected && (
                                                 <button 
@@ -1019,7 +958,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             })}
                         </div>
 
-                        {/* Floating Zoom Controls */}
                         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#191919]/90 backdrop-blur-md p-1.5 rounded-full border border-[#302839] shadow-xl z-20">
                             <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-2 hover:bg-[#302839] rounded-full text-white">
                                 <span className="material-symbols-outlined text-lg">remove</span>
@@ -1041,7 +979,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
-                {/* LEFT: SOURCE & ANNOTATIONS */}
                 <div className="flex flex-col gap-6">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 h-full flex flex-col">
                         <div className="flex justify-between items-center mb-4">
@@ -1057,7 +994,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                         alt="Preview" 
                                         className="w-full h-full object-contain max-h-[500px]"
                                     />
-                                    {/* Hover Overlay to Change Image */}
                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
                                         <button 
                                             onClick={handleTriggerChangeImage}
@@ -1068,7 +1004,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                         </button>
                                     </div>
                                     
-                                    {/* Hidden Input for Changing Image */}
                                     <div className="hidden">
                                         <ImageUpload onFileSelect={handleFileSelect} id="hidden-change-image" />
                                     </div>
@@ -1095,7 +1030,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     </div>
                 </div>
 
-                {/* RIGHT: CONTROLS & RESULT */}
                 <div className="flex flex-col gap-6">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 h-full flex flex-col">
                         <div className="flex justify-between items-center mb-4">
@@ -1124,7 +1058,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             {isLoading && (
                                 <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
                                     <Spinner />
-                                    <p className="text-white mt-3 font-medium">{statusMessage || "Đang xử lý..."}</p>
+                                    <p className="text-white mt-3 font-medium">{statusMessage || "Đang xử lý. Vui lòng đợi..."}</p>
                                 </div>
                             )}
                             
@@ -1144,15 +1078,12 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             )}
                         </div>
 
-                        {/* Generation Controls */}
                         <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
                             <div className="grid grid-cols-2 gap-4">
                                 <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                                {/* Add Aspect Ratio Selector Here to allow override */}
                                 <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
                             </div>
                             
-                            {/* Removed filter to allow Standard (Nano Flash) again */}
                             <ResolutionSelector 
                                 value={resolution} 
                                 onChange={handleResolutionChange} 
@@ -1174,7 +1105,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 disabled={isLoading || !sourceImage || annotations.length === 0 || userCredits < cost}
                                 className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg"
                             >
-                                {isLoading ? <><Spinner /> Đang tạo...</> : 'Tạo Ảnh'}
+                                {isLoading ? <><Spinner /> Đang xử lý. Vui lòng đợi...</> : 'Tạo Ảnh'}
                             </button>
                             {error && <div className="text-xs text-red-500 text-center bg-red-50 dark:bg-red-900/10 p-2 rounded-lg border border-red-100 dark:border-red-900/20">{error}</div>}
                             {upscaleWarning && <p className="text-xs text-yellow-500 text-center">{upscaleWarning}</p>}

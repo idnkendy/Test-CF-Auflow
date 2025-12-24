@@ -1,4 +1,5 @@
 
+// ... existing imports ...
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -99,9 +100,9 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     setStatusMessage(`Đang trong hàng đợi (Vị trí: ${pos})...`);
                 } else {
                     setQueuePosition(null);
-                    // Only override status message if not already set by Flow callback
-                    if (!statusMessage || !statusMessage.includes("[")) {
-                       // setStatusMessage('Đang xử lý ảnh...');
+                    // Force the status message if not set by callback
+                    if (!statusMessage) {
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
                     }
                 }
             };
@@ -155,7 +156,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     
     const handleResolutionChange = (val: ImageResolution) => { 
         onStateChange({ resolution: val });
-        // Nếu chuyển về Standard, xóa ảnh tham chiếu để tránh gửi lên API
         if (val === 'Standard') {
             onStateChange({ referenceImages: [] });
         }
@@ -167,7 +167,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -176,7 +176,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     
     const cost = numberOfImages * getCostPerImage();
 
-    // Helper to ensure 100% consistent prompt logic for ALL services
     const constructArchitecturalPrompt = () => {
         let basePrompt = sourceImage 
             ? `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition from the source image to fit this new frame. ${customPrompt}`
@@ -186,7 +185,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             basePrompt += ` Also, take aesthetic inspiration from the provided reference image(s).`;
         }
 
-        // Unified Persona: Inject for BOTH Flow and Google API to ensure exact prompt parity
         basePrompt = `You are a professional architectural renderer. ${basePrompt}`;
 
         return basePrompt;
@@ -200,15 +198,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         if (!customPrompt.trim()) { onStateChange({ error: 'Lời nhắc không được để trống.' }); return; }
         
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
-        setStatusMessage('Đang khởi tạo...');
+        setStatusMessage('Đang xử lý. Vui lòng đợi...');
         setUpscaleWarning(null);
         
         let jobId: string | null = null;
         let logId: string | null = null;
 
-        // Routing Logic:
-        // Standard, 1K, 2K -> Use Flow (External Service)
-        // 4K -> Use Google Gemini API
         const useFlow = resolution !== '4K';
 
         try {
@@ -223,19 +218,16 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            // Use the unified prompt construction (identical string for both paths)
             const promptForService = constructArchitecturalPrompt();
 
             if (useFlow) {
-                // --- FLOW LOGIC (Standard, 1K, 2K) ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') {
+                if (aspectRatio === '16:9' ) {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16' || aspectRatio === '3:4') {
+                } else if (aspectRatio === '9:16' ) {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
 
-                // Model Selection: Standard -> GEM_PIX, Others -> GEM_PIX_2
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 let completedCount = 0;
@@ -243,31 +235,28 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage(`[1/2] Đang tạo ảnh (${modelName})... (${index + 1}/${numberOfImages})`);
+                        setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                         
-                        // Prepare input images array (Source + References)
                         const inputImages: FileData[] = [];
                         if (sourceImage) inputImages.push(sourceImage);
                         if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
 
-                        // 1. Generate Base (Added onProgress callback)
                         const result = await externalVideoService.generateFlowImage(
                             promptForService,
                             inputImages, 
                             aspectEnum,
                             1,
                             modelName,
-                            (msg) => setStatusMessage(msg) // Callback for granular status updates
+                            (msg) => setStatusMessage(msg)
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            // 2. Check for 2K Upscale (Only apply if resolution is 2K, 1K usually fine with base HQ)
                             const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
 
                             if (shouldUpscale) {
-                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
@@ -282,7 +271,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                                 } catch (upscaleErr: any) {
                                     console.warn("Upscale failed, falling back to base image", upscaleErr);
                                     setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    // Refund logic for upscale failure (2K -> 1K difference: 5 credits)
                                     if (user && logId) {
                                         await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
                                     }
@@ -292,7 +280,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                             collectedUrls.push(finalUrl);
                             completedCount++;
                             onStateChange({ resultImages: [...collectedUrls] });
-                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                            setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                             
                             historyService.addToHistory({
                                 tool: Tool.ArchitecturalRendering,
@@ -306,7 +294,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     } catch (e: any) {
                         console.error(`Image ${index+1} generation failed`, e);
                         lastError = e;
-                        // Don't throw here to allow partial success
                     }
                 });
 
@@ -320,8 +307,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
 
             } else {
-                // --- GOOGLE API LOGIC (4K Only) ---
-                setStatusMessage('Đang xử lý với Gemini Pro...');
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
                         promptForService, 
@@ -362,11 +348,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
         onStateChange({ isUpscaling: true, error: null });
+        setStatusMessage('Đang xử lý. Vui lòng đợi...');
         try {
             const imageToUpscale = await geminiService.getFileDataFromUrl(resultImages[0]);
             const result = await geminiService.editImage("Upscale this architectural rendering to high resolution. Enhance textures and detail.", imageToUpscale, 1);
             onStateChange({ upscaledImage: result[0].imageUrl });
-        } catch (err: any) { onStateChange({ error: err.message }); } finally { onStateChange({ isUpscaling: false }); }
+        } catch (err: any) { onStateChange({ error: err.message }); } finally { onStateChange({ isUpscaling: false }); setStatusMessage(null); }
     };
 
     const handleDownload = () => {
@@ -454,14 +441,13 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         </div>
                     </div>
                     
-                    {/* BUTTON ROW - MERGED */}
                     <div className="flex flex-col sm:flex-row gap-4">
                         <button
                             onClick={handleGenerate}
                             disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost}
                             className="flex-1 flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg"
                         >
-                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : `Bắt đầu Render`}
+                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : `Bắt đầu Render`}
                         </button>
                     </div>
 
@@ -497,7 +483,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     {isLoading && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
                             <div className="w-16 h-16 border-4 border-accent-200 border-t-accent-600 rounded-full animate-spin mb-4"></div>
-                            <p className="text-accent-600 dark:text-accent-400 font-medium animate-pulse">{statusMessage || 'AI đang vẽ...'}</p>
+                            <p className="text-accent-600 dark:text-accent-400 font-medium animate-pulse">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
                         </div>
                     )}
                     {!isLoading && upscaledImage && resultImages.length === 1 && <ImageComparator originalImage={resultImages[0]} resultImage={upscaledImage} />}

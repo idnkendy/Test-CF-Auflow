@@ -43,7 +43,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -113,8 +113,8 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
 
             if (useFlow) {
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' || aspectRatio === '4:3') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16' || aspectRatio === '3:4') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+                if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
@@ -227,7 +227,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                     <button
                         onClick={handleGenerate}
                         disabled={isLoading || userCredits < cost || !sourceImage}
-                        className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                        className="w-full flex justify-center items-center gap-2 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang thiết kế...'}</> : 'Tạo Poster'}
                     </button>
