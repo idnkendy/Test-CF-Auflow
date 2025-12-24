@@ -557,7 +557,7 @@ export const generateVideoExternal = async (
     backendUrl: string, 
     startImage?: FileData, 
     aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
-): Promise<{ videoUrl: string, mediaId?: string }> {
+): Promise<{ videoUrl: string, mediaId?: string }> => {
     try {
         return await _executeVideoGeneration(prompt, startImage, aspectRatio);
     } catch (error: any) {
