@@ -182,15 +182,16 @@ async function executeWithFailover(env, accounts, operationName, callback) {
     for (const account of accounts) {
         if (!account.project_id) continue;
         try {
-            const result = await callback(account);
-            
-            // Explicitly whitelist operations that consume quota to ensure accurate accounting
-            // CreateFlowImage MUST increment usage as per requirement.
+            // UPDATE: Increment usage immediately BEFORE attempting generation
+            // This counts every attempt, ensuring we rotate keys even if they fail/timeout.
             const QUOTA_CONSUMING_OPS = ['CreateVideo', 'CreateFlowImage', 'UpscaleFlowImage', 'UpscaleVideo', 'Upscale'];
             
             if (QUOTA_CONSUMING_OPS.includes(operationName)) {
-                 incrementAccountUsage(env, account.id, account.usage_count).catch(err => console.error("Failed to increment usage post-success:", err));
+                 // Fire and forget (don't block generation flow, just log if it fails)
+                 incrementAccountUsage(env, account.id, account.usage_count).catch(err => console.error("Failed to increment usage pre-execution:", err));
             }
+
+            const result = await callback(account);
             return result; 
         } catch (e) {
             lastError = e;
@@ -285,8 +286,8 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
         }
 
         const googleUrl = isI2V 
-            ? 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage'
-            : 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoText';
+            ? 'https://aisandbox-pa.googleapis.com/v1:video:batchAsyncGenerateVideoStartImage'
+            : 'https://aisandbox-pa.googleapis.com/v1:video:batchAsyncGenerateVideoText';
 
         const payload = {
             "body_json": {
@@ -353,7 +354,7 @@ const safeFetchUpstream = async (url, options) => {
 }
 
 // --- FLOW MEDIA CREATE (GEM_PIX_2) VIA PROXY (START TASK) ---
-async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, dynamicToken, numberOfImages = 1, imageModelName = "GEM_PIX_2", inputImages = []) {
+async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, numberOfImages = 1, imageModelName = "GEM_PIX_2", inputImages = []) {
     return executeWithFailover(env, accounts, "CreateFlowImage", async (authData) => {
         const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
         
@@ -382,7 +383,6 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
         for(let i=0; i<numberOfImages; i++) {
             requests.push({
                 "clientContext": {
-                    "recaptchaToken": dynamicToken,
                     "sessionId": sessionId,
                     "projectId": projectId,
                     "tool": "PINHOLE"
@@ -397,8 +397,7 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
 
         const payload = {
             "body_json": {
-                "clientContext": {
-                    "recaptchaToken": dynamicToken, 
+                "clientContext": { 
                     "sessionId": sessionId,
                     "projectId": projectId,
                     "tool": "PINHOLE"
@@ -431,7 +430,7 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
 }
 
 // --- FLOW MEDIA UPSCALE ---
-async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynamicToken) {
+async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId) {
     return executeWithFailover(env, accounts, "UpscaleFlowImage", async (authData) => {
         const { access_token: token } = authData;
         const activeProjectId = projectId || authData.project_id;
@@ -440,7 +439,6 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, dynami
         const payload = {
             "body_json": {
                 "clientContext": {
-                    "recaptchaToken": dynamicToken,
                     "sessionId": sessionId,
                     "projectId": activeProjectId,
                     "tool": "PINHOLE"
@@ -628,13 +626,15 @@ export default {
                 const accounts = await getAllAccounts(env);
                 const count = body.numberOfImages || 1;
                 const modelName = body.imageModelName || "GEM_PIX_2";
-                const result = await triggerFlowMediaCreate(env, accounts, body.prompt, body.image, body.imageAspectRatio, body.dynamicToken, count, modelName, body.images);
+                // Removed dynamicToken
+                const result = await triggerFlowMediaCreate(env, accounts, body.prompt, body.image, body.imageAspectRatio, count, modelName, body.images);
                 return sendJson(result);
             } else if (action === 'flow_upscale') {
                 const accounts = await getAllAccounts(env);
                 const specificAccounts = body.projectId ? accounts.filter(acc => acc.project_id === body.projectId) : accounts;
                 const accountsToUse = specificAccounts.length > 0 ? specificAccounts : accounts;
-                const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId, body.dynamicToken);
+                // Removed dynamicToken
+                const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId);
                 return sendJson(result);
             } else if (action === 'flow_check') {
                 const accounts = await getAllAccounts(env);

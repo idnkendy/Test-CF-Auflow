@@ -1,43 +1,14 @@
 
-// ... existing imports ...
 import { FileData } from "../types";
 
 // ... existing config ...
 // @ts-ignore
 const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev"; 
 
-// TOKEN SERVICE CONFIG
-const ONEWISE_API_URL = "https://new-rest.onewise.app/api/fix/get-token";
-const ONEWISE_AUTH_TOKEN = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjI4NTg2Mn0.zLqDOTRuYAnavQyNWFoZL6NdEVXBUqbdfujnLwY199E";
-
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const POLL_INTERVAL = 10000;
 const TIMEOUT_DURATION = 300000; 
 const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL);
-
-const getOneWiseToken = async (): Promise<string | null> => {
-    try {
-        const response = await fetch(ONEWISE_API_URL, {
-            method: 'GET',
-            headers: {
-                'Authorization': ONEWISE_AUTH_TOKEN,
-                'Content-Type': 'application/json'
-            }
-        });
-
-        if (response.ok) {
-            const data = await response.json();
-            if (data.success && data.token) {
-                return data.token;
-            }
-        }
-        console.warn("OneWise Token Fetch failed");
-        return null;
-    } catch (e) {
-        console.warn("Network error fetching OneWise token:", e);
-        return null;
-    }
-};
 
 const getImageDimensions = (fileData: FileData): Promise<{width: number, height: number}> => {
     return new Promise((resolve) => {
@@ -271,9 +242,6 @@ export const generateFlowImage = async (
         }
     }
 
-    if (onProgress) onProgress("Đang kết nối hệ thống AI...");
-    const dynamicToken = await getOneWiseToken();
-
     console.log("[Checkpoint 1] Creating Flow Task...");
 
     // 1. CREATE TASK - Send 'images' array to backend
@@ -287,7 +255,6 @@ export const generateFlowImage = async (
             // Fallback image for backward compatibility if backend checks 'image' prop
             image: processedImages.length > 0 ? processedImages[0] : null, 
             imageAspectRatio: aspectRatio,
-            dynamicToken: dynamicToken,
             numberOfImages: numberOfImages,
             imageModelName: imageModelName 
         })
@@ -405,7 +372,6 @@ export const upscaleFlowImage = async (
     projectId: string | undefined,
 ): Promise<{ imageUrl: string }> => {
     
-    const dynamicToken = await getOneWiseToken();
     console.log(`[Checkpoint 6] Starting Upscale for ID: ${mediaId}`);
 
     const createRes = await fetchJson('/flow-upscale', {
@@ -414,8 +380,7 @@ export const upscaleFlowImage = async (
         body: JSON.stringify({
             action: 'flow_upscale',
             mediaId: mediaId,
-            projectId: projectId, 
-            dynamicToken: dynamicToken
+            projectId: projectId
         })
     });
 
@@ -589,7 +554,7 @@ export const generateVideoExternal = async (
     backendUrl: string, 
     startImage?: FileData, 
     aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
-): Promise<{ videoUrl: string, mediaId?: string }> => {
+): Promise<{ videoUrl: string, mediaId?: string }> {
     try {
         return await _executeVideoGeneration(prompt, startImage, aspectRatio);
     } catch (error: any) {
