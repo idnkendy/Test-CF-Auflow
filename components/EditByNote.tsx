@@ -601,9 +601,9 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
             if (useFlow) {
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9') {
+                if (aspectRatio === '16:9' ) {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16') {
+                } else if (aspectRatio === '9:16' ) {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
                 }
 
@@ -611,7 +611,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 const collectedUrls: string[] = [];
                 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
+                    setStatusMessage('Đang xử lý. Vui lòng đợi...');
                     
                     const result = await externalVideoService.generateFlowImage(
                         fullPrompt,
@@ -619,20 +619,20 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                         aspectEnum,
                         1,
                         modelName,
-                        (msg) => setStatusMessage(msg)
+                        (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                     );
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
                         let finalUrl = result.imageUrls[0];
                         const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
                         if (shouldUpscale) {
-                            setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
+                            setStatusMessage('Đang xử lý. Vui lòng đợi...');
                             try {
                                 const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
                                 if (upscaleResult && upscaleResult.imageUrl) finalUrl = upscaleResult.imageUrl;
-                            } catch (e) {
-                                setUpscaleWarning("Lỗi upscale 2K, hoàn 5 credits.");
-                                if (user && logId) await refundCredits(user.id, 5, "Hoàn tiền lỗi Upscale", logId);
+                            } catch (e: any) {
+                                // STRICT 2K FAILURE: Throw error to trigger full refund
+                                throw new Error(`Lỗi Upscale 2K: ${e.message}`);
                             }
                         }
                         collectedUrls.push(finalUrl);
@@ -917,7 +917,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                             }
                                         `}>
                                             {isSelected && (
-                                                <div className="cursor-move p-1 text-white bg-blue-500 rounded-sm self-start mt-1">
+                                                <div className="cursor-move p-1 text-white bg-blue-50 rounded-sm self-start mt-1">
                                                     <span className="material-symbols-outlined text-xs block">open_with</span>
                                                 </div>
                                             )}

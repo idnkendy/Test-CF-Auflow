@@ -177,7 +177,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
-        setStatusMessage('Đang khởi tạo...');
+        setStatusMessage('Đang xử lý. Vui lòng đợi...');
         setUpscaleWarning(null);
         
         let logId: string | null = null;
@@ -220,7 +220,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage(`[1/2] Đang tạo ảnh (${modelName})... (${index + 1}/${numberOfImages})`);
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
                         
                         // Prepare input images array (Source + References)
                         const inputImages: FileData[] = [];
@@ -242,7 +242,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                             const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
 
                             if (shouldUpscale) {
-                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
@@ -252,19 +252,15 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                                         }
                                     }
                                 } catch (upscaleErr: any) {
-                                    console.warn("Upscale failed, falling back", upscaleErr);
-                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    // Refund logic for upscale failure (2K -> 1K difference: 5 credits)
-                                    if (user && logId) {
-                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
-                                    }
+                                    // STRICT 2K FAILURE
+                                    throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
                                 }
                             }
                             
                             collectedUrls.push(finalUrl);
                             completedCount++;
                             onStateChange({ resultImages: [...collectedUrls] });
-                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
+                            setStatusMessage('Đang xử lý. Vui lòng đợi...');
                             
                             historyService.addToHistory({
                                 tool: Tool.UrbanPlanning,
@@ -433,7 +429,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                             disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost} 
                             className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                         >
-                           {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Render'}
+                           {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}
                         </button>
                     </div>
                     {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
@@ -457,7 +453,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                     {isLoading && (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
                         </div>
                     )}
                     {!isLoading && upscaledImage && resultImages.length === 1 && <ImageComparator originalImage={resultImages[0]} resultImage={upscaledImage} />}

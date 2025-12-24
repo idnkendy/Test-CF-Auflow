@@ -100,21 +100,21 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                 const inputImages = sourceImage ? [sourceImage] : [];
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    setStatusMessage(`[1/2] Đang tạo layout (${index + 1}/${numberOfImages})...`);
+                    setStatusMessage('Đang xử lý. Vui lòng đợi...');
                     const result = await externalVideoService.generateFlowImage(
-                        fullPrompt, inputImages, aspectEnum, 1, modelName, (msg) => setStatusMessage(msg)
+                        fullPrompt, inputImages, aspectEnum, 1, modelName, (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                     );
                     
                     if (result.imageUrls && result.imageUrls.length > 0) {
                         let finalUrl = result.imageUrls[0];
                         if (resolution === '2K' && result.mediaIds?.length > 0) {
-                            setStatusMessage(`[2/2] Đang nâng cấp 2K...`);
+                            setStatusMessage('Đang xử lý. Vui lòng đợi...');
                             try {
                                 const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
                                 if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
-                            } catch (e) {
-                                setUpscaleWarning("Lỗi upscale 2K, hoàn 5 credits.");
-                                if (user && logId) await refundCredits(user.id, 5, "Hoàn tiền lỗi Upscale", logId);
+                            } catch (e: any) {
+                                // STRICT 2K FAILURE
+                                throw new Error(`Lỗi Upscale 2K: ${e.message}`);
                             }
                         }
                         collectedUrls.push(finalUrl);
@@ -125,7 +125,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                 await Promise.all(promises);
                 imageUrls = collectedUrls;
             } else {
-                setStatusMessage('Đang xử lý với Gemini 4K...');
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage || undefined, jobId || undefined);
                     return images[0];

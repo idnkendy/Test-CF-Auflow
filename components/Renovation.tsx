@@ -1,5 +1,4 @@
 
-// ... existing imports
 import React, { useState } from 'react';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { RenovationState } from '../state/toolState';
@@ -133,7 +132,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
                         
                         const inputImages: FileData[] = [];
                         if (sourceImage) inputImages.push(sourceImage);
@@ -144,16 +143,17 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             inputImages,
                             aspectEnum,
                             1,
-                            modelName
+                            modelName,
+                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
+                            // 2K Upscale Check
                             const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
-
                             if (shouldUpscale) {
-                                setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
+                                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
@@ -163,18 +163,14 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                         }
                                     }
                                 } catch (upscaleErr: any) {
-                                    console.warn("Upscale failed", upscaleErr);
-                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    if (user && logId) {
-                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
-                                    }
+                                    // STRICT 2K FAILURE
+                                    throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
                                 }
                             }
                             
                             collectedUrls.push(finalUrl);
                             completedCount++;
                             onStateChange({ renovatedImages: [...collectedUrls] });
-                            setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                             
                             historyService.addToHistory({
                                 tool: Tool.Renovation,
@@ -197,51 +193,38 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
 
             } else {
+                // --- GOOGLE API LOGIC (4K OR MASK) ---
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                    const promises = Array.from({ length: numberOfImages }).map(async () => {
-                        const images = await geminiService.generateHighQualityImage(
-                            promptForService, 
-                            aspectRatio, 
-                            resolution, 
-                            sourceImage || undefined,
-                            jobId || undefined,
-                            referenceImages,
-                            maskImage || undefined
-                        );
-                        return images[0];
-                    });
-                    imageUrls = await Promise.all(promises);
-                } else {
-                    let results: { imageUrl: string }[] = [];
-                    if (referenceImages && referenceImages.length > 0) {
-                        if (maskImage) {
-                            results = await geminiService.editImageWithMaskAndMultipleReferences(promptForService, sourceImage, maskImage, referenceImages, numberOfImages);
-                        } else {
-                            results = await geminiService.editImageWithMultipleReferences(promptForService, sourceImage, referenceImages, numberOfImages);
-                        }
-                    } else if (maskImage) {
-                         results = await geminiService.editImageWithMask(promptForService, sourceImage, maskImage, numberOfImages);
-                    } else {
-                        results = await geminiService.editImage(promptForService, sourceImage, numberOfImages);
-                    }
-                    imageUrls = results.map(r => r.imageUrl);
-                }
-
+                const promises = Array.from({ length: numberOfImages }).map(async () => {
+                    const images = await geminiService.generateHighQualityImage(
+                        promptForService, 
+                        aspectRatio, 
+                        resolution === 'Standard' ? '1K' : resolution, 
+                        sourceImage, 
+                        jobId || undefined, 
+                        referenceImages,
+                        maskImage || undefined
+                    );
+                    return images[0];
+                });
+                
+                const imageUrls = await Promise.all(promises);
                 onStateChange({ renovatedImages: imageUrls });
                 if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-
+                
                 imageUrls.forEach(url => historyService.addToHistory({
                     tool: Tool.Renovation,
-                    prompt: promptForService,
-                    sourceImageURL: sourceImage.objectURL,
+                    prompt: `Gemini API: ${promptForService}`,
+                    sourceImageURL: sourceImage?.objectURL,
                     resultImageURL: url,
                 }));
             }
 
         } catch (err: any) {
             let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) errorMessage += " (Credits đã được hoàn lại)";
+            if (logId) {
+                errorMessage += " (Credits đã được hoàn lại)";
+            }
             onStateChange({ error: errorMessage });
 
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
@@ -255,80 +238,76 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
             setStatusMessage(null);
         }
     };
-    
-    // ... (Handlers) ...
-    const handleFileSelect = (fileData: FileData | null) => { onStateChange({ sourceImage: fileData, renovatedImages: [], maskImage: null }); }
-    const handleReferenceFilesChange = (files: FileData[]) => { onStateChange({ referenceImages: files }); };
-    const handleSuggestionSelect = (selectedPrompt: string) => { if (selectedPrompt) { const newPrompt = prompt.trim() ? `${prompt.trim()}. ${selectedPrompt}` : selectedPrompt; onStateChange({ prompt: newPrompt }); } };
-    const handleDownload = () => { if (renovatedImages.length !== 1) return; const link = document.createElement('a'); link.href = renovatedImages[0]; link.download = "renovated-image.png"; document.body.appendChild(link); link.click(); document.body.removeChild(link); };
-    const handleApplyMask = (mask: FileData) => { onStateChange({ maskImage: mask }); setIsMaskingModalOpen(false); };
-    const handleRemoveMask = (e?: React.MouseEvent) => { if (e) e.preventDefault(); onStateChange({ maskImage: null }); };
-    const scrollToTop = () => { const mainContainer = document.querySelector('main'); if (mainContainer) { mainContainer.scrollTo({ top: 0, behavior: 'smooth' }); } else { window.scrollTo({ top: 0, behavior: 'smooth' }); } };
+
+    const handleFileSelect = (fileData: FileData | null) => {
+        onStateChange({ sourceImage: fileData, renovatedImages: [], maskImage: null });
+    };
+
+    const handleReferenceFilesChange = (files: FileData[]) => {
+        onStateChange({ referenceImages: files });
+    };
+
+    const handleApplyMask = (mask: FileData) => {
+        onStateChange({ maskImage: mask });
+        setIsMaskingModalOpen(false);
+    };
+
+    const handleDownload = () => {
+        if (renovatedImages.length !== 1) return;
+        const link = document.createElement('a');
+        link.href = renovatedImages[0];
+        link.download = "renovated-image.png";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
 
     return (
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             {isMaskingModalOpen && sourceImage && (
-                <MaskingModal
-                    image={sourceImage}
-                    onClose={() => setIsMaskingModalOpen(false)}
-                    onApply={handleApplyMask}
+                <MaskingModal 
+                    image={sourceImage} 
+                    onClose={() => setIsMaskingModalOpen(false)} 
+                    onApply={handleApplyMask} 
                     maskColor="rgba(239, 68, 68, 0.5)"
                 />
             )}
             <div>
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Cải Tạo Thiết Kế</h2>
-                <p className="text-text-secondary dark:text-gray-300 mb-6">Tải lên ảnh chụp thực tế của một công trình hoặc không gian nội thất. AI sẽ giúp bạn hình dung phương án cải tạo mới một cách trực quan.</p>
-                
-                <div className="bg-main-bg/50 dark:bg-dark-bg/50 border border-border-color dark:border-gray-700 rounded-xl p-6">
+                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Cải Tạo Kiến Trúc</h2>
+                <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 space-y-6">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                         <div className="space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Thực Tế</label>
-                                <ImageUpload 
-                                    onFileSelect={handleFileSelect} 
-                                    previewUrl={sourceImage?.objectURL} 
-                                    maskPreviewUrl={maskImage?.objectURL}
-                                />
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Hiện Trạng</label>
+                                <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} maskPreviewUrl={maskImage?.objectURL} />
                                 {sourceImage && (
-                                    <div className="mt-4">
-                                        <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">Chỉ định vùng cần cải tạo (tùy chọn):</p>
-                                        <div className="flex gap-2">
-                                            <button
-                                                type="button"
-                                                onClick={(e) => { 
-                                                    e.preventDefault(); 
-                                                    setIsMaskingModalOpen(true); 
-                                                    scrollToTop();
-                                                }}
-                                                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
-                                                title="Vẽ vùng chọn"
+                                    <div className="mt-2 flex gap-2">
+                                        <button 
+                                            onClick={() => setIsMaskingModalOpen(true)}
+                                            className="text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 px-3 py-1.5 rounded-md transition-colors flex items-center gap-1"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">edit_square</span>
+                                            {maskImage ? 'Sửa vùng chọn' : 'Khoanh vùng cải tạo'}
+                                        </button>
+                                        {maskImage && (
+                                            <button 
+                                                onClick={() => onStateChange({ maskImage: null })}
+                                                className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 px-3 py-1.5 rounded-md transition-colors"
                                             >
-                                               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
-                                                {maskImage ? 'Sửa vùng chọn' : 'Vẽ vùng chọn'}
+                                                Xóa vùng chọn
                                             </button>
-                                            {maskImage && (
-                                                <button
-                                                    type="button"
-                                                    onClick={handleRemoveMask}
-                                                    className="bg-red-600 hover:bg-red-700 text-white font-semibold p-2 rounded-lg transition-colors"
-                                                    title="Xóa vùng chọn"
-                                                >
-                                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
-                                                </button>
-                                            )}
-                                        </div>
-                                        {maskImage && <p className="text-xs text-green-500 dark:text-green-400 mt-2">Đã áp dụng vùng chọn.</p>}
+                                        )}
                                     </div>
                                 )}
                             </div>
                             <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu Phong Cách (Tùy chọn)</label>
-                                {resolution === 'Standard' ? (
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu</label>
+                                {resolution === 'Standard' && !maskImage ? (
                                     <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
                                         <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
                                         <p className="text-sm text-text-secondary dark:text-gray-400">
-                                            Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
+                                            Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên) hoặc khi dùng Mask.
                                         </p>
                                         <button 
                                             onClick={() => handleResolutionChange('1K')}
@@ -338,121 +317,100 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                         </button>
                                     </div>
                                 ) : (
-                                    <>
-                                        <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
-                                        <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo.</p>
-                                    </>
+                                    <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
                                 )}
                             </div>
                         </div>
-                        <div className="space-y-4 flex flex-col h-full">
+                        <div className="space-y-4">
+                            <OptionSelector 
+                                id="renovation-suggestions"
+                                label="2. Chọn gợi ý cải tạo (Hoặc tự nhập)"
+                                options={renovationSuggestions.map(s => ({ value: s.prompt, label: s.label }))}
+                                value=""
+                                onChange={(val) => onStateChange({ prompt: val })}
+                                disabled={isLoading}
+                                variant="grid"
+                            />
                             <div>
-                                <label htmlFor="prompt-renovate" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả phương án cải tạo</label>
+                                <label htmlFor="prompt-renovation" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Chi tiết yêu cầu</label>
                                 <textarea
-                                    id="prompt-renovate"
+                                    id="prompt-renovation"
                                     rows={4}
-                                    className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                                    placeholder="VD: Cải tạo mặt tiền theo phong cách tân cổ điển, sơn màu trắng, thêm ban công sắt nghệ thuật..."
+                                    className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none"
+                                    placeholder="Mô tả chi tiết những thay đổi bạn muốn..."
                                     value={prompt}
                                     onChange={(e) => onStateChange({ prompt: e.target.value })}
+                                    disabled={isLoading}
                                 />
-                                 <div className="mt-3">
-                                     <OptionSelector 
-                                        id="renovation-suggestions"
-                                        label="Thêm gợi ý nhanh"
-                                        options={renovationSuggestions.map(s => ({ value: s.prompt, label: s.label }))}
-                                        value=""
-                                        onChange={handleSuggestionSelect}
-                                        disabled={isLoading}
-                                        variant="select"
-                                    />
-                                </div>
                             </div>
-                             <div className="flex-grow"></div>
-                             <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
-                                    <div>
-                                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                                    </div>
-                                    <div>
-                                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
-                                    </div>
-                                </div>
-                                <div>
-                                    <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
-                                </div>
-                             </div>
-
-                             <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mt-4 mb-2 border border-gray-200 dark:border-gray-700">
-                                <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                                    </svg>
-                                    <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                                </div>
-                                <div className="text-xs">
-                                    {userCredits < cost ? (
-                                        <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
-                                    ) : (
-                                        <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
-                                    )}
-                                </div>
+                            
+                            <div className="grid grid-cols-2 gap-4">
+                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
                             </div>
-                            <button
-                                onClick={handleGenerate}
-                                disabled={isLoading || !sourceImage || userCredits < cost}
-                                className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
-                            >
-                                {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Cải Tạo'}
-                            </button>
+                            <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
                         </div>
                     </div>
-                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
-                    {upscaleWarning && <p className="mt-3 text-sm text-yellow-500 text-center font-medium bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded">{upscaleWarning}</p>}
+
+                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                        </div>
+                        <div className="text-xs">
+                            {userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
+                        </div>
+                    </div>
+
+                    <button 
+                        onClick={handleGenerate}
+                        disabled={isLoading || !prompt || !sourceImage || userCredits < cost}
+                        className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
+                    >
+                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Tạo Phương Án Cải Tạo'}
+                    </button>
+                    {error && <div className="p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                    {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
             </div>
 
             <div>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-semibold text-text-primary dark:text-white">So sánh Trước & Sau</h3>
-                     {renovatedImages.length === 1 && (
-                         <div className="flex items-center gap-2">
-                             <button
+                    <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Cải tạo</h3>
+                    {renovatedImages.length > 0 && (
+                        <div className="flex items-center gap-2">
+                            <button
                                 onClick={() => setPreviewImage(renovatedImages[0])}
-                                className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2"
+                                className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
+                                title="Phóng to"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                                </svg>
-                                Phóng to
+                                <span className="material-symbols-outlined text-lg">zoom_in</span>
                             </button>
-                             <button onClick={handleDownload} className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm">
-                                Tải xuống Phương án mới
+                            <button 
+                                onClick={handleDownload} 
+                                className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
+                            >
+                                <span className="material-symbols-outlined text-lg">download</span>
+                                <span>Tải xuống</span>
                             </button>
-                         </div>
+                        </div>
                     )}
                 </div>
                 <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
                     {isLoading && (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
+                            <p className="mt-2 text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
                         </div>
                     )}
-                    
                     {!isLoading && renovatedImages.length === 1 && sourceImage && (
-                        <ImageComparator
-                            originalImage={sourceImage.objectURL}
-                            resultImage={renovatedImages[0]}
-                        />
+                        <ImageComparator originalImage={sourceImage.objectURL} resultImage={renovatedImages[0]} />
                     )}
-
-                     {!isLoading && renovatedImages.length > 1 && (
-                         <ResultGrid images={renovatedImages} toolName="renovation" />
+                    {!isLoading && renovatedImages.length > 1 && (
+                        <ResultGrid images={renovatedImages} toolName="renovation" />
                     )}
-                    
                     {!isLoading && renovatedImages.length === 0 && (
-                         <p className="text-text-secondary dark:text-gray-400 text-center p-4">{sourceImage ? 'Phương án cải tạo sẽ được hiển thị ở đây.' : 'Tải lên một ảnh để bắt đầu.'}</p>
+                         <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
                     )}
                 </div>
             </div>

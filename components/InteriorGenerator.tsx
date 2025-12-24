@@ -142,7 +142,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
                         
                         const inputImages: FileData[] = [];
                         if (sourceImage) inputImages.push(sourceImage);
@@ -153,7 +153,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             inputImages,
                             aspectEnum,
                             1,
-                            modelName
+                            modelName,
+                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -162,7 +163,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
 
                             if (shouldUpscale) {
-                                setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
+                                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
@@ -172,18 +173,14 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                         }
                                     }
                                 } catch (upscaleErr: any) {
-                                    console.warn("Upscale failed, falling back", upscaleErr);
-                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    if (user && logId) {
-                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
-                                    }
+                                    // STRICT 2K FAILURE
+                                    throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
                                 }
                             }
                             
                             collectedUrls.push(finalUrl);
                             completedCount++;
                             onStateChange({ resultImages: [...collectedUrls] });
-                            setStatusMessage(`Đang xử lý. Vui lòng đợi...`);
                             
                             historyService.addToHistory({ tool: Tool.InteriorRendering, prompt: `Flow (${modelName}): ${promptForService}`, sourceImageURL: sourceImage?.objectURL, resultImageURL: finalUrl });
                         }
@@ -223,8 +220,11 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
         } catch (err: any) {
             let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
+            if (logId) errorMessage += " (Credits đã được hoàn lại)";
             onStateChange({ error: errorMessage });
+            
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi render nội thất (${errorMessage})`, logId);
         } finally {

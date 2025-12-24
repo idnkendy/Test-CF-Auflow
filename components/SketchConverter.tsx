@@ -89,27 +89,27 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                 const aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE'; 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
 
-                setStatusMessage(`Đang xử lý (${modelName})...`);
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const result = await externalVideoService.generateFlowImage(
                     prompt,
                     [sourceImage],
                     aspectEnum,
                     1,
                     modelName,
-                    (msg) => setStatusMessage(msg)
+                    (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                 );
 
                 if (result.imageUrls && result.imageUrls.length > 0) {
                     resultUrl = result.imageUrls[0];
                     // 2K Upscale
                     if (resolution === '2K' && result.mediaIds && result.mediaIds.length > 0) {
-                        setStatusMessage('Đang nâng cấp 2K...');
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
                         try {
                             const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
                             if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
-                        } catch (upscaleErr) {
-                            setUpscaleWarning("Lỗi upscale 2K, hoàn lại 5 credits.");
-                            if (user && logId) await refundCredits(user.id, 5, "Hoàn tiền lỗi Upscale", logId);
+                        } catch (upscaleErr: any) {
+                            // STRICT 2K FAILURE
+                            throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
                         }
                     }
                     historyService.addToHistory({ tool: Tool.SketchConverter, prompt: `Flow: ${prompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
@@ -119,7 +119,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
 
             } else {
                 // --- GEMINI 4K ---
-                setStatusMessage('Đang xử lý với Gemini Pro 4K...');
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const images = await geminiService.generateHighQualityImage(prompt, '1:1', resolution, sourceImage, jobId || undefined);
                 resultUrl = images[0];
                 historyService.addToHistory({ tool: Tool.SketchConverter, prompt: prompt, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });

@@ -94,26 +94,26 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
-                setStatusMessage(`Đang vẽ (${modelName})...`);
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const result = await externalVideoService.generateFlowImage(
                     prompt,
                     [sourceImage],
                     aspectEnum,
                     1,
                     modelName,
-                    (msg) => setStatusMessage(msg)
+                    (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                 );
 
                 if (result.imageUrls && result.imageUrls.length > 0) {
                     resultUrl = result.imageUrls[0];
                     if (resolution === '2K' && result.mediaIds && result.mediaIds.length > 0) {
-                        setStatusMessage('Đang nâng cấp 2K...');
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
                         try {
                             const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
                             if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
-                        } catch (e) {
-                            setUpscaleWarning("Lỗi upscale 2K, hoàn 5 credits.");
-                            if (user && logId) await refundCredits(user.id, 5, "Hoàn tiền lỗi Upscale", logId);
+                        } catch (e: any) {
+                            // STRICT 2K FAILURE
+                            throw new Error(`Lỗi Upscale 2K: ${e.message}`);
                         }
                     }
                     historyService.addToHistory({ tool: Tool.AITechnicalDrawings, prompt: `Flow: ${prompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
@@ -121,7 +121,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
             } else {
                 // --- GEMINI 4K ---
-                setStatusMessage('Đang vẽ với Gemini 4K...');
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const images = await geminiService.generateHighQualityImage(prompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                 resultUrl = images[0];
                 historyService.addToHistory({ tool: Tool.AITechnicalDrawings, prompt: prompt, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });

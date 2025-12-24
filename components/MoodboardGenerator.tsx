@@ -97,7 +97,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage(`[1/2] Đang tạo ảnh (${modelName})... (${index + 1}/${numberOfImages})`);
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
                         
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt,
@@ -105,7 +105,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                             aspectEnum,
                             1,
                             modelName,
-                            (msg) => setStatusMessage(msg)
+                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -113,14 +113,13 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                             // 2K Upscale Check
                             const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
                             if (shouldUpscale) {
-                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                                 try {
                                     const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
                                     if (upscaleResult && upscaleResult.imageUrl) finalUrl = upscaleResult.imageUrl;
-                                } catch (upscaleErr) {
-                                    console.warn("Upscale failed", upscaleErr);
-                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    if (user && logId) await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K`, logId);
+                                } catch (upscaleErr: any) {
+                                    // STRICT 2K FAILURE
+                                    throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
                                 }
                             }
                             collectedUrls.push(finalUrl);
@@ -146,7 +145,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
             } else {
                 // --- GEMINI 4K ---
-                setStatusMessage('Đang xử lý với Gemini Pro 4K...');
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                     return images[0];
@@ -197,7 +196,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                         </div>
                         <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} disabled={isLoading} />
                         <button onClick={handleGenerate} disabled={isLoading || !sourceImage || userCredits < cost} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg transition-colors">
-                            {isLoading ? <><Spinner /> {statusMessage || 'Đang tạo...'}</> : 'Tạo Moodboard'}
+                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Tạo Moodboard'}
                         </button>
                         {error && <div className="p-3 bg-red-100 border border-red-400 text-red-700 rounded-lg text-sm">{error}</div>}
                         {upscaleWarning && <p className="text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
@@ -208,7 +207,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                 {isLoading ? (
                     <div className="flex flex-col items-center">
                         <Spinner />
-                        <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                        <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
                     </div>
                 ) : resultImages.length > 0 ? <ResultGrid images={resultImages} toolName="moodboard" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
             </div>

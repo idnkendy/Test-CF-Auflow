@@ -106,27 +106,27 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                 const inputImages = [sourceImage, ...referenceImages];
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    setStatusMessage(`[1/2] Đang render (${modelName})... (${index + 1}/${numberOfImages})`);
+                    setStatusMessage('Đang xử lý. Vui lòng đợi...');
                     const result = await externalVideoService.generateFlowImage(
                         fullPrompt,
                         inputImages,
                         aspectEnum,
                         1,
                         modelName,
-                        (msg) => setStatusMessage(msg)
+                        (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                     );
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
                         let finalUrl = result.imageUrls[0];
                         // 2K Upscale Check
                         if (resolution === '2K' && result.mediaIds && result.mediaIds.length > 0) {
-                            setStatusMessage(`[2/2] Đang nâng cấp 2K...`);
+                            setStatusMessage('Đang xử lý. Vui lòng đợi...');
                             try {
                                 const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
                                 if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
-                            } catch (e) {
-                                setUpscaleWarning("Lỗi upscale 2K, hoàn 5 credits.");
-                                if (user && logId) await refundCredits(user.id, 5, "Hoàn tiền lỗi Upscale", logId);
+                            } catch (e: any) {
+                                // STRICT 2K FAILURE
+                                throw new Error(`Lỗi Upscale 2K: ${e.message}`);
                             }
                         }
                         collectedUrls.push(finalUrl);
@@ -139,7 +139,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
 
             } else {
                 // --- GEMINI 4K ---
-                setStatusMessage('Đang xử lý với Gemini Pro 4K...');
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined, referenceImages);
                     return images[0];
@@ -245,7 +245,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                                 disabled={isLoading || !sourceImage || userCredits < cost} 
                                 className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg"
                             >
-                                {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Bắt đầu Render'}
+                                {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}
                             </button>
                         </div>
                     </div>
@@ -263,7 +263,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                     {isLoading ? (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-gray-400">{statusMessage}</p>
+                            <p className="mt-2 text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
                         </div>
                     ) : resultImages.length === 1 && sourceImage ? <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} /> : resultImages.length > 1 ? <ResultGrid images={resultImages} toolName="floorplan-render" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
                 </div>
