@@ -258,11 +258,13 @@ export interface VideoContextItem {
     isGeneratingVideo: boolean;
     isUploaded: boolean;
     isInTimeline: boolean;
+    useCharacter?: boolean; // New: Flag to indicate character integration
 }
 
 export interface VideoGeneratorState {
     prompt: string;
     startImage: FileData | null;
+    characterImage: FileData | null; // New: Character reference image
     contextItems: VideoContextItem[];
     selectedContextId: string | null;
     isLoading: boolean;
@@ -520,6 +522,7 @@ export const initialToolStates = {
     [Tool.VideoGeneration]: {
         prompt: 'Tạo video time-lapse cho thấy tòa nhà chuyển từ cảnh ban ngày nắng đẹp sang cảnh ban đêm được chiếu sáng đẹp mắt.',
         startImage: null,
+        characterImage: null,
         contextItems: [],
         selectedContextId: null,
         isLoading: false,

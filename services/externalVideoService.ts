@@ -211,6 +211,7 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     }
 };
 
+// ... generateFlowImage, upscaleFlowImage code ...
 /**
  * NEW: Generate High Fidelity Image via Flow Media (GEM_PIX_2)
  * Accepts multiple images in inputImages array.
@@ -546,10 +547,32 @@ async function _executeVideoGeneration(
             }
         } catch (e: any) {
             // FIX: Stop polling immediately on critical errors to trigger refund/fail handling
-            if (e.message.includes("SAFETY_ERROR") || e.message.includes("AUTH_ERROR") || e.message.includes("NotFound") || e.message.includes("404")) throw e;
+            if (e.message.includes("SAFETY_ERROR") || e.message.includes("AUTH_ERROR") || e.message.includes("NotFound") || e.message.includes("404") || e.message.includes("GENERATION_FAILED")) throw e;
         }
     }
     throw new Error("TIMEOUT_ERROR");
+}
+
+export const uploadImage = async (base64Data: string, aspectRatio?: string): Promise<string> => {
+    const authData = await fetchJson('/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'auth' })
+    });
+    const token = authData.token;
+    
+    const result = await fetchJson('/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            action: 'upload', 
+            image: base64Data, 
+            imageAspectRatio: aspectRatio || "IMAGE_ASPECT_RATIO_LANDSCAPE" 
+        })
+    });
+    
+    if (result.mediaId) return result.mediaId;
+    throw new Error("Upload failed: No Media ID");
 }
 
 export const generateVideoExternal = async (
@@ -571,6 +594,79 @@ export const generateVideoExternal = async (
         throw error;
     }
 };
+
+/**
+ * Generate Video with specific references (Character + Scene) via Veo 3.0
+ */
+export const generateVideoWithReferences = async (
+    prompt: string, 
+    sceneImage: FileData,
+    characterImage: FileData,
+    aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
+): Promise<{ videoUrl: string, mediaId?: string }> => {
+    
+    // 1. Prepare Aspect Ratio
+    let effectiveRatio = aspectRatio === 'default' ? '16:9' : aspectRatio as '16:9' | '9:16';
+    let imageAspectEnum = "IMAGE_ASPECT_RATIO_LANDSCAPE"; 
+    let videoAspectEnum = "VIDEO_ASPECT_RATIO_LANDSCAPE"; 
+
+    if (effectiveRatio === '9:16') {
+        imageAspectEnum = "IMAGE_ASPECT_RATIO_PORTRAIT";
+        videoAspectEnum = "VIDEO_ASPECT_RATIO_PORTRAIT"; 
+    }
+
+    // 2. Upload Scene Image (Pro quality for Veo input)
+    const sceneBase64 = await resizeAndCropImage(sceneImage, effectiveRatio, 'pro');
+    const sceneMediaId = await uploadImage(sceneBase64.split(',')[1], imageAspectEnum);
+
+    // 3. Upload Character Image (Pro quality)
+    // Character aspect might vary, but keep consistent with scene for now or default
+    const charBase64 = await resizeAndCropImage(characterImage, effectiveRatio, 'pro');
+    const charMediaId = await uploadImage(charBase64.split(',')[1], imageAspectEnum);
+
+    // 4. Trigger Creation
+    const triggerData = await fetchJson('/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+            action: 'create', 
+            prompt,
+            videoAspectRatio: videoAspectEnum,
+            referenceMediaIds: [sceneMediaId, charMediaId] // Pass both IDs
+        })
+    });
+    
+    const { task_id, scene_id } = triggerData;
+
+    // 5. Poll for completion
+    let attempts = 0;
+    while (attempts < MAX_POLL_ATTEMPTS) {
+        attempts++;
+        await wait(POLL_INTERVAL);
+
+        try {
+            const checkData = await fetchJson('/check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'check', task_id, scene_id }) 
+            });
+
+            if (checkData.status === 'completed' && checkData.video_url) {
+                return { videoUrl: checkData.video_url, mediaId: checkData.mediaId };
+            }
+            
+            if (checkData.status === 'failed') {
+                const failReason = checkData.message || "Unknown error";
+                if (failReason.includes("SAFETY")) throw new Error("SAFETY_ERROR");
+                throw new Error(`GENERATION_FAILED: ${failReason}`);
+            }
+        } catch (e: any) {
+            // FIX: Added 'GENERATION_FAILED' to critical error list to break loop
+            if (e.message.includes("SAFETY_ERROR") || e.message.includes("AUTH_ERROR") || e.message.includes("NotFound") || e.message.includes("404") || e.message.includes("GENERATION_FAILED")) throw e;
+        }
+    }
+    throw new Error("TIMEOUT_ERROR");
+}
 
 export const upscaleVideoExternal = async (mediaId: string): Promise<string> => {
     try {

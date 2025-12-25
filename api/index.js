@@ -184,7 +184,7 @@ async function executeWithFailover(env, accounts, operationName, callback) {
         try {
             // UPDATE: Increment usage immediately BEFORE attempting generation
             // This counts every attempt, ensuring we rotate keys even if they fail/timeout.
-            const QUOTA_CONSUMING_OPS = ['CreateVideo', 'CreateFlowImage', 'UpscaleFlowImage', 'UpscaleVideo', 'Upscale'];
+            const QUOTA_CONSUMING_OPS = ['CreateVideo', 'CreateFlowImage', 'UpscaleFlowImage', 'UpscaleVideo', 'Upscale', 'CreateVideoWithRefs'];
             
             if (QUOTA_CONSUMING_OPS.includes(operationName)) {
                  // Fire and forget (don't block generation flow, just log if it fails)
@@ -244,6 +244,71 @@ async function performUpload(authData, base64Data, imageAspectRatio) {
 async function uploadImage(env, accounts, base64Data, imageAspectRatio) {
     return executeWithFailover(env, accounts, "UploadImage", async (authData) => {
         return await performUpload(authData, base64Data, imageAspectRatio);
+    });
+}
+
+// UPDATED: Video Generation via Proxy with References (Characters)
+async function triggerGenerationWithRefs(env, accounts, prompt, videoAspectRatio, referenceMediaIds) {
+    return executeWithFailover(env, accounts, "CreateVideoWithRefs", async (authData) => {
+        const { access_token: token, project_id: projectId } = authData;
+        const sceneId = crypto.randomUUID();
+        const sessionId = ";" + Date.now();
+        const aspectRatioEnum = videoAspectRatio || "VIDEO_ASPECT_RATIO_LANDSCAPE";
+        
+        // Define Model Key for Reference based Generation (Veo 3.0)
+        // veo_3_0_r2v_fast_ultra (Landscape) or veo_3_0_r2v_fast_portrait_ultra (Portrait)
+        const modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
+            ? "veo_3_0_r2v_fast_portrait_ultra" 
+            : "veo_3_0_r2v_fast_ultra";
+
+        // Construct referenceImages array
+        const refImages = referenceMediaIds.map(mid => ({
+            "imageUsageType": "IMAGE_USAGE_TYPE_ASSET",
+            "mediaId": mid
+        }));
+
+        const requestItem = {
+            "aspectRatio": aspectRatioEnum,
+            "seed": Math.floor(Date.now() / 1000), 
+            "textInput": { "prompt": prompt },
+            "videoModelKey": modelKey, 
+            "metadata": { "sceneId": sceneId },
+            "referenceImages": refImages
+        };
+
+        const googleUrl = 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoText';
+
+        const payload = {
+            "body_json": {
+                "clientContext": {
+                    "sessionId": sessionId,
+                    "projectId": projectId,
+                    "tool": "PINHOLE",
+                    "userPaygateTier": "PAYGATE_TIER_TWO"
+                },
+                "requests": [requestItem]
+            },
+            "flow_auth_token": cleanToken(token),
+            "flow_url": googleUrl
+        };
+
+        const res = await safeFetchUpstream(ONEWISE_PROXY_URL_CREATE, {
+            method: 'POST',
+            headers: { 
+                'Authorization': ONEWISE_PROXY_AUTH,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
+
+        if (!res.ok) {
+             throw new Error(res.error?.message || `Proxy Trigger Failed (${res.status})`);
+        }
+        
+        if (res.data && res.data.taskId) {
+             return { task_id: res.data.taskId, scene_id: sceneId };
+        }
+        throw new Error("Proxy response missing taskId");
     });
 }
 
@@ -353,6 +418,7 @@ const safeFetchUpstream = async (url, options) => {
     }
 }
 
+// ... rest of existing flow media functions (triggerFlowMediaCreate, triggerFlowMediaUpscale, checkFlowStatus, triggerUpscale, checkStatus, webhooks) ...
 // --- FLOW MEDIA CREATE (GEM_PIX_2) VIA PROXY (START TASK) ---
 async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, numberOfImages = 1, imageModelName = "GEM_PIX_2", inputImages = []) {
     return executeWithFailover(env, accounts, "CreateFlowImage", async (authData) => {
@@ -543,7 +609,16 @@ async function checkStatus(env, accounts, task_id, scene_id) {
             if (vidUrl) return { status: 'completed', video_url: vidUrl, mediaId: mediaId };
             return { status: 'failed', message: 'Video URL not found' };
         }
-        if (status === "MEDIA_GENERATION_STATUS_FAILED") return { status: 'failed', message: JSON.stringify(opResult) };
+        if (status === "MEDIA_GENERATION_STATUS_FAILED") {
+             // Handle detailed error message if available in operation
+             let errorMsg = JSON.stringify(opResult);
+             try {
+                 if (opResult.operation?.error?.message) {
+                     errorMsg = opResult.operation.error.message;
+                 }
+             } catch(e) {}
+             return { status: 'failed', message: errorMsg };
+        }
         return { status: 'processing' };
     });
 }
@@ -620,8 +695,14 @@ export default {
                 return sendJson({ mediaId });
             } else if (action === 'create') {
                 const accounts = await getAllAccounts(env);
-                const result = await triggerGeneration(env, accounts, body.prompt, body.mediaId, body.videoAspectRatio, body.image, body.imageAspectRatio);
-                return sendJson(result);
+                if (body.referenceMediaIds && Array.isArray(body.referenceMediaIds)) {
+                    // Logic to handle Veo 3.0 R2V
+                    const result = await triggerGenerationWithRefs(env, accounts, body.prompt, body.videoAspectRatio, body.referenceMediaIds);
+                    return sendJson(result);
+                } else {
+                    const result = await triggerGeneration(env, accounts, body.prompt, body.mediaId, body.videoAspectRatio, body.image, body.imageAspectRatio);
+                    return sendJson(result);
+                }
             } else if (action === 'flow_create' || action === 'flow_media_create') {
                 const accounts = await getAllAccounts(env);
                 const count = body.numberOfImages || 1;
