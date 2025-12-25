@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService'; // Flow Import
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { ViewSyncState } from '../state/toolState';
 import { refundCredits } from '../services/paymentService';
@@ -13,22 +14,47 @@ import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import OptionSelector from './common/OptionSelector';
-import DirectionalModal from './DirectionalModal';
 import ResolutionSelector from './common/ResolutionSelector';
 
 const perspectiveAngles = [
     { id: 'default', label: 'Mặc định', promptClause: "the same general perspective as the source image" },
-    { id: 'front', label: 'Chính diện', promptClause: "a straight-on front elevation view of the building" },
-    { id: 'left-side', label: '3/4 Trái', promptClause: "a 3/4 perspective view from the front-left, showing both the front and left facades" },
+    { id: 'front', label: 'Chính diện', promptClause: "Straight-on front elevation view, symmetrical composition. Flat facade focusing on geometric shapes and materials." },
+    { id: 'left-side', label: '3/4 Trái', promptClause: "a 3/4 perspective view from the front-left, showing depth and dimension of the building massing." },
     { id: 'right-side', label: '3/4 Phải', promptClause: "a 3/4 perspective view from the front-right, showing both the front and right facades" },
-    { id: 'wide-frame', label: 'Góc rộng', promptClause: "a view that is zoomed out from the building, showing more of the surrounding environment and context" },
-    { id: 'top-down', label: 'Trên cao', promptClause: "a top-down aerial or bird's-eye view" },
+    { id: 'wide-frame', label: 'Góc rộng', promptClause: "Wide-angle shot capturing the building within its surrounding context and landscape. Spacious atmosphere, expanded field of view." },
+    { id: 'panoramic', label: 'Panorama', promptClause: "Panoramic view, ultra-wide horizontal composition. Capturing the entire landscape and building context in a single frame. Cinematic wide shot." },
+    { id: 'top-down', label: 'Trên cao', promptClause: "Aerial bird's-eye view looking down from above. Drone photography showing the roof plan, site layout, and surrounding environment. Masterplan visualization." },
+    { id: 'low-angle', label: 'Ngước lên', promptClause: "Low angle worm's-eye view looking up at the building. Imposing and majestic stature against the sky. Dramatic perspective emphasizing height." },
+    { id: 'close-up', label: 'Cận cảnh', promptClause: "Macro close-up shot of architectural details. Focus on textures, materials, and intricate facade elements. Shallow depth of field, blurred background." },
 ];
 
 const atmosphericAngles = [
     { id: 'default', label: 'Mặc định', promptClause: "with standard daylight lighting" },
-    { id: 'early-morning', label: 'Sáng sớm', promptClause: "in the early morning, with soft, gentle sunrise light" },
+    { id: 'early-morning', label: 'Sáng sớm', promptClause: "in the early morning, with soft, gentle sunrise light and long shadows" },
+    { id: 'midday-sun', label: 'Trưa nắng', promptClause: "at midday under bright, direct sunlight with strong, short shadows" },
+    { id: 'late-afternoon', label: 'Chiều tà', promptClause: "during the late afternoon (golden hour), with warm, orange-hued light and long, dramatic shadows" },
     { id: 'night', label: 'Ban đêm', promptClause: "at night, with interior and exterior lights turned on" },
+    { id: 'rainy', label: 'Trời mưa', promptClause: "during a gentle rain, with wet surfaces and a slightly overcast sky" },
+    { id: 'misty', label: 'Sương mù', promptClause: "on a misty or foggy morning, creating a soft and mysterious atmosphere" },
+    { id: 'after-rain', label: 'Sau mưa', promptClause: "just after a rain shower, with wet ground reflecting the sky and surroundings, and a sense of freshness in the air" },
+];
+
+const framingAngles = [
+    { id: 'none', label: 'Không có hiệu ứng', promptClause: "" },
+    { id: 'through-trees', label: 'Xuyên qua hàng cây', promptClause: "The building is seen through a foreground of trees or foliage, creating a natural framing effect." },
+    { id: 'through-window', label: 'Nhìn qua cửa kính Cafe', promptClause: "The building is seen from inside a cozy cafe across the street, looking out through the cafe's large glass window, which creates a framing effect." },
+    { id: 'through-flowers', label: 'Xuyên qua hàng hoa', promptClause: "The building is viewed through a foreground of colorful flowers lining the roadside, creating a beautiful and soft framing effect." },
+    { id: 'through-car-window', label: 'Qua cửa kính xe hơi', promptClause: "The building is seen from the perspective of looking out from a car parked on the side of the road, with the car's window frame and side mirror creating a dynamic frame." },
+];
+
+const interiorViewAngles = [
+    { id: 'default', label: 'Mặc định', prompt: "Maintain the same camera perspective as the source image." },
+    { id: 'wide-angle', label: 'Góc rộng', prompt: "Generate a wide-angle view of the interior space, capturing as much of the room as possible. Maintain the same design style, furniture, and materials as the uploaded image." },
+    { id: 'from-corner', label: 'Từ góc phòng', prompt: "Generate a view from a corner of the room, looking towards the center. Maintain the same design style, furniture, and materials as the uploaded image." },
+    { id: 'detail-shot', label: 'Cận cảnh', prompt: "Generate a close-up detail shot of a key furniture piece or decorative element. Maintain the same design style, furniture, and materials as the uploaded image." },
+    { id: 'towards-window', label: 'Nhìn ra cửa sổ', prompt: "Generate a view from inside the room looking towards the main window, showing the natural light. Maintain the same design style, furniture, and materials as the uploaded image." },
+    { id: 'night-view', label: 'Ban đêm', prompt: "Generate a view of the interior space at night, with artificial lighting turned on (lamps, ceiling lights). Maintain the same design style, furniture, and materials as the uploaded image." },
+    { id: 'top-down-interior', label: 'Từ trên xuống', prompt: "Generate a top-down view of the room's layout, similar to a 3D floor plan. Maintain the same design style, furniture, and materials as the uploaded image." },
 ];
 
 interface ViewSyncProps {
@@ -45,7 +71,6 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         selectedFraming, selectedInteriorAngle, resolution
     } = state;
 
-    const [isDirectionModalOpen, setIsDirectionModalOpen] = useState(false);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
 
@@ -62,7 +87,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
-        // Nếu chuyển về Standard, xóa ảnh hướng dẫn vì không hỗ trợ
+        // Nếu chuyển về Standard, xóa ảnh hướng dẫn (dù không còn UI vẽ nhưng vẫn clear state cho sạch)
         if (val === 'Standard') {
             onStateChange({ directionImage: null });
         }
@@ -85,6 +110,9 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         let logId: string | null = null;
         let jobId: string | null = null;
 
+        // Use Flow for Standard, 1K, 2K. Use Gemini for 4K.
+        const useFlow = resolution !== '4K';
+
         try {
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Đồng bộ view (${numberOfImages} ảnh) - ${resolution}`);
@@ -104,70 +132,138 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             const promptParts = [];
-            const perspective = perspectiveAngles.find(p => p.id === selectedPerspective);
             const atmosphere = atmosphericAngles.find(a => a.id === selectedAtmosphere);
+            const framing = framingAngles.find(f => f.id === selectedFraming);
             
-            // Build the core instruction
-            if (perspective && perspective.id !== 'default') promptParts.push(`Change the view to ${perspective.promptClause}`);
-            if (atmosphere && atmosphere.id !== 'default') promptParts.push(`Render it ${atmosphere.promptClause}`);
+            // Build Prompt based on Scene Type
+            if (sceneType === 'interior') {
+                const interiorAngle = interiorViewAngles.find(a => a.id === selectedInteriorAngle);
+                if (interiorAngle && interiorAngle.id !== 'default') {
+                    promptParts.push(interiorAngle.prompt);
+                }
+            } else {
+                const perspective = perspectiveAngles.find(p => p.id === selectedPerspective);
+                if (perspective && perspective.id !== 'default') {
+                    promptParts.push(`${perspective.promptClause}`);
+                }
+            }
+
+            if (framing && framing.id !== 'none') {
+                promptParts.push(framing.promptClause);
+            }
+
+            if (atmosphere && atmosphere.id !== 'default') {
+                promptParts.push(`Render it ${atmosphere.promptClause}`);
+            }
+
             if (customPrompt) promptParts.push(customPrompt);
             
             // Base prompt construction
             let finalPrompt = "";
             if (promptParts.length > 0) {
-                finalPrompt = `Keep the main subject (building/room) exactly as it is, but ${promptParts.join(', ')}.`;
+                finalPrompt = `Based on the building design in the reference image, ${promptParts.join(', ')}.`;
             } else {
                 finalPrompt = "Enhance the quality and clarity of this view. Maintain the exact same architectural style and content.";
             }
             
-            finalPrompt += ` Output strictly in ${aspectRatio} aspect ratio. Photorealistic architectural photography.`;
+            finalPrompt += ` The image is based on the provided reference design, preserving all original architectural details and materials. Photorealistic architectural photography.`;
 
             let imageUrls: string[] = [];
 
-            // --- GOOGLE GEMINI API LOGIC (ALL RESOLUTIONS) ---
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                // High Quality Mode (Pro Model)
-                setStatusMessage(`Đang xử lý với Gemini Pro (${resolution})...`);
-                
+            if (useFlow) {
+                // --- FLOW LOGIC (Standard, 1K, 2K) ---
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                const collectedUrls: string[] = [];
+                const inputImages: FileData[] = [sourceImage];
+                if (directionImage) inputImages.push(directionImage);
+
+                let lastError: any = null;
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    try {
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        const result = await externalVideoService.generateFlowImage(
+                            finalPrompt,
+                            inputImages,
+                            aspectEnum,
+                            1,
+                            modelName,
+                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                        );
+
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+
+                            // 2K Upscale Check
+                            if (resolution === '2K' && result.mediaIds && result.mediaIds.length > 0) {
+                                setStatusMessage('Đang xử lý (Upscale 2K)...');
+                                try {
+                                    const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
+                                    if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                                } catch (e: any) {
+                                    throw new Error(`Lỗi Upscale 2K: ${e.message}`);
+                                }
+                            }
+                            
+                            collectedUrls.push(finalUrl);
+                            onStateChange({ resultImages: [...collectedUrls] });
+                            
+                            historyService.addToHistory({ 
+                                tool: Tool.ViewSync, 
+                                prompt: `Flow (${modelName}): ${finalPrompt}`, 
+                                sourceImageURL: sourceImage.objectURL, 
+                                resultImageURL: finalUrl 
+                            });
+                        }
+                    } catch (e: any) {
+                        console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
+                    }
+                });
+
+                await Promise.all(promises);
+                if (collectedUrls.length === 0) {
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
+                }
+                imageUrls = collectedUrls;
+
+            } else {
+                // --- GOOGLE GEMINI API LOGIC (4K) ---
+                setStatusMessage('Đang xử lý với Gemini Pro 4K...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
                         finalPrompt, 
                         aspectRatio, 
-                        resolution, 
+                        resolution, // 4K
                         sourceImage, 
                         jobId || undefined,
-                        directionImage ? [directionImage] : undefined // Truyền ảnh hướng nếu có (chỉ Pro mới hiểu)
+                        directionImage ? [directionImage] : undefined 
                     );
                     return images[0];
                 });
                 imageUrls = await Promise.all(promises);
-            } else {
-                // Standard Mode (Flash Model)
-                // Note: Standard mode does NOT support directionImage via generateStandardImage currently
-                setStatusMessage('Đang xử lý với Gemini Flash...');
-                imageUrls = await geminiService.generateStandardImage(
-                    finalPrompt, 
-                    aspectRatio, 
-                    numberOfImages, 
-                    sourceImage, 
-                    jobId || undefined
-                );
+                onStateChange({ resultImages: imageUrls });
+                
+                imageUrls.forEach(url => historyService.addToHistory({ 
+                    tool: Tool.ViewSync, 
+                    prompt: `Gemini Pro 4K: ${finalPrompt}`, 
+                    sourceImageURL: sourceImage.objectURL, 
+                    resultImageURL: url 
+                }));
             }
-
-            onStateChange({ resultImages: imageUrls });
-            
-            // Log history
-            imageUrls.forEach(url => historyService.addToHistory({ 
-                tool: Tool.ViewSync, 
-                prompt: `Gemini API: ${finalPrompt}`, 
-                sourceImageURL: sourceImage.objectURL, 
-                resultImageURL: url 
-            }));
 
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
             
         } catch (err: any) {
-            onStateChange({ error: err.message });
+            let errorMessage = err.message || "Lỗi xử lý.";
+            if (logId) errorMessage += " (Credits đã hoàn lại)";
+            onStateChange({ error: errorMessage });
+            
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
@@ -180,43 +276,95 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
     };
     
     const handleFileSelect = (fileData: FileData | null) => onStateChange({ sourceImage: fileData, resultImages: [], directionImage: null });
-    const handleApplyDirection = (direction: FileData) => { onStateChange({ directionImage: direction }); setIsDirectionModalOpen(false); };
 
     return (
         <div>
-            {isDirectionModalOpen && sourceImage && <DirectionalModal image={sourceImage} onClose={() => setIsDirectionModalOpen(false)} onApply={handleApplyDirection} />}
             <h2 className="text-2xl font-bold mb-4">Đồng Bộ View</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-4">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border">
                         <label className="block text-sm font-medium mb-2">1. Tải Lên Ảnh Gốc</label>
-                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} directionPreviewUrl={directionImage?.objectURL} />
-                        
-                        {sourceImage && (
-                            resolution === 'Standard' ? (
-                                <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 mt-4">
-                                    <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
-                                    <p className="text-sm text-text-secondary dark:text-gray-400">
-                                        Tính năng vẽ hướng chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
-                                    </p>
-                                    <button 
-                                        onClick={() => handleResolutionChange('1K')}
-                                        className="text-xs text-[#7f13ec] hover:underline font-semibold"
-                                    >
-                                        Nâng cao chất lượng ảnh ngay
-                                    </button>
-                                </div>
-                            ) : (
-                                <>
-                                    <button onClick={() => setIsDirectionModalOpen(true)} className="w-full mt-4 bg-purple-600 text-white py-2 rounded-lg text-sm font-semibold">Vẽ Hướng Cần Tạo</button>
-                                    {directionImage && <p className="text-xs text-green-500 mt-2">*Đã nhận diện hướng vẽ. AI sẽ ưu tiên hướng này khi tạo ảnh.</p>}
-                                </>
-                            )
-                        )}
+                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border space-y-4">
-                        <OptionSelector id="perspective" label="2. Chọn Góc Máy (Nếu không vẽ hướng)" options={perspectiveAngles.map(a => ({ value: a.id, label: a.label }))} value={selectedPerspective} onChange={(val) => onStateChange({ selectedPerspective: val })} variant="grid" disabled={!!directionImage} />
-                        <textarea rows={3} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder="Mô tả thêm (ví dụ: trời nắng đẹp, nhiều cây xanh)..." value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} />
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Tùy chỉnh góc nhìn</label>
+                        
+                        {/* Scene Type Switcher */}
+                        <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-4">
+                            <button 
+                                onClick={() => onStateChange({ sceneType: 'exterior' })}
+                                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                                    sceneType === 'exterior' || !sceneType // Default to exterior if undefined
+                                        ? 'bg-white dark:bg-gray-600 shadow text-text-primary dark:text-white' 
+                                        : 'text-text-secondary dark:text-gray-400 hover:text-text-primary'
+                                }`}
+                            >
+                                Ngoại thất
+                            </button>
+                            <button 
+                                onClick={() => onStateChange({ sceneType: 'interior' })}
+                                className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
+                                    sceneType === 'interior' 
+                                        ? 'bg-white dark:bg-gray-600 shadow text-text-primary dark:text-white' 
+                                        : 'text-text-secondary dark:text-gray-400 hover:text-text-primary'
+                                }`}
+                            >
+                                Nội thất
+                            </button>
+                        </div>
+
+                        {/* Dynamic Angle Selector based on Scene Type */}
+                        {(sceneType === 'exterior' || !sceneType) ? (
+                            <OptionSelector 
+                                id="perspective" 
+                                label="Chọn Góc Máy Ngoại Thất" 
+                                options={perspectiveAngles.map(a => ({ value: a.id, label: a.label }))} 
+                                value={selectedPerspective} 
+                                onChange={(val) => onStateChange({ selectedPerspective: val })} 
+                                variant="grid" 
+                                disabled={!!directionImage || isLoading} 
+                            />
+                        ) : (
+                            <OptionSelector 
+                                id="interior-angle" 
+                                label="Chọn Góc Máy Nội Thất" 
+                                options={interiorViewAngles.map(a => ({ value: a.id, label: a.label }))} 
+                                value={selectedInteriorAngle} 
+                                onChange={(val) => onStateChange({ selectedInteriorAngle: val })} 
+                                variant="grid" 
+                                disabled={!!directionImage || isLoading} 
+                            />
+                        )}
+
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <OptionSelector 
+                                id="framing" 
+                                label="Hiệu ứng khung hình" 
+                                options={framingAngles.map(a => ({ value: a.id, label: a.label }))} 
+                                value={selectedFraming} 
+                                onChange={(val) => onStateChange({ selectedFraming: val })} 
+                                variant="select" 
+                                disabled={isLoading} 
+                            />
+                            <OptionSelector 
+                                id="atmosphere" 
+                                label="Thời gian / Không khí" 
+                                options={atmosphericAngles.map(a => ({ value: a.id, label: a.label }))} 
+                                value={selectedAtmosphere} 
+                                onChange={(val) => onStateChange({ selectedAtmosphere: val })} 
+                                variant="select" 
+                                disabled={isLoading} 
+                            />
+                        </div>
+
+                        <textarea 
+                            rows={3} 
+                            className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm focus:ring-2 focus:ring-accent outline-none transition-all" 
+                            placeholder="Mô tả thêm (ví dụ: trời nắng đẹp, nhiều cây xanh)..." 
+                            value={customPrompt} 
+                            onChange={(e) => onStateChange({ customPrompt: e.target.value })} 
+                        />
+                        
                         <div className="grid grid-cols-2 gap-4">
                             <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
                             <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
@@ -239,7 +387,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                             </div>
                         </div>
 
-                        <button onClick={handleGenerate} disabled={isLoading || !sourceImage || userCredits < cost} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2">
+                        <button onClick={handleGenerate} disabled={isLoading || !sourceImage || userCredits < cost} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg">
                             {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Tạo Góc Nhìn'}
                         </button>
                         {upscaleWarning && <p className="mt-2 text-xs text-yellow-500 text-center">{upscaleWarning}</p>}

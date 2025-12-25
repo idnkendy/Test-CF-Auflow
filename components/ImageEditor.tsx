@@ -26,6 +26,47 @@ interface ImageEditorProps {
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
 }
 
+// Helper to merge source and mask into a single composite image
+const createCompositeImage = async (source: FileData, mask: FileData): Promise<FileData> => {
+    return new Promise((resolve, reject) => {
+        const imgSource = new Image();
+        const imgMask = new Image();
+        imgSource.crossOrigin = "Anonymous";
+        imgMask.crossOrigin = "Anonymous";
+
+        imgSource.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = imgSource.width;
+            canvas.height = imgSource.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error("Canvas context error"));
+                return;
+            }
+            
+            // Draw Source
+            ctx.drawImage(imgSource, 0, 0);
+
+            imgMask.onload = () => {
+                // Draw Mask Overlay
+                // MaskableImage produces a PNG with colored strokes on transparency
+                ctx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
+                
+                const dataUrl = canvas.toDataURL('image/png');
+                resolve({
+                    base64: dataUrl.split(',')[1],
+                    mimeType: 'image/png',
+                    objectURL: dataUrl
+                });
+            };
+            imgMask.onerror = (e) => reject(new Error("Failed to load mask image"));
+            imgMask.src = mask.objectURL;
+        };
+        imgSource.onerror = (e) => reject(new Error("Failed to load source image"));
+        imgSource.src = source.objectURL;
+    });
+};
+
 const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
     const ratio = width / height;
     const ratios: { [key in AspectRatio]: number } = {
@@ -122,10 +163,9 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         let jobId: string | null = null;
 
         // Routing Logic:
-        // Use Flow if resolution is Standard/1K/2K AND NO MASK IS USED.
-        // If Mask is used, we MUST use Google Gemini API because it handles specific inpainting better.
-        // If 4K, use Google Gemini API.
-        const useFlow = resolution !== '4K' && !maskImage;
+        // Use Flow for Standard/1K/2K.
+        // Use Google Gemini API for 4K.
+        const useFlow = resolution !== '4K';
 
         // Use selected Aspect Ratio
         const effectiveAspectRatio = aspectRatio || '1:1';
@@ -151,7 +191,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
             let imageUrls: string[] = [];
 
             if (useFlow) {
-                // --- FLOW LOGIC (Standard, 1K, 2K - No Mask) ---
+                // --- FLOW LOGIC (Standard, 1K, 2K) ---
                 
                 // Map Aspect Ratio to Enum
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
@@ -166,10 +206,37 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
                 // Construct prompt for Flow
-                const flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described. Ensure aspect ratio is ${effectiveAspectRatio}.`;
+                let flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described. Ensure aspect ratio is ${effectiveAspectRatio}.`;
                 
-                // Input Images: Source + References
-                const inputImages = [sourceImage, ...referenceImages];
+                // Input Images Logic
+                let inputImages: FileData[] = [sourceImage];
+                
+                if (maskImage) {
+                     try {
+                         // MERGE SOURCE AND MASK into one composite image
+                         const compositeImage = await createCompositeImage(sourceImage, maskImage);
+                         
+                         // Update Prompt to instruct model about the two images
+                         flowPrompt = `I have provided two images. 
+                         1. The first image is the original. 
+                         2. The second image shows the original with a RED MASK overlay indicating the area to edit.
+                         
+                         TASK: Edit the area covered by the RED MASK in the original image based on this instruction: "${prompt}".
+                         Ensure the edit blends seamlessly with the surrounding environment, matching lighting, shadows, and perspective.`;
+                         
+                         // Send Original + Composite
+                         inputImages = [sourceImage, compositeImage];
+                     } catch (e) {
+                         console.error("Composite creation failed, falling back to source + mask", e);
+                         // Fallback to old behavior if merge fails
+                         flowPrompt = `Edit the first image based on the second mask image (white area is the edit zone). Instruction: ${prompt}. Seamlessly blended with the environment, matching perspective and lighting.`;
+                         inputImages.push(maskImage);
+                     }
+                }
+                
+                if (referenceImages.length > 0) {
+                    inputImages.push(...referenceImages);
+                }
 
                 const collectedUrls: string[] = [];
                 let completedCount = 0;
@@ -238,18 +305,18 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 }
 
             } else {
-                // --- GOOGLE API LOGIC (4K OR MASK) ---
+                // --- GOOGLE API LOGIC (4K Only) ---
                 setStatusMessage('Đang xử lý với Gemini API...');
                 let results: { imageUrl: string }[] = [];
 
                 // High Quality (Pro) Logic - 4K
-                if (resolution === '4K' || ((resolution as string) !== 'Standard' && maskImage)) {
-                    // Pro models handle mask via composite logic in service
+                if (resolution === '4K') {
+                    // Pro models handle mask via composite logic in service (passed as maskImage argument)
                     const promises = Array.from({ length: numberOfImages }).map(async () => {
                         const images = await geminiService.generateHighQualityImage(
                             prompt, 
                             effectiveAspectRatio, 
-                            resolution === 'Standard' ? '1K' : resolution, 
+                            resolution, 
                             sourceImage, 
                             jobId || undefined, 
                             referenceImages,
@@ -258,9 +325,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         return { imageUrl: images[0] };
                     });
                     results = await Promise.all(promises);
-                }
-                // Standard (Flash) Logic with Mask
-                else {
+                } else {
+                    // Legacy fallback
                     if (referenceImages && referenceImages.length > 0) {
                         if (maskImage) {
                             results = await geminiService.editImageWithMaskAndMultipleReferences(prompt, sourceImage, maskImage, referenceImages, numberOfImages);

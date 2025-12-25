@@ -694,22 +694,13 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const handleSimpleDownload = (url?: string) => {
         const targetUrl = url || videoState.generatedVideoUrl;
         if (!targetUrl) return;
-        const link = document.createElement('a');
-        link.href = targetUrl;
-        link.download = `video-${Date.now()}.mp4`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        window.open(targetUrl, '_blank');
     };
 
     const handleDownloadSingle = (url: string, index: number) => {
-        const link = document.createElement('a');
-        link.href = url;
-        link.download = `clip-${index + 1}.mp4`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        window.open(url, '_blank');
     };
+
 
     const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -872,8 +863,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 ...prev,
                 generatedVideoUrl: result.videoUrl
             }));
-
-            handleSimpleDownload(result.videoUrl);
 
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', result.videoUrl);
             await historyService.addToHistory({ 
