@@ -208,7 +208,7 @@ const mapFriendlyErrorMessage = (errorMsg: string): string => {
     
     // Check for JSON error from worker
     try {
-        if (errorMsg.startsWith('{')) {
+        if (errorMsg.trim().startsWith('{')) {
              const parsed = JSON.parse(errorMsg);
              if (parsed.status === 'MEDIA_GENERATION_STATUS_FAILED') {
                  // Try to extract nested error message
@@ -1159,7 +1159,13 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                             // DISPLAY VIDEO + OPTIONS
                                                             <div className="flex flex-col h-full">
                                                                 <div className={`bg-black relative group ${videoState.aspectRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video'}`}>
-                                                                    <video src={item.videoUrl} className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'}`} controls />
+                                                                    <video 
+                                                                        src={item.videoUrl} 
+                                                                        className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'}`} 
+                                                                        controls 
+                                                                        playsInline
+                                                                        muted
+                                                                    />
                                                                     {item.isGeneratingVideo && (
                                                                         <div className="absolute inset-0 bg-black/80 flex flex-col items-center justify-center z-20 backdrop-blur-sm">
                                                                             <Spinner />
@@ -1325,10 +1331,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                     <video 
                                                         ref={mainVideoRef}
                                                         src={activeMainVideoUrl} 
-                                                        className="h-full w-auto max-h-[400px] object-contain shadow-2xl"
+                                                        className="w-full h-full object-contain shadow-2xl max-h-[400px]"
                                                         onEnded={handleVideoEnded}
                                                         onTimeUpdate={handleTimeUpdate}
                                                         controls
+                                                        playsInline
                                                     />
                                                 ) : (
                                                     <div className="flex flex-col items-center opacity-30">
@@ -1365,7 +1372,12 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                             className={`relative h-14 bg-black rounded cursor-grab active:cursor-grabbing overflow-hidden border-2 transition-all group flex-shrink-0 ${currentPlayingIndex === index && isPlayingAll ? 'border-green-500' : 'border-gray-300 dark:border-[#302839] hover:border-gray-500'}`}
                                                         >
                                                             <div className="absolute top-1 left-1 z-10 bg-black/60 px-1.5 py-0.5 rounded text-[8px] text-white">Cảnh {index + 1}</div>
-                                                            <video src={item.videoUrl} className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'} pointer-events-none`} />
+                                                            <video 
+                                                                src={item.videoUrl} 
+                                                                className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'} pointer-events-none`} 
+                                                                playsInline
+                                                                muted
+                                                            />
                                                             <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1 bg-black/40 rounded p-0.5">
                                                                 <button onClick={(e) => {e.stopPropagation(); handleDownloadSingle(item.videoUrl!, index)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Tải xuống"><span className="material-symbols-outlined text-[10px] notranslate">download</span></button>
                                                                 <button onClick={(e) => {e.stopPropagation(); handleExtendClip(item)}} className="p-1 bg-black/50 text-white rounded hover:bg-black" title="Mở rộng"><span className="material-symbols-outlined text-[10px] notranslate">playlist_add</span></button>
@@ -1425,7 +1437,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                                         controls 
                                                         autoPlay 
                                                         loop 
-                                                        className="w-full h-full object-contain max-h-[70vh]"
+                                                        className="w-full h-full object-contain"
+                                                        playsInline
+                                                        muted
                                                     />
                                                 ) : (
                                                     <div className="flex flex-col items-center opacity-30">
