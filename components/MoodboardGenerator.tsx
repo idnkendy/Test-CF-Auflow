@@ -57,8 +57,8 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Use Flow for everything except 4K
-        const useFlow = resolution !== '4K';
+        // Use Flow for ALL resolutions
+        const useFlow = true;
 
         try {
             if (onDeductCredits) {
@@ -110,18 +110,27 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
-                            // 2K Upscale Check
-                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            
+                            // Check for 2K/4K Upscale
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+
                             if (shouldUpscale) {
-                                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                                 try {
-                                    const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
-                                    if (upscaleResult && upscaleResult.imageUrl) finalUrl = upscaleResult.imageUrl;
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                        if (upscaleResult && upscaleResult.imageUrl) {
+                                            finalUrl = upscaleResult.imageUrl;
+                                        }
+                                    }
                                 } catch (upscaleErr: any) {
-                                    // STRICT 2K FAILURE
-                                    throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
+                                    // STRICT FAILURE
+                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
                                 }
                             }
+                            
                             collectedUrls.push(finalUrl);
                             completedCount++;
                             onStateChange({ resultImages: [...collectedUrls] });
@@ -144,7 +153,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                 imageUrls = collectedUrls;
 
             } else {
-                // --- GEMINI 4K ---
+                // Fallback (Not reached if useFlow=true)
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);

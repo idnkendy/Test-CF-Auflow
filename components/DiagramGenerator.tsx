@@ -15,6 +15,7 @@ import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
+import ResultGrid from './common/ResultGrid';
 
 interface DiagramGeneratorProps {
     state: DiagramGeneratorState;
@@ -95,8 +96,9 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
         setUpscaleWarning(null);
 
         const fullPrompt = `${prompt} Ensure the output maintains professional architectural diagram aesthetics.`;
-        const useFlow = resolution !== '4K';
         
+        // Use Flow for ALL resolutions
+        const useFlow = true;
         let logId: string | null = null;
         let jobId: string | null = null;
 
@@ -120,39 +122,66 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
             let imageUrls: string[] = [];
 
             if (useFlow) {
+                // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
                 if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
                 else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
+                let lastError: any = null;
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                    const result = await externalVideoService.generateFlowImage(
-                        fullPrompt, [sourceImage], aspectEnum, 1, modelName, (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
-                    );
-                    
-                    if (result.imageUrls && result.imageUrls.length > 0) {
-                        let finalUrl = result.imageUrls[0];
-                        if (resolution === '2K' && result.mediaIds?.length > 0) {
-                            setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                            try {
-                                const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
-                                if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
-                            } catch (e: any) {
-                                // STRICT 2K FAILURE
-                                throw new Error(`Lỗi Upscale 2K: ${e.message}`);
+                    try {
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        const result = await externalVideoService.generateFlowImage(
+                            fullPrompt, [sourceImage], aspectEnum, 1, modelName, (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                        );
+                        
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+                            
+                            // Upscale Check (2K or 4K)
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                            
+                            if (shouldUpscale) {
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
+                                try {
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                        if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                                    }
+                                } catch (e: any) {
+                                    throw new Error(`Lỗi Upscale: ${e.message}`);
+                                }
                             }
+                            
+                            collectedUrls.push(finalUrl);
+                            onStateChange({ resultImages: [...collectedUrls] });
+                            historyService.addToHistory({ 
+                                tool: Tool.DiagramGenerator, 
+                                prompt: `Flow (${modelName}): ${fullPrompt}`, 
+                                sourceImageURL: sourceImage.objectURL, 
+                                resultImageURL: finalUrl 
+                            });
                         }
-                        collectedUrls.push(finalUrl);
-                        onStateChange({ resultImages: [...collectedUrls] });
-                        historyService.addToHistory({ tool: Tool.DiagramGenerator, prompt: `Flow: ${fullPrompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: finalUrl });
+                    } catch (e: any) {
+                        console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
                     }
                 });
+
                 await Promise.all(promises);
+                if (collectedUrls.length === 0) {
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
+                }
                 imageUrls = collectedUrls;
+
             } else {
+                // Fallback (Not reached with useFlow=true)
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
@@ -276,7 +305,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
                                 <p className="mt-2 text-gray-400">{statusMessage}</p>
                             </div>
                         ) : resultImages.length > 0 ? (
-                             <img src={resultImages[0]} alt="Diagram Result" className="w-full h-full object-contain" />
+                             <ResultGrid images={resultImages} toolName="diagram-generator" />
                         ) : (
                              <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
                         )}

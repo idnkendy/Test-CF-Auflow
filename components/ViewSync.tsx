@@ -110,8 +110,8 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Use Flow for Standard, 1K, 2K. Use Gemini for 4K.
-        const useFlow = resolution !== '4K';
+        // Use Flow for all resolutions (Standard, 1K, 2K, 4K).
+        const useFlow = true;
 
         try {
             if (onDeductCredits) {
@@ -171,7 +171,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             let imageUrls: string[] = [];
 
             if (useFlow) {
-                // --- FLOW LOGIC (Standard, 1K, 2K) ---
+                // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
                 if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
                 else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
@@ -198,14 +198,19 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            // 2K Upscale Check
-                            if (resolution === '2K' && result.mediaIds && result.mediaIds.length > 0) {
-                                setStatusMessage('Đang xử lý (Upscale 2K)...');
+                            // Upscale Check
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                            if (shouldUpscale) {
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                                 try {
-                                    const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
-                                    if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                        if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                                    }
                                 } catch (e: any) {
-                                    throw new Error(`Lỗi Upscale 2K: ${e.message}`);
+                                    throw new Error(`Lỗi Upscale: ${e.message}`);
                                 }
                             }
                             
@@ -233,7 +238,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                 imageUrls = collectedUrls;
 
             } else {
-                // --- GOOGLE GEMINI API LOGIC (4K) ---
+                // --- GOOGLE GEMINI API LOGIC (Fallback) ---
                 setStatusMessage('Đang xử lý với Gemini Pro 4K...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(

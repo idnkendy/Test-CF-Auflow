@@ -3,7 +3,7 @@ import React, { useState, useCallback } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService';
+import * as externalVideoService from '../services/externalVideoService'; // Flow Import
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { LandscapeRenderingState } from '../state/toolState';
 import { refundCredits } from '../services/paymentService';
@@ -188,7 +188,9 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
         let jobId: string | null = null;
 
         const promptForService = constructLandscapePrompt();
-        const useFlow = resolution !== '4K';
+        
+        // Use Flow for ALL resolutions
+        const useFlow = true;
 
         try {
             if (onDeductCredits) {
@@ -243,22 +245,23 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            // 2. Check for 2K Upscale
-                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            // Check for 2K/4K Upscale
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
 
                             if (shouldUpscale) {
-                                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
                                         if (upscaleResult && upscaleResult.imageUrl) {
                                             finalUrl = upscaleResult.imageUrl;
                                         }
                                     }
                                 } catch (upscaleErr: any) {
-                                    // STRICT 2K FAILURE
-                                    throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
+                                    // STRICT FAILURE
+                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
                                 }
                             }
                             
@@ -288,12 +291,12 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                 if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
 
             } else {
-                // --- GOOGLE API LOGIC (4K) ---
+                // Fallback (Not used with useFlow=true)
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
                         promptForService, 
                         aspectRatio, 
-                        resolution, // 4K
+                        resolution, 
                         sourceImage || undefined, 
                         undefined, 
                         referenceImages
@@ -307,7 +310,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                 
                 imageUrls.forEach(url => historyService.addToHistory({
                     tool: Tool.LandscapeRendering,
-                    prompt: `Gemini Pro 4K: ${promptForService}`,
+                    prompt: `Gemini API: ${promptForService}`,
                     sourceImageURL: sourceImage?.objectURL,
                     resultImageURL: url,
                 }));
@@ -332,10 +335,9 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
 
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
-        const resultImage = resultImages[0];
         onStateChange({ isUpscaling: true, error: null });
         try {
-            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImage);
+            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImages[0]);
             const upscalePrompt = "Upscale this landscape rendering to a high resolution.";
             const result = await geminiService.editImage(upscalePrompt, imageToUpscale, 1);
             onStateChange({ upscaledImage: result[0].imageUrl });

@@ -60,7 +60,8 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
         let logId: string | null = null;
         let jobId: string | null = null;
         
-        const useFlow = resolution !== '4K';
+        // Use Flow for ALL resolutions
+        const useFlow = true;
         const prompt = `Convert this realistic image into a highly detailed ${sketchStyle} sketch on clean white background.`;
 
         try {
@@ -85,7 +86,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
-                // Default to Landscape for Sketch conversion if specific ratio not provided
+                // Default to Landscape for Sketch conversion
                 const aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE'; 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
 
@@ -101,24 +102,32 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
 
                 if (result.imageUrls && result.imageUrls.length > 0) {
                     resultUrl = result.imageUrls[0];
-                    // 2K Upscale
-                    if (resolution === '2K' && result.mediaIds && result.mediaIds.length > 0) {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                    
+                    // Check for 2K/4K Upscale
+                    const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                    
+                    if (shouldUpscale) {
+                        setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                         try {
-                            const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
-                            if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
+                            const mediaId = result.mediaIds[0];
+                            if (mediaId) {
+                                const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
+                            }
                         } catch (upscaleErr: any) {
-                            // STRICT 2K FAILURE
-                            throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
+                            // STRICT FAILURE
+                            throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
                         }
                     }
+                    
                     historyService.addToHistory({ tool: Tool.SketchConverter, prompt: `Flow: ${prompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
                 } else {
                     throw new Error("Không nhận được ảnh.");
                 }
 
             } else {
-                // --- GEMINI 4K ---
+                // Fallback (Not reached if useFlow=true)
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const images = await geminiService.generateHighQualityImage(prompt, '1:1', resolution, sourceImage, jobId || undefined);
                 resultUrl = images[0];

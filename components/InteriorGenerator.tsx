@@ -1,5 +1,4 @@
 
-// ... existing imports
 import React, { useState, useCallback } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -20,7 +19,6 @@ import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
 
-// ... Options arrays (styleOptions, roomTypeOptions, etc.) ...
 const styleOptions = [
     { value: 'none', label: 'Tự động' },
     { value: 'Hiện đại', label: 'Hiện đại' },
@@ -79,7 +77,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     
-    // ... prompt update logic ...
     const escapeRegExp = (string: string) => { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
     const updatePrompt = useCallback((type: 'style' | 'roomType' | 'lighting' | 'colorPalette', newValue: string, oldValue: string) => {
         const getPromptPart = (partType: string, value: string): string => {
@@ -121,7 +118,9 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         const promptForService = constructInteriorPrompt();
         let jobId: string | null = null;
         let logId: string | null = null;
-        const useFlow = resolution !== '4K';
+        
+        // Use Flow for all resolutions (Standard, 1K, 2K, 4K)
+        const useFlow = true;
 
         try {
             if (onDeductCredits) { logId = await onDeductCredits(cost, `Render nội thất (${numberOfImages} ảnh) - ${resolution || 'Standard'}`); }
@@ -160,21 +159,21 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
 
                             if (shouldUpscale) {
-                                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
                                         if (upscaleResult && upscaleResult.imageUrl) {
                                             finalUrl = upscaleResult.imageUrl;
                                         }
                                     }
                                 } catch (upscaleErr: any) {
-                                    // STRICT 2K FAILURE
-                                    throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
+                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
                                 }
                             }
                             
@@ -198,12 +197,12 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
 
             } else {
-                // --- GOOGLE API LOGIC (4K) ---
+                // --- GOOGLE API LOGIC (Fallback) ---
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
                         promptForService, 
                         aspectRatio, 
-                        resolution, // 4K passed here
+                        resolution,
                         sourceImage || undefined, 
                         jobId || undefined, 
                         referenceImages

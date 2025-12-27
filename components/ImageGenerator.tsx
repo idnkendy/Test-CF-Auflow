@@ -203,7 +203,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         let jobId: string | null = null;
         let logId: string | null = null;
 
-        const useFlow = resolution !== '4K';
+        // Use Flow for all resolutions now (Standard, 1K, 2K, 4K)
+        const useFlow = true;
 
         try {
             if (onDeductCredits) {
@@ -252,24 +253,27 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            // Check upscale for 2K or 4K
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
 
                             if (shouldUpscale) {
-                                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
                                         const upscaleResult = await externalVideoService.upscaleFlowImage(
                                             mediaId,
-                                            result.projectId
+                                            result.projectId,
+                                            targetRes
                                         );
                                         if (upscaleResult && upscaleResult.imageUrl) {
                                             finalUrl = upscaleResult.imageUrl;
                                         }
                                     }
                                 } catch (upscaleErr: any) {
-                                    // STRICT 2K FAILURE
-                                    throw new Error(`Lỗi Upscale 2K: ${upscaleErr.message}`);
+                                    // STRICT FAILURE for Upscale
+                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
                                 }
                             }
                             
@@ -302,6 +306,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
 
             } else {
+                // Fallback (currently unused if useFlow is true)
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(

@@ -49,7 +49,6 @@ const createCompositeImage = async (source: FileData, mask: FileData): Promise<F
 
             imgMask.onload = () => {
                 // Draw Mask Overlay
-                // MaskableImage produces a PNG with colored strokes on transparency
                 ctx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
                 
                 const dataUrl = canvas.toDataURL('image/png');
@@ -162,10 +161,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Routing Logic:
-        // Use Flow for Standard/1K/2K.
-        // Use Google Gemini API for 4K.
-        const useFlow = resolution !== '4K';
+        // Use Flow for ALL resolutions
+        const useFlow = true;
 
         // Use selected Aspect Ratio
         const effectiveAspectRatio = aspectRatio || '1:1';
@@ -191,18 +188,12 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
             let imageUrls: string[] = [];
 
             if (useFlow) {
-                // --- FLOW LOGIC (Standard, 1K, 2K) ---
+                // --- FLOW LOGIC ---
                 
-                // Map Aspect Ratio to Enum
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (effectiveAspectRatio === '16:9') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (effectiveAspectRatio === '9:16') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-                }
+                if (effectiveAspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (effectiveAspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
-                // Standard -> GEM_PIX (Flash)
-                // 1K / 2K -> GEM_PIX_2 (Pro)
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
                 // Construct prompt for Flow
@@ -228,7 +219,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                          inputImages = [sourceImage, compositeImage];
                      } catch (e) {
                          console.error("Composite creation failed, falling back to source + mask", e);
-                         // Fallback to old behavior if merge fails
                          flowPrompt = `Edit the first image based on the second mask image (white area is the edit zone). Instruction: ${prompt}. Seamlessly blended with the environment, matching perspective and lighting.`;
                          inputImages.push(maskImage);
                      }
@@ -258,24 +248,22 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            // 2K Upscale Check
-                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            // Upscale Check (2K or 4K)
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                            
                             if (shouldUpscale) {
-                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
                                         if (upscaleResult && upscaleResult.imageUrl) {
                                             finalUrl = upscaleResult.imageUrl;
                                         }
                                     }
                                 } catch (upscaleErr: any) {
-                                    console.warn("Upscale failed", upscaleErr);
-                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    if (user && logId) {
-                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
-                                    }
+                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
                                 }
                             }
                             
@@ -305,52 +293,10 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 }
 
             } else {
-                // --- GOOGLE API LOGIC (4K Only) ---
-                setStatusMessage('Đang xử lý với Gemini API...');
-                let results: { imageUrl: string }[] = [];
-
-                // High Quality (Pro) Logic - 4K
-                if (resolution === '4K') {
-                    // Pro models handle mask via composite logic in service (passed as maskImage argument)
-                    const promises = Array.from({ length: numberOfImages }).map(async () => {
-                        const images = await geminiService.generateHighQualityImage(
-                            prompt, 
-                            effectiveAspectRatio, 
-                            resolution, 
-                            sourceImage, 
-                            jobId || undefined, 
-                            referenceImages,
-                            maskImage || undefined 
-                        );
-                        return { imageUrl: images[0] };
-                    });
-                    results = await Promise.all(promises);
-                } else {
-                    // Legacy fallback
-                    if (referenceImages && referenceImages.length > 0) {
-                        if (maskImage) {
-                            results = await geminiService.editImageWithMaskAndMultipleReferences(prompt, sourceImage, maskImage, referenceImages, numberOfImages);
-                        } else {
-                            results = await geminiService.editImageWithMultipleReferences(prompt, sourceImage, referenceImages, numberOfImages);
-                        }
-                    } else if (maskImage) {
-                        results = await geminiService.editImageWithMask(prompt, sourceImage, maskImage, numberOfImages);
-                    } else {
-                        results = await geminiService.editImage(prompt, sourceImage, numberOfImages);
-                    }
-                }
-
+                // Fallback (Not reached with useFlow=true)
+                const results = await geminiService.editImage(prompt, sourceImage, numberOfImages);
                 imageUrls = results.map(r => r.imageUrl);
                 onStateChange({ resultImages: imageUrls });
-
-                imageUrls.forEach(url => {
-                    historyService.addToHistory({
-                        tool: Tool.ImageEditing,
-                        prompt: `Gemini API: ${prompt}`,
-                        sourceImageURL: sourceImage.objectURL,
-                        resultImageURL: url,
-                    });
-                });
             }
 
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);

@@ -12,10 +12,6 @@ const TIMEOUT_DURATION = 300000;
 const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL);
 
 // ... existing generateUUID, getImageDimensions, resizeAndCropImage, formatErrorMessage, fetchJson ...
-// Keep existing formatErrorMessage, fetchJson, generateUUID, getImageDimensions, resizeAndCropImage EXACTLY as is.
-// Only updating the generation functions below.
-
-// ... existing resizeAndCropImage implementation ...
 const generateUUID = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -172,7 +168,6 @@ export const generateFlowImage = async (
     imageModelName: string = "GEM_PIX_2",
     onProgress?: (message: string) => void 
 ): Promise<{ imageUrls: string[], mediaIds: string[], projectId?: string }> => {
-    // ... same implementation as before ...
     const imagesToProcess = Array.isArray(inputImages) ? inputImages : (inputImages ? [inputImages] : []);
     const processedImages: string[] = [];
     const LOADING_MSG = "Đang xử lý. Vui lòng đợi...";
@@ -257,12 +252,11 @@ export const generateFlowImage = async (
     throw new Error("Timeout.");
 };
 
-export const upscaleFlowImage = async (mediaId: string, projectId: string | undefined): Promise<{ imageUrl: string }> => {
-    // ... same implementation as before ...
+export const upscaleFlowImage = async (mediaId: string, projectId: string | undefined, targetResolution: string = 'UPSAMPLE_IMAGE_RESOLUTION_2K'): Promise<{ imageUrl: string }> => {
     const createRes = await fetchJson('/flow-upscale', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'flow_upscale', mediaId: mediaId, projectId: projectId })
+        body: JSON.stringify({ action: 'flow_upscale', mediaId: mediaId, projectId: projectId, targetResolution: targetResolution })
     });
     if (!createRes.taskId) throw new Error("No Upscale Task ID");
     const taskId = createRes.taskId;
@@ -291,7 +285,6 @@ async function _executeVideoGeneration(
     startImage?: FileData, 
     aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
 ): Promise<{ videoUrl: string, mediaId?: string }> {
-    // ... same implementation as before (correctly handles single atomic request) ...
     let effectiveRatio: '16:9' | '9:16' = '16:9'; 
     let imageBase64 = null;
 
@@ -363,7 +356,6 @@ async function _executeVideoGeneration(
 }
 
 export const uploadImage = async (base64Data: string, aspectRatio?: string): Promise<string> => {
-    // Keep for legacy uses if any, but AVOID using for video generation flows
     const authData = await fetchJson('/auth', { method: 'POST', body: JSON.stringify({ action: 'auth' }) });
     const token = authData.token;
     const result = await fetchJson('/upload', { method: 'POST', body: JSON.stringify({ action: 'upload', image: base64Data, imageAspectRatio: aspectRatio }) });
@@ -391,9 +383,6 @@ export const generateVideoExternal = async (
     }
 };
 
-// FIXED: generateVideoWithReferences (Atomic)
-// Instead of uploading separately, we process images to base64 and send them all to the backend.
-// The backend will perform the uploads using the *same* account it picks for generation.
 export const generateVideoWithReferences = async (
     prompt: string, 
     sceneImage: FileData,
@@ -462,9 +451,7 @@ export const generateVideoWithReferences = async (
     throw new Error("TIMEOUT_ERROR");
 }
 
-// ... upscaleVideoExternal (unchanged) ...
 export const upscaleVideoExternal = async (mediaId: string): Promise<string> => {
-    // ... existing implementation
     try {
         const authData = await fetchJson('/auth', {
             method: 'POST',

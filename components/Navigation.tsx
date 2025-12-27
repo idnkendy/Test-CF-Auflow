@@ -68,11 +68,6 @@ const MarketingIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
 );
 
-// Tham Quan Ảo (360)
-const VirtualTourIcon = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2h8a2 2 0 002-2v-1a2 2 0 012-2h1.945M7.881 4.043C9.227 3.387 10.76 3 12.368 3c1.608 0 3.14.387 4.486 1.043m-8.972 1.043C5.69 6.208 4.862 7.55 4.438 9h15.124c-.424-1.45-1.252-2.792-2.586-3.914m-10.082 3.914H18.23" /></svg>
-);
-
 // Moodboard (Swatch)
 const MoodboardIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12.5a2 2 0 002-2v-6.5a2 2 0 00-2-2H7" /></svg>
@@ -213,14 +208,6 @@ export const utilityToolsGroup = {
             desc: 'Thiết kế cảnh quan, sân vườn và tiểu cảnh',
             gradient: 'from-lime-500/20 to-green-500/20 hover:border-lime-500/50',
             image: 'https://images.unsplash.com/photo-1558293842-c0fd3db86157?q=80&w=600&auto=format&fit=crop'
-        },
-        { 
-            tool: Tool.VirtualTour, 
-            label: 'Tham Quan Ảo', 
-            icon: <VirtualTourIcon />, 
-            desc: 'Tạo video panorama và tour 360 độ từ ảnh tĩnh',
-            gradient: 'from-indigo-500/20 to-purple-500/20 hover:border-indigo-500/50',
-            image: 'https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?q=80&w=600&auto=format&fit=crop'
         },
         { 
             tool: Tool.Moodboard, 

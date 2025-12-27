@@ -15,8 +15,8 @@ const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 // UPDATED PROXY CONFIGURATION
 const ONEWISE_PROXY_URL_CREATE = "https://flow-api.nanoai.pics/api/fix/create-video-veo3";
 const ONEWISE_PROXY_URL_CHECK = "https://flow-api.nanoai.pics/api/fix/task-status";
-// Token này nên được quản lý bảo mật, hiện tại đang hardcode theo code cũ
-const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjM2OTk4Mn0.ZcM4BG7XzFj0xvOvZxsm5dHJH55gp-DEkh8DJ2_IsYw";
+// Token mới được cập nhật từ yêu cầu của bạn
+const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjgzMzUwNn0.6Na_CBhl6Dl5MzP9lS7ufynkr4MNFCKjt8i0Kgu8pe4";
 
 const HEADERS = {
     'content-type': 'text/plain;charset=UTF-8', 
@@ -25,7 +25,6 @@ const HEADERS = {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
 };
 
-// ... existing cleanToken, getGeminiKeySecurely, handleGeminiProxy, resetAllUsageCounts, incrementAccountUsage, getAllAccounts, executeWithFailover, performUpload, uploadImage, triggerGenerationWithRefs, triggerGeneration, safeFetchUpstream ...
 function cleanToken(token) {
     if (!token) return "";
     return token.trim().replace(/^["']|["']$/g, '');
@@ -102,7 +101,8 @@ async function incrementAccountUsage(env, accountId, currentUsage) {
     } catch (e) {}
 }
 
-async function getAllAccounts(env) {
+// UPDATE: Added ignoreQuota parameter to force finding specific accounts even if full
+async function getAllAccounts(env, ignoreQuota = false) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
     const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
     try {
@@ -113,6 +113,9 @@ async function getAllAccounts(env) {
         if (!response.ok) throw new Error("DB Error");
         let accounts = await response.json();
         if (!accounts || accounts.length === 0) throw new Error("No accounts");
+        
+        if (ignoreQuota) return accounts;
+
         let availableAccounts = accounts.filter(acc => (acc.usage_count || 0) < (acc.usage_limit || 50));
         if (availableAccounts.length === 0) {
             await resetAllUsageCounts(env);
@@ -286,8 +289,8 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
         }
 
         const googleUrl = isI2V 
-            ? 'https://aisandbox-pa.googleapis.com/v1:video:batchAsyncGenerateVideoStartImage'
-            : 'https://aisandbox-pa.googleapis.com/v1:video:batchAsyncGenerateVideoText';
+            ? 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage'
+            : 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoText';
 
         const payload = {
             "body_json": {
@@ -368,7 +371,7 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
     });
 }
 
-async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId) {
+async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, targetResolution) {
     return executeWithFailover(env, accounts, "UpscaleFlowImage", async (authData) => {
         const { access_token: token } = authData;
         const activeProjectId = projectId || authData.project_id;
@@ -378,7 +381,7 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId) {
             "body_json": {
                 "clientContext": { "sessionId": sessionId, "projectId": activeProjectId, "tool": "PINHOLE" },
                 "mediaId": mediaId,
-                "targetResolution": "UPSAMPLE_IMAGE_RESOLUTION_2K"
+                "targetResolution": targetResolution || "UPSAMPLE_IMAGE_RESOLUTION_2K"
             },
             "flow_auth_token": cleanToken(token),
             "flow_url": flowUrl
@@ -417,7 +420,7 @@ async function checkStatus(env, accounts, task_id, scene_id) {
     return executeWithFailover(env, accounts, "CheckStatus", async (authData) => {
         const { access_token: token, auth_cookies: cookies } = authData;
         const payload = { "operations": [{ "operation": { "name": task_id }, "sceneId": scene_id, "status": "MEDIA_GENERATION_STATUS_ACTIVE" }] };
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', { method: 'POST', headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' }, body: JSON.stringify(payload) });
+        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchCheckAsyncVideoGenerationStatus', { method: 'POST', headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' }, body: JSON.stringify(payload) });
         if (res.status === 404 || res.status === 403) throw new Error(`NotFound/Permission`);
         if (!res.ok) throw new Error(`Check Status Failed`);
         const data = await res.json();
@@ -523,10 +526,23 @@ export default {
                 const result = await triggerFlowMediaCreate(env, accounts, body.prompt, body.image, body.imageAspectRatio, count, modelName, body.images);
                 return sendJson(result);
             } else if (action === 'flow_upscale') {
-                const accounts = await getAllAccounts(env);
-                const specificAccounts = body.projectId ? accounts.filter(acc => acc.project_id === body.projectId) : accounts;
-                const accountsToUse = specificAccounts.length > 0 ? specificAccounts : accounts;
-                const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId);
+                // FIXED: Use getAllAccounts(env, true) to ignore quota when finding specific account
+                const allAccounts = await getAllAccounts(env, true);
+                
+                let specificAccounts = [];
+                if (body.projectId) {
+                    specificAccounts = allAccounts.filter(acc => acc.project_id === body.projectId);
+                }
+                
+                // CRITICAL FIX: Fail immediately if account not found instead of falling back to random account
+                // This prevents the 400 error (Forbidden/Not Found) from Google
+                if (body.projectId && specificAccounts.length === 0) {
+                    return sendJson({ status: 'failed', message: `Account not found for Project ID: ${body.projectId}. Cannot upscale.` }, 400);
+                }
+
+                // If specific account found, use it. Otherwise (no project ID provided), fallback to all.
+                const accountsToUse = specificAccounts.length > 0 ? specificAccounts : allAccounts;
+                const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId, body.targetResolution);
                 return sendJson(result);
             } else if (action === 'flow_check') {
                 const accounts = await getAllAccounts(env);

@@ -63,7 +63,8 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
         let logId: string | null = null;
         let jobId: string | null = null;
         
-        const useFlow = resolution !== '4K';
+        // Use Flow for ALL resolutions
+        const useFlow = true;
         const prompt = `Convert this 3D render into a professional 2D ${drawingType} architectural drawing. White lines on blue background.`;
 
         try {
@@ -106,21 +107,29 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
                 if (result.imageUrls && result.imageUrls.length > 0) {
                     resultUrl = result.imageUrls[0];
-                    if (resolution === '2K' && result.mediaIds && result.mediaIds.length > 0) {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                    
+                    // Check for 2K/4K Upscale
+                    const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                    
+                    if (shouldUpscale) {
+                        setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                         try {
-                            const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
-                            if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
+                            const mediaId = result.mediaIds[0];
+                            if (mediaId) {
+                                const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
+                            }
                         } catch (e: any) {
-                            // STRICT 2K FAILURE
-                            throw new Error(`Lỗi Upscale 2K: ${e.message}`);
+                            // STRICT FAILURE
+                            throw new Error(`Lỗi Upscale: ${e.message}`);
                         }
                     }
                     historyService.addToHistory({ tool: Tool.AITechnicalDrawings, prompt: `Flow: ${prompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
                 } else throw new Error("Lỗi không có ảnh.");
 
             } else {
-                // --- GEMINI 4K ---
+                // Fallback (Not reached with useFlow=true)
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const images = await geminiService.generateHighQualityImage(prompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                 resultUrl = images[0];

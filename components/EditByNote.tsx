@@ -542,7 +542,8 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        const useFlow = resolution !== '4K';
+        // Use Flow for ALL resolutions
+        const useFlow = true;
 
         try {
             const tempImg = new Image();
@@ -600,6 +601,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             let imageUrls: string[] = [];
 
             if (useFlow) {
+                // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
                 if (aspectRatio === '16:9' ) {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
@@ -624,17 +626,26 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
                         let finalUrl = result.imageUrls[0];
-                        const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                        
+                        // Upscale Check (2K or 4K)
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
                         if (shouldUpscale) {
-                            setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                            setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                             try {
-                                const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId);
-                                if (upscaleResult && upscaleResult.imageUrl) finalUrl = upscaleResult.imageUrl;
+                                const mediaId = result.mediaIds[0];
+                                if (mediaId) {
+                                    const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                    const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                    if (upscaleResult && upscaleResult.imageUrl) {
+                                        finalUrl = upscaleResult.imageUrl;
+                                    }
+                                }
                             } catch (e: any) {
-                                // STRICT 2K FAILURE: Throw error to trigger full refund
-                                throw new Error(`Lỗi Upscale 2K: ${e.message}`);
+                                // STRICT FAILURE
+                                throw new Error(`Lỗi Upscale: ${e.message}`);
                             }
                         }
+                        
                         collectedUrls.push(finalUrl);
                         onStateChange({ resultImages: [...collectedUrls] });
                         
@@ -652,6 +663,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 imageUrls = collectedUrls;
 
             } else {
+                // Fallback (Not used with useFlow=true)
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(

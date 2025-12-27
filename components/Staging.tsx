@@ -95,10 +95,8 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Routing Logic:
-        // Standard, 1K, 2K -> Flow (GEM_PIX / GEM_PIX_2)
-        // 4K -> Google Gemini API
-        const useFlow = resolution !== '4K';
+        // Use Flow for ALL resolutions
+        const useFlow = true;
 
         // Build prompt with aspect ratio instruction
         const ratioInstruction = `The final generated image must strictly have a ${aspectRatio} aspect ratio. Adapt the view to fit this frame naturally.`;
@@ -125,7 +123,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
             let imageUrls: string[] = [];
 
             if (useFlow) {
-                // --- FLOW LOGIC (Standard, 1K, 2K) ---
+                // --- FLOW LOGIC ---
                 let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
                 if (aspectRatio === '16:9' ) {
                     aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
@@ -138,7 +136,6 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
                 // Combine Scene + Objects for Flow Input
-                // Flow processes the first image as primary reference (Scene) and subsequent as style/content (Objects)
                 const inputImages = [sceneImage, ...objectImages];
 
                 const collectedUrls: string[] = [];
@@ -154,30 +151,28 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                             inputImages, 
                             aspectEnum,
                             1,
-                            modelName
+                            modelName,
+                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
                             let finalUrl = result.imageUrls[0];
 
-                            // 2K Upscale Check
-                            const shouldUpscale = resolution === '2K' && result.mediaIds && result.mediaIds.length > 0;
+                            // Upscale Check (2K or 4K)
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
                             if (shouldUpscale) {
-                                setStatusMessage(`[2/2] Đang nâng cấp 2K cho ảnh ${index + 1}...`);
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                                 try {
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId);
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
                                         if (upscaleResult && upscaleResult.imageUrl) {
                                             finalUrl = upscaleResult.imageUrl;
                                         }
                                     }
                                 } catch (upscaleErr: any) {
-                                    console.warn("Upscale failed", upscaleErr);
-                                    setUpscaleWarning("Lỗi khi Google tạo ảnh 2k, đã bù lại bằng ảnh 1k và hoàn lại credits");
-                                    if (user && logId) {
-                                        await refundCredits(user.id, 5, `Hoàn tiền: Lỗi Upscale 2K (Bù 5 Credits)`, logId);
-                                    }
+                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
                                 }
                             }
                             
@@ -207,16 +202,16 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                 }
 
             } else {
-                // --- GOOGLE API LOGIC (4K Only) ---
-                setStatusMessage('Đang xử lý với Gemini Pro 4K...');
+                // Fallback (Not reached with useFlow=true)
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
                         fullPrompt, 
                         aspectRatio, 
-                        resolution, // 4K
+                        resolution,
                         sceneImage, 
                         jobId || undefined, 
-                        objectImages // Pass objects as reference images
+                        objectImages
                     );
                     return images[0];
                 });
@@ -226,7 +221,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                 imageUrls.forEach(url => {
                      historyService.addToHistory({
                         tool: Tool.Staging,
-                        prompt: `Gemini Pro 4K: ${fullPrompt}`,
+                        prompt: fullPrompt,
                         sourceImageURL: sceneImage.objectURL,
                         resultImageURL: url,
                     });
@@ -244,7 +239,6 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
 
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
 
-            // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Staging (${err.message})`, logId);

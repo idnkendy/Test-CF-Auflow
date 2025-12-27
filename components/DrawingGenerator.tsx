@@ -4,6 +4,8 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { DrawingGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService'; // Flow Import
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -13,6 +15,7 @@ import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
+import ResultGrid from './common/ResultGrid';
 
 interface DrawingGeneratorProps {
     state: DrawingGeneratorState;
@@ -24,8 +27,20 @@ interface DrawingGeneratorProps {
 const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
+    const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     
-    const cost = numberOfImages * 5; 
+    const getCostPerImage = () => {
+        switch (resolution) {
+            case 'Standard': return 5;
+            case '1K': return 10;
+            case '2K': return 20;
+            case '4K': return 30;
+            default: return 5;
+        }
+    };
+    
+    const cost = numberOfImages * getCostPerImage();
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImages: [] });
@@ -47,42 +62,123 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
+        setStatusMessage('Đang phân tích...');
+        setUpscaleWarning(null);
 
-        // More flexible prompt construction to allow custom styles (like blue background)
         const fullPrompt = `Architectural Technical Drawing Task: ${prompt || 'general elevation/section view'}.
         Convert the source image into a technical drawing style as described. Maintain accurate proportions and details.
         The final generated image must strictly have a ${aspectRatio} aspect ratio.`;
 
+        // Use Flow for ALL resolutions
+        const useFlow = true;
         let logId: string | null = null;
+        let jobId: string | null = null;
 
         try {
             if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Tạo Bản vẽ (${numberOfImages} ảnh)`);
+                logId = await onDeductCredits(cost, `Tạo Bản vẽ (${numberOfImages} ảnh) - ${resolution}`);
             }
 
-            let results: { imageUrl: string }[] = [];
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                jobId = await jobService.createJob({
+                    user_id: user.id,
+                    tool_id: Tool.DrawingGenerator,
+                    prompt: fullPrompt,
+                    cost: cost,
+                    usage_log_id: logId
+                });
+            }
 
-            if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
+            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
+
+            let imageUrls: string[] = [];
+
+            if (useFlow) {
+                // --- FLOW LOGIC ---
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                const collectedUrls: string[] = [];
+                let lastError: any = null;
+
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    try {
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        const result = await externalVideoService.generateFlowImage(
+                            fullPrompt,
+                            [sourceImage],
+                            aspectEnum,
+                            1,
+                            modelName,
+                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                        );
+
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+                            
+                            // Upscale Check (2K or 4K)
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                            
+                            if (shouldUpscale) {
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
+                                try {
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                        if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                                    }
+                                } catch (e: any) {
+                                    throw new Error(`Lỗi Upscale: ${e.message}`);
+                                }
+                            }
+                            
+                            collectedUrls.push(finalUrl);
+                            onStateChange({ resultImages: [...collectedUrls] });
+                            
+                            historyService.addToHistory({ 
+                                tool: Tool.DrawingGenerator, 
+                                prompt: `Flow (${modelName}): ${fullPrompt}`, 
+                                sourceImageURL: sourceImage.objectURL, 
+                                resultImageURL: finalUrl 
+                            });
+                        }
+                    } catch (e: any) {
+                        console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
+                    }
+                });
+
+                await Promise.all(promises);
+                if (collectedUrls.length === 0) {
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
+                }
+                imageUrls = collectedUrls;
+
+            } else {
+                // Fallback (Not reached with useFlow=true)
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage);
                     return { imageUrl: images[0] };
                 });
-                results = await Promise.all(promises);
-            } else {
-                results = await geminiService.editImage(fullPrompt, sourceImage, numberOfImages);
+                const results = await Promise.all(promises);
+                imageUrls = results.map(r => r.imageUrl);
+                onStateChange({ resultImages: imageUrls });
+                imageUrls.forEach(url => {
+                    historyService.addToHistory({
+                        tool: Tool.DrawingGenerator,
+                        prompt: fullPrompt,
+                        sourceImageURL: sourceImage.objectURL,
+                        resultImageURL: url,
+                    });
+                });
             }
 
-            const imageUrls = results.map(r => r.imageUrl);
-            onStateChange({ resultImages: imageUrls });
-
-            imageUrls.forEach(url => {
-                historyService.addToHistory({
-                    tool: Tool.DrawingGenerator,
-                    prompt: fullPrompt,
-                    sourceImageURL: sourceImage.objectURL,
-                    resultImageURL: url,
-                });
-            });
+            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
         } catch (err: any) {
             let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
@@ -91,13 +187,16 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
             }
             onStateChange({ error: errorMessage });
 
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
+
             // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${err.message})`);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${err.message})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
+            setStatusMessage(null);
         }
     };
 
@@ -153,9 +252,10 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                         disabled={isLoading || userCredits < cost || !sourceImage}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> Đang vẽ...</> : 'Tạo Bản Vẽ'}
+                        {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Tạo Bản Vẽ'}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                    {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
 
                 <div>
@@ -185,11 +285,16 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                         )}
                     </div>
                     <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                        {isLoading && <Spinner />}
-                        {!isLoading && resultImages.length === 1 && sourceImage && (
+                        {isLoading ? (
+                            <div className="flex flex-col items-center">
+                                <Spinner />
+                                <p className="mt-2 text-gray-400">{statusMessage}</p>
+                            </div>
+                        ) : resultImages.length === 1 && sourceImage ? (
                             <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
-                        )}
-                        {!isLoading && resultImages.length === 0 && (
+                        ) : resultImages.length > 1 ? (
+                            <ResultGrid images={resultImages} toolName="drawing-generator" />
+                        ) : (
                              <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
                         )}
                     </div>
