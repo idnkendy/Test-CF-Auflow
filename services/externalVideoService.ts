@@ -334,7 +334,8 @@ async function _executeVideoGeneration(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(triggerBody)
     });
-    const { task_id, scene_id } = triggerData;
+    // CAPTURE account_id
+    const { task_id, scene_id, account_id } = triggerData;
 
     let attempts = 0;
     while (attempts < MAX_POLL_ATTEMPTS) {
@@ -344,7 +345,8 @@ async function _executeVideoGeneration(
             const checkData = await fetchJson('/check', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'check', task_id, scene_id, token }) 
+                // SEND account_id back to check
+                body: JSON.stringify({ action: 'check', task_id, scene_id, token, account_id }) 
             });
             if (checkData.status === 'completed' && checkData.video_url) return { videoUrl: checkData.video_url, mediaId: checkData.mediaId };
             if (checkData.status === 'failed') throw new Error(`GENERATION_FAILED: ${checkData.message}`);
@@ -420,7 +422,8 @@ export const generateVideoWithReferences = async (
         })
     });
     
-    const { task_id, scene_id } = triggerData;
+    // CAPTURE account_id
+    const { task_id, scene_id, account_id } = triggerData;
 
     // 4. Poll for completion
     let attempts = 0;
@@ -432,7 +435,8 @@ export const generateVideoWithReferences = async (
             const checkData = await fetchJson('/check', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'check', task_id, scene_id }) 
+                // SEND account_id back to check
+                body: JSON.stringify({ action: 'check', task_id, scene_id, account_id }) 
             });
 
             if (checkData.status === 'completed' && checkData.video_url) {

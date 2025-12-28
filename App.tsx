@@ -44,7 +44,7 @@ import { plans } from './constants/plans';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 
 // --- CONFIGURATION ---
-const MAINTENANCE_MODE = true; // Set to true to enable maintenance mode
+const MAINTENANCE_MODE = false; // Set to true to enable maintenance mode
 // ---------------------
 
 // Helper functions for safe navigation history

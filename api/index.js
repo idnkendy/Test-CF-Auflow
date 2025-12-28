@@ -187,7 +187,7 @@ async function uploadImage(env, accounts, base64Data, imageAspectRatio) {
 
 async function triggerGenerationWithRefs(env, accounts, prompt, videoAspectRatio, referenceImagesData) {
     return executeWithFailover(env, accounts, "CreateVideoWithRefs", async (authData) => {
-        const { access_token: token, project_id: projectId } = authData;
+        const { access_token: token, project_id: projectId, id: accountId } = authData;
         const sceneId = crypto.randomUUID();
         const sessionId = ";" + Date.now();
         const aspectRatioEnum = videoAspectRatio || "VIDEO_ASPECT_RATIO_LANDSCAPE";
@@ -247,14 +247,14 @@ async function triggerGenerationWithRefs(env, accounts, prompt, videoAspectRatio
         });
 
         if (!res.ok) throw new Error(res.error?.message || `Proxy Trigger Failed`);
-        if (res.data && res.data.taskId) return { task_id: res.data.taskId, scene_id: sceneId };
+        if (res.data && res.data.taskId) return { task_id: res.data.taskId, scene_id: sceneId, account_id: accountId };
         throw new Error("Proxy response missing taskId");
     });
 }
 
 async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRatio, imageData, imageAspectRatio) {
     return executeWithFailover(env, accounts, "CreateVideo", async (authData) => {
-        const { access_token: token, project_id: projectId } = authData;
+        const { access_token: token, project_id: projectId, id: accountId } = authData;
         let activeMediaId = mediaId;
         if (imageData) {
             activeMediaId = await performUpload(authData, imageData, imageAspectRatio);
@@ -314,7 +314,7 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
         });
 
         if (!res.ok) throw new Error(res.error?.message || `Proxy Trigger Failed`);
-        if (res.data && res.data.taskId) return { task_id: res.data.taskId, scene_id: sceneId };
+        if (res.data && res.data.taskId) return { task_id: res.data.taskId, scene_id: sceneId, account_id: accountId };
         throw new Error("Proxy response missing taskId");
     });
 }
@@ -416,8 +416,23 @@ async function triggerUpscale(env, accounts, mediaId) {
     });
 }
 
-async function checkStatus(env, accounts, task_id, scene_id) {
-    return executeWithFailover(env, accounts, "CheckStatus", async (authData) => {
+async function checkStatus(env, accounts, task_id, scene_id, account_id) {
+    // Determine which account(s) to use. If account_id is provided, restrict to that account.
+    let targetAccounts = accounts;
+    if (account_id) {
+        targetAccounts = accounts.filter(a => a.id === account_id);
+        if (targetAccounts.length === 0) {
+            // Fallback: If for some reason specific account is not in the list (e.g. inactive),
+            // we could either fail or try all. To be safe on status checks (read-only), we might try all,
+            // but for correct Auth context, we ideally want the specific one.
+            // Let's stick to failover behavior if specific not found, or maybe just try all as a hail mary?
+            // "Must use the same auth" implies failover won't work anyway.
+            // We will proceed with 'accounts' but it likely won't find the operation.
+            console.warn(`Specific account ${account_id} not found in available accounts list.`);
+        }
+    }
+
+    return executeWithFailover(env, targetAccounts, "CheckStatus", async (authData) => {
         const { access_token: token, auth_cookies: cookies } = authData;
         const payload = { "operations": [{ "operation": { "name": task_id }, "sceneId": scene_id, "status": "MEDIA_GENERATION_STATUS_ACTIVE" }] };
         const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchCheckAsyncVideoGenerationStatus', { method: 'POST', headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' }, body: JSON.stringify(payload) });
@@ -555,6 +570,7 @@ export default {
             } else if (action === 'check') {
                 let googleOperationName = body.task_id; // Default assumption
                 let googleSceneId = body.scene_id;
+                const targetAccountId = body.account_id; // Retrieve specific account ID
 
                 // GIAI ĐOẠN 1: Nếu task_id là UUID (từ Proxy), cần giải mã để lấy Google Operation Name & Scene ID
                 if (googleOperationName && typeof googleOperationName === 'string' && googleOperationName.length === 36 && googleOperationName.includes('-')) {
@@ -604,8 +620,9 @@ export default {
                 }
 
                 // GIAI ĐOẠN 2: Dùng Name và Scene ID để check status với Google API
-                const accounts = await getAllAccounts(env);
-                const result = await checkStatus(env, accounts, googleOperationName, googleSceneId);
+                // Sử dụng getAllAccounts(env, true) để lấy cả những account đã full quota (vẫn cần check status)
+                const accounts = await getAllAccounts(env, true);
+                const result = await checkStatus(env, accounts, googleOperationName, googleSceneId, targetAccountId);
                 return sendJson(result);
             } else {
                 return sendJson({ status: "ok", message: "Cloudflare Worker is running", request_path: path });
