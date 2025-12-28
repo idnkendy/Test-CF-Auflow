@@ -29,6 +29,46 @@ const renovationSuggestions = [
     { label: 'Đưa mẫu công trình vào không gian', prompt: 'Đưa mẫu công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' },
 ];
 
+// Helper to merge source and mask into a single composite image
+const createCompositeImage = async (source: FileData, mask: FileData): Promise<FileData> => {
+    return new Promise((resolve, reject) => {
+        const imgSource = new Image();
+        const imgMask = new Image();
+        imgSource.crossOrigin = "Anonymous";
+        imgMask.crossOrigin = "Anonymous";
+
+        imgSource.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = imgSource.width;
+            canvas.height = imgSource.height;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) {
+                reject(new Error("Canvas context error"));
+                return;
+            }
+            
+            // Draw Source
+            ctx.drawImage(imgSource, 0, 0);
+
+            imgMask.onload = () => {
+                // Draw Mask Overlay
+                ctx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
+                
+                const dataUrl = canvas.toDataURL('image/png');
+                resolve({
+                    base64: dataUrl.split(',')[1],
+                    mimeType: 'image/png',
+                    objectURL: dataUrl
+                });
+            };
+            imgMask.onerror = (e) => reject(new Error("Failed to load mask image"));
+            imgMask.src = mask.objectURL;
+        };
+        imgSource.onerror = (e) => reject(new Error("Failed to load source image"));
+        imgSource.src = source.objectURL;
+    });
+};
+
 interface RenovationProps {
     state: RenovationState;
     onStateChange: (newState: Partial<RenovationState>) => void;
@@ -93,9 +133,9 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Allow 4K generation via Flow if no mask is used
-        const useFlow = !maskImage; 
-        const promptForService = constructRenovationPrompt();
+        // Use Flow for ALL cases (Standard, 1K, 2K, 4K) even with Mask
+        const useFlow = true; 
+        let promptForService = constructRenovationPrompt();
 
         try {
             if (onDeductCredits) {
@@ -131,14 +171,31 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 let completedCount = 0;
                 let lastError: any = null;
 
+                // PREPARE INPUT IMAGES
+                let inputImages: FileData[] = [sourceImage];
+                
+                // MASK HANDLING
+                if (maskImage) {
+                     try {
+                        const composite = await createCompositeImage(sourceImage, maskImage);
+                        // If mask exists, send Original + Composite (Red Mask)
+                        inputImages = [sourceImage, composite];
+                        promptForService += " I have provided two images. The second image contains a RED MASK overlay indicating the specific area to renovate. Apply the renovation design ONLY to the masked area, blending it seamlessly with the rest of the original image.";
+                     } catch(e) {
+                        console.error("Composite creation failed", e);
+                        inputImages.push(maskImage);
+                        promptForService += " Use the second image as a mask for renovation.";
+                     }
+                }
+
+                if (referenceImages && referenceImages.length > 0) {
+                    inputImages.push(...referenceImages);
+                }
+
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
                         setStatusMessage('Đang xử lý. Vui lòng đợi...');
                         
-                        const inputImages: FileData[] = [];
-                        if (sourceImage) inputImages.push(sourceImage);
-                        if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
-
                         const result = await externalVideoService.generateFlowImage(
                             promptForService,
                             inputImages,
@@ -194,7 +251,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
 
             } else {
-                // --- GOOGLE API LOGIC (MASK or Fallback) ---
+                // --- GOOGLE API LOGIC (Fallback - Unreachable if useFlow=true) ---
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(

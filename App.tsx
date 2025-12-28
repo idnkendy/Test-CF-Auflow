@@ -38,9 +38,14 @@ import Spinner from './components/Spinner';
 import PublicPricing from './components/PublicPricing';
 import TermsOfServicePage from './components/TermsOfServicePage'; 
 import VideoPage from './components/VideoPage';
+import MaintenancePage from './components/MaintenancePage'; // Import Maintenance Page
 import { getUserStatus, deductCredits } from './services/paymentService';
 import { plans } from './constants/plans';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
+
+// --- CONFIGURATION ---
+const MAINTENANCE_MODE = true; // Set to true to enable maintenance mode
+// ---------------------
 
 // Helper functions for safe navigation history
 const safeHistoryPush = (path: string) => {
@@ -183,6 +188,11 @@ const App: React.FC = () => {
     fetchUserStatus();
   }, [fetchUserStatus, activeTool]); 
   
+  // MAINTENANCE MODE CHECK
+  if (MAINTENANCE_MODE) {
+      return <MaintenancePage />;
+  }
+
   const handleDeductCredits = async (amount: number, description?: string): Promise<string> => {
       if (!session?.user) throw new Error("Vui lòng đăng nhập để sử dụng.");
       const logId = await deductCredits(session.user.id, amount, description || '');
