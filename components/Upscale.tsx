@@ -106,7 +106,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         if (!runningHubTaskId) return;
 
         let attempts = 0;
-        const maxAttempts = 300; // ~10 minutes
+        const maxAttempts = 120; // ~10 minutes
 
         pollingIntervalRef.current = window.setInterval(async () => {
             if (attempts >= maxAttempts) {
@@ -134,7 +134,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             } catch (e) {
                 console.error("Polling error", e);
             }
-        }, 2000);
+        }, 5000);
 
         return () => {
             if (pollingIntervalRef.current) {
