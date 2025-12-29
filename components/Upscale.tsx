@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FileData, Tool } from '../types';
 import { UpscaleState } from '../state/toolState';
@@ -13,7 +14,30 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 // --- CONFIGURATION ---
 const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
 const UPSCALE_FAST_WEBAPP_ID = "1983430456135852034";
-// API KEY has been moved to backend (Cloudflare Worker) for security.
+// API Key has been removed and moved to Backend
+
+// Helper to fetch from local proxy
+const fetchProxy = async (endpoint: string, body: any) => {
+    // Determine backend URL (local dev vs prod)
+    // @ts-ignore
+    const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
+    
+    // Clean URL
+    const baseUrl = BACKEND_URL.replace(/\/$/, ""); 
+    const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
+    const url = `${baseUrl}${path}`;
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+    });
+
+    if (!response.ok) {
+        throw new Error(`Proxy error: ${response.status}`);
+    }
+    return await response.json();
+};
 
 interface UpscaleProps {
     state: UpscaleState;
@@ -33,7 +57,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
     const pollingIntervalRef = useRef<number | null>(null);
 
     // Cost logic
-    const cost = detailMode === 'fast' ? 5 : 20;
+    const cost = detailMode === 'fast' ? 20 : 30;
 
     // Cleanup polling on unmount
     useEffect(() => {
@@ -43,25 +67,6 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             }
         };
     }, []);
-
-    // Helper: Call Proxy
-    const callRunningHubProxy = async (endpoint: string, payload: any) => {
-        // FIX: Point to /api instead of /api/runninghub-proxy to avoid 405 on Cloudflare Pages
-        const response = await fetch('/api', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'runninghub_proxy', // Worker will route based on this action
-                endpoint: endpoint,
-                payload: payload
-            }),
-        });
-        
-        if (!response.ok) {
-            throw new Error(`Proxy Error: ${response.statusText}`);
-        }
-        return await response.json();
-    };
 
     // Helper: Upload to Supabase Storage
     const uploadToSupabase = async (fileData: FileData): Promise<string> => {
@@ -101,7 +106,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         if (!runningHubTaskId) return;
 
         let attempts = 0;
-        const maxAttempts = 120; // 5s * 120 = 600s = 10 minutes
+        const maxAttempts = 120; // ~10 minutes
 
         pollingIntervalRef.current = window.setInterval(async () => {
             if (attempts >= maxAttempts) {
@@ -111,9 +116,9 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             attempts++;
 
             try {
-                // Call Proxy for polling status
-                const data = await callRunningHubProxy('/task/openapi/outputs', {
-                    taskId: runningHubTaskId
+                // Call Backend Proxy for Check
+                const data = await fetchProxy('/upscale-check', { 
+                    taskId: runningHubTaskId 
                 });
 
                 if (data?.code === 0) {
@@ -129,7 +134,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             } catch (e) {
                 console.error("Polling error", e);
             }
-        }, 5000); // Check every 5 seconds
+        }, 5000);
 
         return () => {
             if (pollingIntervalRef.current) {
@@ -225,11 +230,13 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             if (detailMode === 'fast') {
                 runningHubPayload = {
                     webappId: UPSCALE_FAST_WEBAPP_ID,
+                    // ApiKey injected at Backend
                     nodeInfoList: [{ nodeId: "15", fieldName: "image", fieldValue: publicImageUrl, description: "Load Image" }]
                 };
             } else {
                 runningHubPayload = {
                     webappId: UPSCALE_QUALITY_WEBAPP_ID,
+                    // ApiKey injected at Backend
                     nodeInfoList: [
                         { nodeId: "41", fieldName: "image", fieldValue: publicImageUrl, description: "Ảnh gốc" },
                         { nodeId: "71", fieldName: "value", fieldValue: "0.25", description: "Mức độ thay đổi" }
@@ -237,10 +244,10 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                 };
             }
 
-            // 3. Call RunningHub via Proxy (Backend injects API Key)
-            const data = await callRunningHubProxy('/task/openapi/ai-app/run', runningHubPayload);
+            // 3. Call Backend Proxy
+            const data = await fetchProxy('/upscale-create', runningHubPayload);
 
-            if ((data.code && data.code !== 0) || !data.data?.taskId) {
+            if (!data || (data.code && data.code !== 0) || !data.data?.taskId) {
                 throw new Error(data.msg || 'Không thể bắt đầu tác vụ xử lý hình ảnh.');
             }
 
@@ -299,11 +306,11 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                             >
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="material-symbols-outlined text-yellow-500">bolt</span>
-                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Nhanh (Fast)</span>
+                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Nhanh (4K Fast)</span>
                                 </div>
                                 <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tăng độ nét cơ bản, giữ nguyên chi tiết gốc. Tốc độ cao.</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
-                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 5 Credits
+                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 20 Credits
                                 </div>
                             </button>
 
@@ -318,11 +325,11 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                             >
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="material-symbols-outlined text-purple-500">auto_awesome</span>
-                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Chi tiết (Quality)</span>
+                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Chi tiết (4K Quality)</span>
                                 </div>
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo chi tiết, thêm texture 4K, phù hợp in ấn.</p>
+                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo và nâng cao chi tiết, thêm texture 4K, phù hợp quy mô lớn.</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
-                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 20 Credits
+                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 30 Credits
                                 </div>
                             </button>
                         </div>
