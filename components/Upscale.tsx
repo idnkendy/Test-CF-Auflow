@@ -106,7 +106,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         if (!runningHubTaskId) return;
 
         let attempts = 0;
-        const maxAttempts = 120; // ~10 minutes
+        const maxAttempts = 300; // ~10 minutes
 
         pollingIntervalRef.current = window.setInterval(async () => {
             if (attempts >= maxAttempts) {
@@ -134,7 +134,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             } catch (e) {
                 console.error("Polling error", e);
             }
-        }, 5000);
+        }, 2000);
 
         return () => {
             if (pollingIntervalRef.current) {
@@ -270,14 +270,36 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         }
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (upscaledImages.length === 0) return;
-        const link = document.createElement('a');
-        link.href = upscaledImages[0];
-        link.download = `upscaled-${detailMode}-${Date.now()}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        const url = upscaledImages[0];
+        const filename = `upscaled-${detailMode}-${Date.now()}.png`;
+
+        try {
+            // Force fetch blob to download instead of opening new tab
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            // Cleanup
+            URL.revokeObjectURL(blobUrl);
+        } catch (e) {
+            console.error("Download failed, fallback to direct link", e);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = filename;
+            link.target = "_blank"; // Fallback to new tab if blob fetch fails (e.g. CORS)
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
     };
 
     return (
@@ -327,7 +349,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                                     <span className="material-symbols-outlined text-purple-500">auto_awesome</span>
                                     <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Chi tiết (4K Quality)</span>
                                 </div>
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo và nâng cao chi tiết, thêm texture 4K, phù hợp quy mô lớn.</p>
+                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo  và nâng cấp chi tiết, thêm texture 4K, phù hợp ảnh quy mô lớn.</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
                                     <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 30 Credits
                                 </div>
