@@ -33,7 +33,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
     const pollingIntervalRef = useRef<number | null>(null);
 
     // Cost logic
-    const cost = detailMode === 'fast' ? 5 : 20;
+    const cost = detailMode === 'fast' ? 20 : 30;
 
     // Cleanup polling on unmount
     useEffect(() => {
@@ -298,11 +298,11 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                             >
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="material-symbols-outlined text-yellow-500">bolt</span>
-                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Nhanh (Fast)</span>
+                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Nhanh (4K Fast)</span>
                                 </div>
                                 <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tăng độ nét cơ bản, giữ nguyên chi tiết gốc. Tốc độ cao.</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
-                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 5 Credits
+                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 20 Credits
                                 </div>
                             </button>
 
@@ -317,11 +317,11 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                             >
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="material-symbols-outlined text-purple-500">auto_awesome</span>
-                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Chi tiết (Quality)</span>
+                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Chi tiết (4K Quality)</span>
                                 </div>
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo chi tiết, thêm texture 4K, phù hợp in ấn.</p>
+                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo và nâng cấp chi tiết, thêm texture 4K, phù hợp quy mô lớn.</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
-                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 20 Credits
+                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 30 Credits
                                 </div>
                             </button>
                         </div>
