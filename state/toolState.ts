@@ -234,6 +234,8 @@ export interface UpscaleState {
     upscaledImages: string[];
     numberOfImages: number;
     resolution: ImageResolution;
+    detailMode: 'fast' | 'quality';
+    prompt: string;
 }
 
 export interface MoodboardGeneratorState {
@@ -507,6 +509,8 @@ export const initialToolStates = {
         upscaledImages: [],
         numberOfImages: 1,
         resolution: 'Standard',
+        detailMode: 'fast',
+        prompt: 'Tăng cường độ chi tiết và độ phân giải, làm cho nó sắc nét hơn.',
     } as UpscaleState,
     [Tool.Moodboard]: {
         prompt: 'Một phòng khách hiện đại và rộng rãi.',

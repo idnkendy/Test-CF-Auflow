@@ -15,8 +15,11 @@ const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 // UPDATED PROXY CONFIGURATION
 const ONEWISE_PROXY_URL_CREATE = "https://flow-api.nanoai.pics/api/fix/create-video-veo3";
 const ONEWISE_PROXY_URL_CHECK = "https://flow-api.nanoai.pics/api/fix/task-status";
-// Token mới được cập nhật từ yêu cầu của bạn
-const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjgzMzUwNn0.6Na_CBhl6Dl5MzP9lS7ufynkr4MNFCKjt8i0Kgu8pe4";
+// Updated Token from request
+const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjkwNzI2OH0.qd76QwKE8PCazfvyCmcgbyE0GV7VLQvJKCtxP4ADqcE";
+
+// --- SECURITY: RUNNINGHUB API KEY (Moved from Frontend) ---
+const RUNNINGHUB_API_KEY = '01a2e547c40744d4961df371645e981b';
 
 const HEADERS = {
     'content-type': 'text/plain;charset=UTF-8', 
@@ -101,7 +104,6 @@ async function incrementAccountUsage(env, accountId, currentUsage) {
     } catch (e) {}
 }
 
-// UPDATE: Added ignoreQuota parameter to force finding specific accounts even if full
 async function getAllAccounts(env, ignoreQuota = false) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
     const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
@@ -416,41 +418,79 @@ async function triggerUpscale(env, accounts, mediaId) {
     });
 }
 
-async function checkStatus(env, accounts, task_id, scene_id, account_id) {
-    // Determine which account(s) to use. If account_id is provided, restrict to that account.
-    let targetAccounts = accounts;
-    if (account_id) {
-        targetAccounts = accounts.filter(a => a.id === account_id);
-        if (targetAccounts.length === 0) {
-            // Fallback: If for some reason specific account is not in the list (e.g. inactive),
-            // we could either fail or try all. To be safe on status checks (read-only), we might try all,
-            // but for correct Auth context, we ideally want the specific one.
-            // Let's stick to failover behavior if specific not found, or maybe just try all as a hail mary?
-            // "Must use the same auth" implies failover won't work anyway.
-            // We will proceed with 'accounts' but it likely won't find the operation.
-            console.warn(`Specific account ${account_id} not found in available accounts list.`);
-        }
+async function checkStatus(env, accounts, googleOperationName, account_id) {
+    // 1. Locate specific account
+    const targetAccount = accounts.find(a => String(a.id) === String(account_id));
+    if (!targetAccount) {
+        return { status: 'failed', message: `Original account (ID: ${account_id}) not found or unavailable.` };
     }
 
-    return executeWithFailover(env, targetAccounts, "CheckStatus", async (authData) => {
+    return executeWithFailover(env, [targetAccount], "CheckStatus", async (authData) => {
         const { access_token: token, auth_cookies: cookies } = authData;
-        const payload = { "operations": [{ "operation": { "name": task_id }, "sceneId": scene_id, "status": "MEDIA_GENERATION_STATUS_ACTIVE" }] };
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchCheckAsyncVideoGenerationStatus', { method: 'POST', headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, 'cookie': cookies || '' }, body: JSON.stringify(payload) });
-        if (res.status === 404 || res.status === 403) throw new Error(`NotFound/Permission`);
-        if (!res.ok) throw new Error(`Check Status Failed`);
+        
+        // 2. Construct Google API Payload
+        const payload = { 
+            "operations": [{ 
+                "operation": { "name": googleOperationName }, 
+                "status": "MEDIA_GENERATION_STATUS_ACTIVE" 
+            }] 
+        };
+
+        // 3. Call Google API
+        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', { 
+            method: 'POST', 
+            headers: { 
+                ...HEADERS, 
+                'authorization': `Bearer ${cleanToken(token)}`, 
+            }, 
+            body: JSON.stringify(payload) 
+        });
+        
+        if (res.status === 404 || res.status === 403) {
+             throw new Error(`NotFound/Permission (Account ID: ${authData.id})`);
+        }
+        
+        if (!res.ok) throw new Error(`Check Status Failed (${res.status})`);
+        
         const data = await res.json();
         const opResult = data.operations?.[0];
-        if (!opResult) throw new Error("Operation not found");
+        
+        if (!opResult) throw new Error("Operation not found in response");
         const status = opResult.status;
+        
         if (["MEDIA_GENERATION_STATUS_SUCCESSFUL", "MEDIA_GENERATION_STATUS_COMPLETED", "DONE"].includes(status)) {
-            let vidUrl = opResult.operation?.metadata?.video?.fifeUrl || opResult.videoFiles?.[0]?.url || opResult.response?.videoUrl;
-            let mediaId = opResult.response?.id || opResult.operation?.response?.id || opResult.mediaGenerationId;
+            // Enhanced extraction for Veo 3.1 structure
+            let vidUrl = 
+                opResult.operation?.metadata?.video?.fifeUrl || 
+                opResult.result?.video?.url || 
+                opResult.result?.video?.fifeUrl || 
+                opResult.operation?.response?.video?.url ||
+                opResult.videoFiles?.[0]?.url || 
+                opResult.response?.videoUrl;
+
+            let mediaId = 
+                opResult.mediaGenerationId ||
+                opResult.result?.id ||
+                opResult.response?.id || 
+                opResult.operation?.response?.id;
+
+            // Deep search in metadata if not found at top level
+            if (!vidUrl && opResult.operation?.metadata?.video?.servingBaseUri) {
+                 vidUrl = opResult.operation.metadata.video.fifeUrl;
+            }
+
             if (vidUrl) return { status: 'completed', video_url: vidUrl, mediaId: mediaId };
-            return { status: 'failed', message: 'Video URL not found' };
+            
+            const debugKeys = JSON.stringify(opResult).substring(0, 200);
+            return { status: 'failed', message: `Video URL not found in successful response. Preview: ${debugKeys}...` };
         }
+        
         if (status === "MEDIA_GENERATION_STATUS_FAILED") {
-             let errorMsg = JSON.stringify(opResult);
-             try { if (opResult.operation?.error?.message) errorMsg = opResult.operation.error.message; } catch(e) {}
+             let errorMsg = "Generation Failed";
+             try { 
+                 if (opResult.operation?.error?.message) errorMsg = opResult.operation.error.message;
+                 else if (opResult.error?.message) errorMsg = opResult.error.message;
+             } catch(e) {}
              return { status: 'failed', message: errorMsg };
         }
         return { status: 'processing' };
@@ -515,7 +555,30 @@ export default {
                 else if (path.includes('/flow-upscale')) action = 'flow_upscale'; 
                 else if (path.includes('/upscale')) action = 'upscale';
                 else if (path.includes('/check')) action = 'check';
+                else if (path.includes('/runninghub-proxy')) action = 'runninghub_proxy';
             }
+            
+            // --- NEW: RunningHub Proxy Action ---
+            if (action === 'runninghub_proxy') {
+                const { endpoint, payload } = body;
+                if (!endpoint) return sendJson({ error: 'Endpoint missing' }, 400);
+                
+                // Construct upstream URL
+                const upstreamUrl = `https://www.runninghub.ai${endpoint}`;
+                
+                // Inject API Key safely
+                const safePayload = { ...payload, apiKey: RUNNINGHUB_API_KEY };
+                
+                const proxyRes = await fetch(upstreamUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(safePayload)
+                });
+                
+                const data = await proxyRes.json();
+                return sendJson(data, proxyRes.status);
+            }
+            
             if (action === 'gemini_proxy') {
                 const { data, status } = await handleGeminiProxy(body, env, request);
                 return sendJson(data, status); 
@@ -541,7 +604,6 @@ export default {
                 const result = await triggerFlowMediaCreate(env, accounts, body.prompt, body.image, body.imageAspectRatio, count, modelName, body.images);
                 return sendJson(result);
             } else if (action === 'flow_upscale') {
-                // FIXED: Use getAllAccounts(env, true) to ignore quota when finding specific account
                 const allAccounts = await getAllAccounts(env, true);
                 
                 let specificAccounts = [];
@@ -549,13 +611,10 @@ export default {
                     specificAccounts = allAccounts.filter(acc => acc.project_id === body.projectId);
                 }
                 
-                // CRITICAL FIX: Fail immediately if account not found instead of falling back to random account
-                // This prevents the 400 error (Forbidden/Not Found) from Google
                 if (body.projectId && specificAccounts.length === 0) {
                     return sendJson({ status: 'failed', message: `Account not found for Project ID: ${body.projectId}. Cannot upscale.` }, 400);
                 }
 
-                // If specific account found, use it. Otherwise (no project ID provided), fallback to all.
                 const accountsToUse = specificAccounts.length > 0 ? specificAccounts : allAccounts;
                 const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId, body.targetResolution);
                 return sendJson(result);
@@ -568,62 +627,53 @@ export default {
                 const result = await triggerUpscale(env, accounts, body.mediaId);
                 return sendJson(result);
             } else if (action === 'check') {
-                let googleOperationName = body.task_id; // Default assumption
-                let googleSceneId = body.scene_id;
-                const targetAccountId = body.account_id; // Retrieve specific account ID
+                const { task_id, account_id } = body;
+                let googleOperationName = null;
 
-                // GIAI ĐOẠN 1: Nếu task_id là UUID (từ Proxy), cần giải mã để lấy Google Operation Name & Scene ID
-                if (googleOperationName && typeof googleOperationName === 'string' && googleOperationName.length === 36 && googleOperationName.includes('-')) {
+                // Step 1: Resolve UUID from Proxy
+                if (task_id && task_id.length > 20 && task_id.includes('-')) {
                      try {
-                         // Bước 1: Gọi Proxy để lấy thông tin task
-                         const proxyUrl = `${ONEWISE_PROXY_URL_CHECK}?taskId=${googleOperationName}`;
-                         const proxyRes = await safeFetchUpstream(proxyUrl, {
+                         const proxyUrl = `${ONEWISE_PROXY_URL_CHECK}?taskId=${task_id}`;
+                         const proxyRes = await fetch(proxyUrl, {
                              method: 'GET',
                              headers: {
                                  'Authorization': ONEWISE_PROXY_AUTH,
                                  'Content-Type': 'application/json'
                              }
                          });
+                         const proxyData = await proxyRes.json();
 
-                         if (proxyRes.ok && proxyRes.data?.success) {
-                             // Bước 2: Lấy name và sceneId từ response của Proxy
-                             const operations = proxyRes.data.result?.operations;
-                             
-                             if (operations && operations.length > 0) {
-                                 const opData = operations[0];
-                                 
-                                 // Ưu tiên lấy name từ root hoặc operation.name
-                                 let extractedName = opData.name;
-                                 if (!extractedName && opData.operation) extractedName = opData.operation.name;
-                                 
-                                 // Ưu tiên lấy sceneId từ metadata hoặc root
-                                 let extractedSceneId = opData.metadata?.sceneId;
-                                 if (!extractedSceneId) extractedSceneId = opData.sceneId;
+                         if (!proxyData.success) {
+                             // Retry logic handled by frontend polling
+                             return sendJson({ status: 'processing', message: "Initializing task..." });
+                         }
 
-                                 if (extractedName) {
-                                     // Cập nhật biến để dùng cho Giai đoạn 2
-                                     googleOperationName = extractedName;
-                                     if (extractedSceneId) googleSceneId = extractedSceneId;
-                                 } else {
-                                     return sendJson({ status: 'processing', message: "Waiting for Google operation allocation..." });
-                                 }
-                             } else {
-                                 return sendJson({ status: 'processing', message: "Initializing task..." });
-                             }
+                         const operations = proxyData.result?.operations;
+                         if (operations && operations.length > 0) {
+                             const opData = operations[0];
+                             // Extract name (e.g., "fa8f...")
+                             googleOperationName = opData.operation?.name || opData.name;
                          } else {
-                             return sendJson({ status: 'failed', message: "Task not found in Proxy system" });
+                             return sendJson({ status: 'processing', message: "Waiting for operation allocation..." });
                          }
                      } catch (e) {
-                         console.error("Proxy ID Resolution Error:", e);
-                         return sendJson({ status: 'failed', message: `Proxy Resolution Error: ${e.message}` });
+                         console.error("Proxy Resolution Error:", e);
+                         return sendJson({ status: 'processing', message: "Connecting to task registry..." });
                      }
+                } else {
+                    // Assuming existing non-UUID is already a name
+                    googleOperationName = task_id;
                 }
 
-                // GIAI ĐOẠN 2: Dùng Name và Scene ID để check status với Google API
-                // Sử dụng getAllAccounts(env, true) để lấy cả những account đã full quota (vẫn cần check status)
-                const accounts = await getAllAccounts(env, true);
-                const result = await checkStatus(env, accounts, googleOperationName, googleSceneId, targetAccountId);
-                return sendJson(result);
+                // Step 2: Check Google API if Name is resolved
+                if (googleOperationName) {
+                    const accounts = await getAllAccounts(env, true);
+                    const result = await checkStatus(env, accounts, googleOperationName, account_id);
+                    return sendJson(result);
+                }
+
+                return sendJson({ status: 'processing', message: "Waiting for operation name..." });
+
             } else {
                 return sendJson({ status: "ok", message: "Cloudflare Worker is running", request_path: path });
             }
