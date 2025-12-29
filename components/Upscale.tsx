@@ -33,7 +33,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
     const pollingIntervalRef = useRef<number | null>(null);
 
     // Cost logic
-    const cost = detailMode === 'fast' ? 20 : 30;
+    const cost = detailMode === 'fast' ? 5 : 20;
 
     // Cleanup polling on unmount
     useEffect(() => {
@@ -46,11 +46,12 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
 
     // Helper: Call Proxy
     const callRunningHubProxy = async (endpoint: string, payload: any) => {
-        const response = await fetch('/api/runninghub-proxy', {
+        // FIX: Point to /api instead of /api/runninghub-proxy to avoid 405 on Cloudflare Pages
+        const response = await fetch('/api', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-                action: 'runninghub_proxy',
+                action: 'runninghub_proxy', // Worker will route based on this action
                 endpoint: endpoint,
                 payload: payload
             }),
@@ -298,11 +299,11 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                             >
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="material-symbols-outlined text-yellow-500">bolt</span>
-                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Nhanh (4K Fast)</span>
+                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Nhanh (Fast)</span>
                                 </div>
                                 <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tăng độ nét cơ bản, giữ nguyên chi tiết gốc. Tốc độ cao.</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
-                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 20 Credits
+                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 5 Credits
                                 </div>
                             </button>
 
@@ -317,11 +318,11 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                             >
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="material-symbols-outlined text-purple-500">auto_awesome</span>
-                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Chi tiết (4K Quality)</span>
+                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Chi tiết (Quality)</span>
                                 </div>
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo và nâng cấp chi tiết, thêm texture 4K, phù hợp quy mô lớn.</p>
+                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo chi tiết, thêm texture 4K, phù hợp in ấn.</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
-                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 30 Credits
+                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 20 Credits
                                 </div>
                             </button>
                         </div>
