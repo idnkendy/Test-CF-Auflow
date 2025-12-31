@@ -916,9 +916,10 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     };
 
     const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
-    const activeMainVideoUrl = (timelineItems.length > 0 || isPlayingAll) 
+    // Explicitly fallback to null to ensure strict typing
+    const activeMainVideoUrl = ((timelineItems.length > 0 || isPlayingAll) 
         ? timelineItems[currentPlayingIndex]?.videoUrl 
-        : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl || null);
+        : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl)) || null;
 
     return (
         <div className="h-[100dvh] bg-main-bg dark:bg-dark-bg font-sans flex flex-col overflow-hidden text-text-primary dark:text-white transition-colors duration-300">

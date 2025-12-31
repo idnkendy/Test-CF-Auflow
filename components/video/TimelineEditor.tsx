@@ -17,10 +17,10 @@ interface TimelineEditorProps {
     currentPlayingIndex: number;
     activeMainVideoUrl: string | null;
     isSingleGenerating: boolean;
-    mainVideoRef: React.RefObject<HTMLVideoElement>;
-    audioRef: React.RefObject<HTMLAudioElement>;
-    videoInputRef: React.RefObject<HTMLInputElement>;
-    timelineContainerRef: React.RefObject<HTMLDivElement>;
+    mainVideoRef: React.RefObject<HTMLVideoElement | null>;
+    audioRef: React.RefObject<HTMLAudioElement | null>;
+    videoInputRef: React.RefObject<HTMLInputElement | null>;
+    timelineContainerRef: React.RefObject<HTMLDivElement | null>;
     
     // Handlers
     onTogglePlayPause: () => void;
