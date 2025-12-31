@@ -11,7 +11,7 @@ const POLL_INTERVAL = 10000;
 const TIMEOUT_DURATION = 300000; 
 const MAX_POLL_ATTEMPTS = Math.ceil(TIMEOUT_DURATION / POLL_INTERVAL);
 
-// ... existing generateUUID, getImageDimensions, resizeAndCropImage, formatErrorMessage, fetchJson ...
+// ... existing generateUUID, getImageDimensions ...
 const generateUUID = () => {
     if (typeof crypto !== 'undefined' && crypto.randomUUID) {
         return crypto.randomUUID();
@@ -34,7 +34,8 @@ const getImageDimensions = (fileData: FileData): Promise<{width: number, height:
 export const resizeAndCropImage = async (
     fileData: FileData, 
     aspectRatio: '16:9' | '9:16' | '1:1' | 'default' = '16:9',
-    tier: 'standard' | 'pro' = 'pro'
+    tier: 'standard' | 'pro' = 'pro',
+    fitMode: 'cover' | 'contain' = 'cover' // New parameter
 ): Promise<string> => {
     return new Promise((resolve, reject) => {
         const img = new Image();
@@ -80,16 +81,23 @@ export const resizeAndCropImage = async (
             ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, targetWidth, targetHeight);
 
-            const scaleCover = Math.max(targetWidth / img.width, targetHeight / img.height);
+            let scale;
+            if (fitMode === 'contain') {
+                scale = Math.min(targetWidth / img.width, targetHeight / img.height);
+            } else {
+                // cover
+                scale = Math.max(targetWidth / img.width, targetHeight / img.height);
+            }
             
-            const renderWidth = img.width * scaleCover;
-            const renderHeight = img.height * scaleCover;
+            const renderWidth = img.width * scale;
+            const renderHeight = img.height * scale;
             const offsetX = (targetWidth - renderWidth) / 2;
             const offsetY = (targetHeight - renderHeight) / 2;
 
             ctx.drawImage(img, offsetX, offsetY, renderWidth, renderHeight);
             
-            const quality = isStandard ? 0.85 : 0.9;
+            // USE MAX QUALITY to preserve original look as much as possible
+            const quality = 1.0; 
             const compressedDataUrl = canvas.toDataURL('image/jpeg', quality);
             resolve(compressedDataUrl);
         };
@@ -159,7 +167,21 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     }
 };
 
-// ... existing flow media functions (generateFlowImage, upscaleFlowImage) ...
+export const proxyDownload = async (targetUrl: string): Promise<Blob> => {
+    let url = `/proxy-download?url=${encodeURIComponent(targetUrl)}`;
+    
+    // Explicitly use BACKEND_URL logic if available to match other services
+    if (BACKEND_URL && !url.startsWith('http')) {
+         const baseUrl = BACKEND_URL.replace(/\/$/, "");
+         url = `${baseUrl}/proxy-download?url=${encodeURIComponent(targetUrl)}`;
+    }
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("Proxy download failed");
+    return await res.blob();
+}
+
+// ... existing flow media functions ...
 export const generateFlowImage = async (
     prompt: string,
     inputImages: FileData[] | FileData = [], 
@@ -181,7 +203,8 @@ export const generateFlowImage = async (
 
     for (const img of imagesToProcess) {
         try {
-            const imageData = await resizeAndCropImage(img, ratioType, tier);
+            // Keep 'cover' for Flow Image Generation
+            const imageData = await resizeAndCropImage(img, ratioType, tier, 'cover');
             processedImages.push(imageData);
         } catch (e) {
             processedImages.push(`data:${img.mimeType};base64,${img.base64}`);
@@ -279,15 +302,18 @@ export const upscaleFlowImage = async (mediaId: string, projectId: string | unde
     throw new Error("Upscale Timeout");
 };
 
-// ... _executeVideoGeneration (Single Image) ...
+// ... _executeVideoGeneration (Single or Double Image) ...
 async function _executeVideoGeneration(
     prompt: string, 
     startImage?: FileData, 
-    aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
+    aspectRatio: '16:9' | '9:16' | 'default' = '16:9',
+    endImage?: FileData // Added optional end image
 ): Promise<{ videoUrl: string, mediaId?: string }> {
     let effectiveRatio: '16:9' | '9:16' = '16:9'; 
-    let imageBase64 = null;
+    let startImageBase64 = null;
+    let endImageBase64 = null;
 
+    // --- Prepare Ratio & Start Image ---
     if (startImage) {
         if (aspectRatio === 'default') {
             const dims = await getImageDimensions(startImage);
@@ -296,13 +322,25 @@ async function _executeVideoGeneration(
             effectiveRatio = aspectRatio;
         }
         try {
-            const compressed = await resizeAndCropImage(startImage, aspectRatio, 'pro');
-            imageBase64 = compressed.split(',')[1];
+            // Use 'contain' fit mode for Video Generation to preserve image via black bars
+            const compressed = await resizeAndCropImage(startImage, aspectRatio, 'pro', 'contain');
+            startImageBase64 = compressed.split(',')[1];
         } catch (e) {
-            imageBase64 = startImage.base64;
+            startImageBase64 = startImage.base64;
         }
     } else {
         effectiveRatio = aspectRatio === 'default' ? '16:9' : aspectRatio as '16:9' | '9:16';
+    }
+
+    // --- Prepare End Image (if present) ---
+    if (endImage) {
+        try {
+            // Resize end image to match same aspect ratio with 'contain'
+            const compressedEnd = await resizeAndCropImage(endImage, effectiveRatio, 'pro', 'contain');
+            endImageBase64 = compressedEnd.split(',')[1];
+        } catch (e) {
+            endImageBase64 = endImage.base64;
+        }
     }
 
     let imageAspectEnum = "IMAGE_ASPECT_RATIO_LANDSCAPE"; 
@@ -324,9 +362,13 @@ async function _executeVideoGeneration(
         videoAspectRatio: videoAspectEnum 
     };
 
-    if (imageBase64) {
-        triggerBody.image = imageBase64;
+    if (startImageBase64) {
+        triggerBody.image = startImageBase64;
         triggerBody.imageAspectRatio = imageAspectEnum;
+    }
+    
+    if (endImageBase64) {
+        triggerBody.endImage = endImageBase64;
     }
 
     const triggerData = await fetchJson('/create', {
@@ -369,14 +411,15 @@ export const generateVideoExternal = async (
     prompt: string, 
     backendUrl: string, 
     startImage?: FileData, 
-    aspectRatio: '16:9' | '9:16' | 'default' = '16:9'
+    aspectRatio: '16:9' | '9:16' | 'default' = '16:9',
+    endImage?: FileData
 ): Promise<{ videoUrl: string, mediaId?: string }> => {
     try {
-        return await _executeVideoGeneration(prompt, startImage, aspectRatio);
+        return await _executeVideoGeneration(prompt, startImage, aspectRatio, endImage);
     } catch (error: any) {
         if (error.message === 'TIMEOUT_ERROR') {
             try {
-                return await _executeVideoGeneration(prompt, startImage, aspectRatio);
+                return await _executeVideoGeneration(prompt, startImage, aspectRatio, endImage);
             } catch (retryError: any) {
                 throw retryError; 
             }
@@ -403,8 +446,9 @@ export const generateVideoWithReferences = async (
     }
 
     // 2. Prepare Images (Resize Client Side) - DO NOT UPLOAD HERE
-    const sceneBase64 = await resizeAndCropImage(sceneImage, effectiveRatio, 'pro');
-    const charBase64 = await resizeAndCropImage(characterImage, effectiveRatio, 'pro');
+    // Use 'contain' to preserve character/scene details with black bars if ratios don't match
+    const sceneBase64 = await resizeAndCropImage(sceneImage, effectiveRatio, 'pro', 'contain');
+    const charBase64 = await resizeAndCropImage(characterImage, effectiveRatio, 'pro', 'contain');
 
     // 3. Send Everything to Backend (Atomic Request)
     const triggerData = await fetchJson('/create', {

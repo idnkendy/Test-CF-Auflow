@@ -7,6 +7,7 @@ interface MultiImageUploadProps {
   onFilesChange: (files: FileData[]) => void;
   maxFiles?: number;
   className?: string;
+  gridClassName?: string;
 }
 
 const PlusIcon = () => (
@@ -27,7 +28,7 @@ const XIcon = () => (
     </svg>
 );
 
-const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxFiles = 12, className = "" }) => {
+const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxFiles = 12, className = "", gridClassName }) => {
     const [files, setFiles] = useState<FileData[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -122,6 +123,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
         }
     }, [files, maxFiles, onFilesChange]);
 
+    const finalGridClass = gridClassName || 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5';
 
     return (
         <div 
@@ -161,7 +163,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
             ) : (
                 // POPULATED STATE: Grid + Small Add Button
                 // Also setting min-h to prevent layout jump and keep it substantial
-                <div className={`grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3 transition-all duration-300 p-3 border-2 border-dashed rounded-xl content-start overflow-y-auto w-full min-h-[350px] max-h-[500px] ${isDragging ? 'border-accent bg-accent/5' : 'border-transparent bg-gray-50/50 dark:bg-black/20'}`}>
+                <div className={`grid ${finalGridClass} gap-3 transition-all duration-300 p-3 border-2 border-dashed rounded-xl content-start overflow-y-auto w-full min-h-[350px] max-h-[500px] ${isDragging ? 'border-accent bg-accent/5' : 'border-transparent bg-gray-50/50 dark:bg-black/20'}`}>
                     {files.map(file => (
                         <div key={file.objectURL} className="relative group aspect-square bg-main-bg dark:bg-gray-800 rounded-lg overflow-hidden border border-border-color dark:border-gray-700 shadow-sm hover:shadow-md transition-all">
                             <img src={file.objectURL} alt="Preview" className="w-full h-full object-cover" />

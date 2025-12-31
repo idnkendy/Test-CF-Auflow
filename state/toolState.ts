@@ -266,7 +266,8 @@ export interface VideoContextItem {
 export interface VideoGeneratorState {
     prompt: string;
     startImage: FileData | null;
-    characterImage: FileData | null; // New: Character reference image
+    endImage?: FileData | null; // Added: Optional end image for transitions
+    characterImage: FileData | null; 
     contextItems: VideoContextItem[];
     selectedContextId: string | null;
     isLoading: boolean;
@@ -526,6 +527,7 @@ export const initialToolStates = {
     [Tool.VideoGeneration]: {
         prompt: 'Tạo video time-lapse cho thấy tòa nhà chuyển từ cảnh ban ngày nắng đẹp sang cảnh ban đêm được chiếu sáng đẹp mắt.',
         startImage: null,
+        endImage: null,
         characterImage: null,
         contextItems: [],
         selectedContextId: null,

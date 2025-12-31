@@ -19,21 +19,19 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
 
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            // OPTIMIZATION: Limit max dimension to 2048px (Enhanced for Gemini Pro Image quality)
-            const MAX_WIDTH = 2048;
-            const MAX_HEIGHT = 2048;
+            // OPTIMIZATION: Limit max dimension to 2000px as requested
+            const MAX_SIZE = 2000;
             let width = img.width;
             let height = img.height;
 
-            if (width > height) {
-                if (width > MAX_WIDTH) {
-                    height *= MAX_WIDTH / width;
-                    width = MAX_WIDTH;
-                }
-            } else {
-                if (height > MAX_HEIGHT) {
-                    width *= MAX_HEIGHT / height;
-                    height = MAX_HEIGHT;
+            // Only resize if the image is larger than the limit
+            if (width > MAX_SIZE || height > MAX_SIZE) {
+                if (width > height) {
+                    height = Math.round(height * (MAX_SIZE / width));
+                    width = MAX_SIZE;
+                } else {
+                    width = Math.round(width * (MAX_SIZE / height));
+                    height = MAX_SIZE;
                 }
             }
 
@@ -49,12 +47,18 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
             // Fill white background (handles transparent PNGs converting to JPEG)
             ctx.fillStyle = '#FFFFFF';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
+            
+            // Use high quality settings
+            ctx.imageSmoothingEnabled = true;
+            ctx.imageSmoothingQuality = 'high';
+            
             ctx.drawImage(img, 0, 0, width, height);
 
-            // Compress to JPEG 85% - Higher quality for higher resolution
-            const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+            // Keep original quality (1.0) - No compression, just format conversion
+            const quality = 1.0;
+            const dataUrl = canvas.toDataURL('image/jpeg', quality);
             
-            // Create a new blob URL from the compressed data for efficient rendering
+            // Create a new blob URL from the data
             canvas.toBlob((blob) => {
                 URL.revokeObjectURL(objectURL); // Clean up original
                 if (blob) {
@@ -67,7 +71,7 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
                 } else {
                     reject(new Error("Compression failed"));
                 }
-            }, 'image/jpeg', 0.85);
+            }, 'image/jpeg', quality);
         };
 
         img.onerror = (e) => {
@@ -230,7 +234,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        <p className="text-sm text-gray-500">Đang tối ưu & nén ảnh...</p>
+                        <p className="text-sm text-gray-500">Đang xử lý ảnh...</p>
                     </div>
                 ) : (
                     <>

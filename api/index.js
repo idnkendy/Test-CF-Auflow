@@ -264,28 +264,50 @@ async function triggerGenerationWithRefs(env, accounts, prompt, videoAspectRatio
 }
 
 // ... existing triggerGeneration ...
-async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRatio, imageData, imageAspectRatio) {
+async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRatio, imageData, imageAspectRatio, endImageData) {
     return executeWithFailover(env, accounts, "CreateVideo", async (authData) => {
         const { access_token: token, project_id: projectId, id: accountId } = authData;
         let activeMediaId = mediaId;
+        
+        // Upload Start Image
         if (imageData) {
             activeMediaId = await performUpload(authData, imageData, imageAspectRatio);
+        }
+        
+        // Upload End Image (if present)
+        let activeEndMediaId = null;
+        if (endImageData) {
+            activeEndMediaId = await performUpload(authData, endImageData, imageAspectRatio);
         }
         
         const sceneId = crypto.randomUUID();
         const sessionId = ";" + Date.now();
         const aspectRatioEnum = videoAspectRatio || "VIDEO_ASPECT_RATIO_LANDSCAPE";
         const isI2V = !!activeMediaId;
+        const isDoubleImage = !!(activeMediaId && activeEndMediaId);
         
         let modelKey = "";
-        if (isI2V) {
+        let googleUrl = "";
+
+        if (isDoubleImage) {
+            // Case 3: Start Image + End Image
+            modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
+               ? "veo_3_1_i2v_s_fast_portrait_ultra_fl" // Inferred portrait fl key
+               : "veo_3_1_i2v_s_fast_ultra_fl";
+            
+            googleUrl = 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartEndImage';
+        } else if (isI2V) {
+            // Case 2: Image to Video (Start Only)
              modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
                 ? "veo_3_1_i2v_s_fast_portrait_ultra" 
                 : "veo_3_1_i2v_s_fast_ultra";
+             googleUrl = 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage';
         } else {
+            // Case 1: Text to Video
              modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT")
                 ? "veo_3_1_t2v_fast_portrait_ultra"
                 : "veo_3_1_t2v_fast_ultra";
+             googleUrl = 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoText';
         }
 
         const requestItem = {
@@ -296,13 +318,12 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
             "metadata": { "sceneId": sceneId }
         };
 
-        if (isI2V) {
+        if (isDoubleImage) {
+            requestItem.startImage = { "mediaId": activeMediaId };
+            requestItem.endImage = { "mediaId": activeEndMediaId };
+        } else if (isI2V) {
             requestItem.startImage = { "mediaId": activeMediaId };
         }
-
-        const googleUrl = isI2V 
-            ? 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage'
-            : 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoText';
 
         const payload = {
             "body_json": {
@@ -450,7 +471,7 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
             }] 
         };
 
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', { 
+        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchCheckAsyncVideoGenerationStatus', { 
             method: 'POST', 
             headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, }, 
             body: JSON.stringify(payload) 
@@ -506,7 +527,7 @@ async function handleSePayWebhook(request, env) {
     } catch (e) { return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 }); }
 }
 
-// ... existing handleProxyDownload ...
+// ... Updated handleProxyDownload to mimic Python headers ...
 async function handleProxyDownload(request) {
     const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Expose-Headers': 'Content-Length, Content-Type' };
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -515,7 +536,19 @@ async function handleProxyDownload(request) {
         if (request.method === 'POST') { const body = await request.json(); url = body.url; } 
         else { const u = new URL(request.url); url = u.searchParams.get('url'); }
         if (!url) return new Response("Missing URL", { status: 400, headers: corsHeaders });
-        const response = await fetch(url);
+        
+        // Ensure headers mimic the allowed client
+        const proxyHeaders = {
+            ...HEADERS,
+            // Don't force content-type on GET download
+            'content-type': undefined
+        };
+
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: proxyHeaders
+        });
+        
         const newHeaders = new Headers(response.headers);
         newHeaders.set('Access-Control-Allow-Origin', '*');
         newHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
@@ -604,7 +637,7 @@ export default {
                     const result = await triggerGenerationWithRefs(env, accounts, body.prompt, body.videoAspectRatio, body.referenceImages);
                     return sendJson(result);
                 } else {
-                    const result = await triggerGeneration(env, accounts, body.prompt, body.mediaId, body.videoAspectRatio, body.image, body.imageAspectRatio);
+                    const result = await triggerGeneration(env, accounts, body.prompt, body.mediaId, body.videoAspectRatio, body.image, body.imageAspectRatio, body.endImage);
                     return sendJson(result);
                 }
             } else if (action === 'flow_create' || action === 'flow_media_create') {
