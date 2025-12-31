@@ -1,4 +1,5 @@
 
+
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
@@ -10,7 +11,8 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
+// Fix: Explicitly extend React.Component to ensure instance properties like setState and props are correctly typed and inherited
+export class ErrorBoundary extends React.Component<Props, State> {
   public state: State = {
     hasError: false,
     error: null,
@@ -30,6 +32,7 @@ export class ErrorBoundary extends Component<Props, State> {
   };
 
   private handleReset = () => {
+      // Fix: Now correctly inherits setState from React.Component to resolve "Property 'setState' does not exist" error
       this.setState({ hasError: false, error: null });
       // Optional: Clear specific local storage if needed to reset bad state
       localStorage.removeItem('activeTool'); 
@@ -77,6 +80,7 @@ export class ErrorBoundary extends Component<Props, State> {
       );
     }
 
+    // Fix: Now correctly inherits props from React.Component to resolve "Property 'props' does not exist" error
     return this.props.children;
   }
 }

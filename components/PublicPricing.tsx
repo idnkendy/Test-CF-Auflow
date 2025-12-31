@@ -6,7 +6,7 @@ import { plans } from '../constants/plans';
 import { Session } from '@supabase/supabase-js';
 
 // --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
-const IS_PAYMENT_MAINTENANCE = true;
+const IS_PAYMENT_MAINTENANCE = false;
 
 // --- ICONS ---
 const CheckIcon = () => (

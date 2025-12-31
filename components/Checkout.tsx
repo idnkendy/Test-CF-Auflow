@@ -4,7 +4,7 @@ import { PricingPlan } from '../types';
 import { plans } from '../constants/plans';
 
 // --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
-const IS_PAYMENT_MAINTENANCE = true;
+const IS_PAYMENT_MAINTENANCE = false;
 
 const CheckIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500 dark:text-green-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">

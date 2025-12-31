@@ -18,7 +18,7 @@ const ACCOUNT_NO = "3039798899";
 const ACCOUNT_NAME = "CONG TY TNHH AUFLOW AI";
 
 // --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
-const IS_PAYMENT_MAINTENANCE = true;
+const IS_PAYMENT_MAINTENANCE = false;
 
 // --- ICONS ---
 const CopyIcon = () => (
