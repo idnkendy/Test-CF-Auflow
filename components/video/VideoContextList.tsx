@@ -65,7 +65,7 @@ const VideoContextList: React.FC<VideoContextListProps> = ({
                                 </button>
 
                                 {item.videoUrl ? (
-                                    // DISPLAY VIDEO + OPTIONS (Result Card)
+                                    // DISPLAY VIDEO + OPTIONS
                                     <div className="flex flex-col h-full">
                                         <div className={`bg-black relative group w-full ${videoState.aspectRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video'}`}>
                                             <video 
@@ -125,7 +125,7 @@ const VideoContextList: React.FC<VideoContextListProps> = ({
                                         </div>
                                     </div>
                                 ) : (
-                                    // DISPLAY IMAGE + GENERATE FORM (Pending Card - Styled to match request)
+                                    // DISPLAY IMAGE + GENERATE FORM
                                     <>
                                         <div className={`bg-black relative group w-full ${videoState.aspectRatio === '9:16' ? 'aspect-[9/16]' : 'aspect-video'}`}>
                                             <img src={item.file.objectURL} alt="Source" className={`w-full h-full ${videoState.aspectRatio === 'default' ? 'object-contain' : 'object-cover'} opacity-90`} />
@@ -144,36 +144,38 @@ const VideoContextList: React.FC<VideoContextListProps> = ({
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="p-3 flex flex-col gap-2 flex-grow bg-[#1E1E1E]">
+                                        <div className="p-3 flex flex-col gap-2 flex-grow bg-white dark:bg-[#1E1E1E]">
                                             <textarea 
                                                 value={item.prompt}
                                                 onChange={(e) => onPromptChange(item.id, e.target.value)}
-                                                className="w-full bg-[#121212] border border-[#302839] rounded-lg p-3 text-xs text-gray-200 placeholder-gray-600 focus:border-[#7f13ec] focus:ring-1 focus:ring-[#7f13ec] focus:outline-none resize-none h-20 mb-1"
+                                                className="w-full bg-gray-50 dark:bg-[#121212] border border-border-color dark:border-[#302839] rounded-lg p-2 text-xs text-text-primary dark:text-gray-300 focus:border-[#7f13ec] focus:outline-none resize-none h-16 mb-1"
                                                 placeholder="Mô tả video..."
                                                 disabled={item.isGeneratingVideo}
                                             />
-                                            <div className="mt-auto pt-2">
-                                                <div className="flex items-center justify-between mb-3 px-1">
-                                                     <div className="flex items-center gap-1.5 bg-[#252525] border border-[#302839] px-2 py-1.5 rounded-md shadow-sm">
-                                                        <div className="w-3.5 h-3.5 rounded-full bg-yellow-500/10 flex items-center justify-center border border-yellow-500/30">
-                                                            <span className="material-symbols-outlined text-yellow-500 text-[10px] font-bold">currency_bitcoin</span>
-                                                        </div>
-                                                        <span className="text-white text-[10px] sm:text-xs font-bold">5 credits</span>
+                                            <div className="mt-auto">
+                                                <div className="flex items-center justify-between bg-gray-50 dark:bg-[#121212] p-2.5 rounded-lg border border-border-color dark:border-[#302839] mb-2">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="material-symbols-outlined text-yellow-500 text-base notranslate">monetization_on</span>
+                                                        <span className="font-bold text-gray-700 dark:text-gray-200 text-sm">5 Credits</span>
                                                     </div>
-                                                    <span className={`text-[10px] sm:text-xs font-bold ${
-                                                        (userStatus?.credits || 0) >= 5 ? 'text-[#4ADE80]' : 'text-red-500'
-                                                    }`}>
+                                                    <div className={`text-xs font-semibold ${(userStatus?.credits || 0) < 5 ? 'text-red-500' : 'text-green-500'}`}>
                                                         Khả dụng: {userStatus?.credits || 0}
-                                                    </span>
+                                                    </div>
                                                 </div>
 
                                                 <button
                                                     onClick={() => onGenerateClip(item)}
                                                     disabled={item.isGeneratingVideo || (userStatus?.credits || 0) < 5}
-                                                    className={`w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-[#302839] disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-purple-900/20 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2 text-sm`}
+                                                    className={`w-full py-2.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 ${
+                                                        item.isGeneratingVideo 
+                                                            ? 'bg-gray-100 dark:bg-[#2A2A2A] text-gray-400'
+                                                            : (userStatus?.credits || 0) < 5
+                                                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
+                                                                : 'bg-[#7f13ec] hover:bg-[#690fca] text-white hover:shadow-purple-500/20'
+                                                    }`}
                                                 >
-                                                    {item.isGeneratingVideo ? <Spinner /> : <span className="material-symbols-outlined text-sm notranslate">movie</span>}
-                                                    <span>{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Video Clip'}</span>
+                                                    {item.isGeneratingVideo ? <Spinner /> : <span className="material-symbols-outlined text-xs notranslate">movie_creation</span>}
+                                                    <span>{item.isGeneratingVideo ? 'Đang tạo...' : 'Tạo Clip'}</span>
                                                 </button>
                                             </div>
                                         </div>

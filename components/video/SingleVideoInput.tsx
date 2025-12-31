@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React from 'react';
 import { VideoGeneratorState } from '../../state/toolState';
 import { FileData, UserStatus } from '../../types';
 import ImageUpload from '../common/ImageUpload';
@@ -33,117 +33,60 @@ const SingleVideoInput: React.FC<SingleVideoInputProps> = ({
     onAspectRatioChange,
     onGenerate
 }) => {
-    const [showEndImage, setShowEndImage] = useState(false);
-
     return (
-        <div className="bg-[#1E1E1E] border border-[#302839] rounded-2xl p-5 shadow-xl flex flex-col gap-4 h-full font-sans">
-            
-            {/* Image Section */}
-            <div className="relative w-full bg-[#121212] rounded-xl border border-[#302839] overflow-hidden min-h-[220px] flex flex-col justify-center group/main">
-                {singleSourceImage ? (
-                    <>
-                        <img 
-                            src={singleSourceImage.objectURL} 
-                            alt="Start Frame" 
-                            className="w-full h-full object-contain absolute inset-0 bg-black/50" 
-                        />
-                        {/* Close Button */}
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); onSourceImageChange(null); }}
-                            className="absolute top-3 right-3 bg-red-600 hover:bg-red-700 text-white w-7 h-7 rounded-full shadow-lg transition-transform hover:scale-110 z-20 flex items-center justify-center"
-                            title="Xóa ảnh"
-                        >
-                            <span className="material-symbols-outlined text-sm font-bold">close</span>
-                        </button>
-                        
-                        {/* End Frame Toggle/Preview */}
-                        <div className="absolute bottom-3 right-3 z-20 flex flex-col items-end gap-2">
-                            {singleEndImage ? (
-                                <div className="relative w-20 h-20 rounded-lg border-2 border-white/20 overflow-hidden shadow-lg bg-black/80 group/end">
-                                    <img src={singleEndImage.objectURL} className="w-full h-full object-cover" alt="End Frame" />
-                                    <button 
-                                        onClick={(e) => { e.stopPropagation(); onEndImageChange(null); }}
-                                        className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover/end:opacity-100 transition-opacity text-white"
-                                    >
-                                        <span className="material-symbols-outlined text-sm">delete</span>
-                                    </button>
-                                    <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[8px] text-white text-center py-0.5">Kết thúc</div>
-                                </div>
-                            ) : (
-                                showEndImage ? (
-                                    <div className="w-20 h-20 bg-[#1E1E1E] rounded-lg border border-dashed border-gray-500 flex items-center justify-center relative">
-                                        <ImageUpload onFileSelect={(f) => { onEndImageChange(f); setShowEndImage(false); }} />
-                                        <button onClick={() => setShowEndImage(false)} className="absolute -top-2 -right-2 bg-gray-700 text-white rounded-full p-0.5"><span className="material-symbols-outlined text-[10px]">close</span></button>
-                                    </div>
-                                ) : (
-                                    <button 
-                                        onClick={() => setShowEndImage(true)}
-                                        className="bg-black/60 hover:bg-black/80 text-white text-xs px-2 py-1 rounded-md backdrop-blur-sm border border-white/10 flex items-center gap-1 transition-colors"
-                                    >
-                                        <span className="material-symbols-outlined text-xs">add_photo_alternate</span>
-                                        + Ảnh kết
-                                    </button>
-                                )
-                            )}
-                        </div>
-                    </>
-                ) : (
-                    <div className="p-4 h-full flex flex-col">
-                        <ImageUpload onFileSelect={onSourceImageChange} />
+        <div className="bg-white/80 dark:bg-[#191919]/80 backdrop-blur-md rounded-2xl border border-gray-200 dark:border-[#302839] p-5 shadow-lg flex flex-col gap-4 h-full overflow-hidden">
+            <div className="flex justify-between items-center">
+                <h3 className="text-gray-900 dark:text-white font-bold text-base flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#7f13ec] notranslate">image</span>
+                    Tạo video từ ảnh
+                </h3>
+            </div>
+            <div className="flex-1 overflow-y-auto pr-2 space-y-4">
+                <div className="grid grid-cols-2 gap-3">
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Ảnh bắt đầu (Bắt buộc)</label>
+                        <ImageUpload onFileSelect={onSourceImageChange} previewUrl={singleSourceImage?.objectURL} />
                     </div>
-                )}
-            </div>
-
-            {/* Toolbar (Aspect Ratio) */}
-            <div className="flex justify-start">
-                <div className="h-9 w-[130px]">
-                    <AspectRatioSelector value={videoState.aspectRatio} onChange={onAspectRatioChange} />
-                </div>
-            </div>
-
-            {/* Prompt Section */}
-            <div className="relative flex-1">
-                <textarea 
-                    value={singlePrompt}
-                    onChange={(e) => onPromptChange(e.target.value)}
-                    className="w-full h-full bg-[#121212] border border-[#302839] rounded-xl p-4 text-sm text-gray-200 placeholder-gray-600 focus:border-[#7f13ec] focus:ring-1 focus:ring-[#7f13ec] focus:outline-none resize-none transition-all min-h-[100px]"
-                    placeholder="Mô tả video bạn muốn tạo..."
-                />
-            </div>
-            
-            {/* Info Row (Updated per request) */}
-            <div className="flex flex-wrap items-center justify-between gap-3 mt-auto pt-2">
-                {/* Cost Badge */}
-                <div className="flex items-center gap-2 bg-[#252525] border border-[#302839] px-3 py-2 rounded-lg shadow-sm">
-                    <div className="w-5 h-5 rounded-full bg-yellow-500/10 flex items-center justify-center border border-yellow-500/30">
-                        <span className="material-symbols-outlined text-yellow-500 text-[14px] font-bold">currency_bitcoin</span>
+                    <div>
+                        <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Ảnh kết thúc (Tùy chọn)</label>
+                        <ImageUpload onFileSelect={onEndImageChange} previewUrl={singleEndImage?.objectURL} />
                     </div>
-                    <span className="text-white text-sm font-bold">Chi phí: 5 credits</span>
                 </div>
                 
-                {/* Available Credits */}
-                <div className="flex items-center">
-                    <span className={`text-sm font-bold ${
-                        (userStatus?.credits || 0) >= 5 ? 'text-[#4ADE80]' : 'text-red-500'
-                    }`}>
-                        Khả dụng: {userStatus?.credits || 0}
-                    </span>
+                <div>
+                    <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Mô tả video</label>
+                    <textarea 
+                        value={singlePrompt}
+                        onChange={(e) => onPromptChange(e.target.value)}
+                        className="w-full bg-gray-50 dark:bg-[#121212] border border-border-color dark:border-[#302839] rounded-lg p-3 text-sm text-gray-900 dark:text-gray-200 focus:border-[#7f13ec] focus:outline-none resize-none h-32"
+                        placeholder="Mô tả chuyển động..."
+                    />
+                </div>
+            </div>
+            
+            <div className="flex items-center justify-between bg-gray-50 dark:bg-[#121212] p-3 rounded-xl border border-gray-200 dark:border-[#302839] mb-1">
+                <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-yellow-500 text-xl notranslate">monetization_on</span>
+                    <span className="font-bold text-gray-700 dark:text-gray-200 text-base">5 Credits</span>
+                </div>
+                <div className={`text-base font-semibold ${(userStatus?.credits || 0) < 5 ? 'text-red-500' : 'text-green-500'}`}>
+                    Khả dụng: {userStatus?.credits || 0}
                 </div>
             </div>
 
-            {/* Generate Button */}
-            <button
-                onClick={onGenerate}
-                disabled={isSingleGenerating || !singleSourceImage || (userStatus?.credits || 0) < 5} 
-                className="w-full py-3.5 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-[#302839] disabled:text-gray-500 disabled:cursor-not-allowed text-white font-bold rounded-xl shadow-lg shadow-purple-900/20 transition-all transform active:scale-[0.99] flex items-center justify-center gap-2 text-base"
-            >
-                {isSingleGenerating ? (
-                    <Spinner />
-                ) : (
-                    <span className="material-symbols-outlined fill-current text-xl">movie</span>
-                )}
-                <span>Tạo Video Clip</span>
-            </button>
+            <div className="flex gap-3 mt-auto h-12">
+                <div className="w-[130px] h-full">
+                    <AspectRatioSelector value={videoState.aspectRatio} onChange={onAspectRatioChange} />
+                </div>
+                <button
+                    onClick={onGenerate}
+                    disabled={isSingleGenerating || !singleSourceImage} 
+                    className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 h-full"
+                >
+                    {isSingleGenerating ? <Spinner /> : <span className="material-symbols-outlined notranslate">movie_creation</span>}
+                    <span className="whitespace-nowrap">{isSingleGenerating ? 'Đang tạo...' : 'Tạo Video'}</span>
+                </button>
+            </div>
         </div>
     );
 };
