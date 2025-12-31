@@ -5,6 +5,9 @@ import { Logo } from './common/Logo';
 import { plans } from '../constants/plans';
 import { Session } from '@supabase/supabase-js';
 
+// --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
+const IS_PAYMENT_MAINTENANCE = true;
+
 // --- ICONS ---
 const CheckIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-green-500 dark:text-green-400 flex-shrink-0" viewBox="0 0 20 20" fill="currentColor">
@@ -25,6 +28,7 @@ interface PublicPricingProps {
 const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate, onPlanSelect, session, userStatus, onDashboardNavigate, onSignOut }) => {
     
     const handlePlanClick = (plan: PricingPlan) => {
+        if (IS_PAYMENT_MAINTENANCE) return;
         if (onPlanSelect) {
             onPlanSelect(plan);
         } else {
@@ -169,13 +173,16 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
 
                                 <button 
                                     onClick={() => handlePlanClick(plan)}
+                                    disabled={IS_PAYMENT_MAINTENANCE}
                                     className={`w-full font-bold py-3.5 px-6 md:py-2.5 md:px-4 lg:py-3.5 lg:px-6 rounded-xl transition-all duration-300 shadow-lg text-sm md:text-xs lg:text-sm ${
-                                        plan.highlight 
-                                            ? 'gradient-button text-white hover:shadow-purple-500/25 hover:-translate-y-0.5' 
-                                            : 'bg-white text-black hover:bg-gray-200 hover:-translate-y-0.5'
+                                        IS_PAYMENT_MAINTENANCE 
+                                            ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
+                                            : (plan.highlight 
+                                                ? 'gradient-button text-white hover:shadow-purple-500/25 hover:-translate-y-0.5' 
+                                                : 'bg-white text-black hover:bg-gray-200 hover:-translate-y-0.5')
                                     }`}
                                 >
-                                    Chọn gói này
+                                    {IS_PAYMENT_MAINTENANCE ? 'Hệ thống bảo trì' : 'Chọn gói này'}
                                 </button>
                             </div>
                         );
