@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileData, Tool, ImageResolution } from '../types';
 import { FloorPlanState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -17,6 +17,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import MultiImageUpload from './common/MultiImageUpload';
+import OptionSelector from './common/OptionSelector';
 
 interface FloorPlanProps {
     state: FloorPlanState;
@@ -25,11 +26,125 @@ interface FloorPlanProps {
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
 }
 
+// Exterior Options
+const exteriorProjectTypeOptions = [
+    { value: 'Nhà phố', label: 'Nhà phố' },
+    { value: 'Biệt thự', label: 'Biệt thự' },
+    { value: 'Chung cư', label: 'Chung cư' },
+    { value: 'Resort', label: 'Resort' },
+    { value: 'Nhà hàng/Cafe', label: 'Nhà hàng/Cafe' },
+    { value: 'Văn phòng', label: 'Văn phòng' },
+    { value: 'Công viên', label: 'Công viên' },
+];
+
+const importantAreaOptions = [
+    { value: 'Khu nhà ở', label: 'Khu nhà ở' },
+    { value: 'Khu công trình thương mại', label: 'Khu thương mại' },
+    { value: 'Khu vực vui chơi', label: 'Khu vui chơi' },
+    { value: 'Cổng', label: 'Cổng' },
+    { value: 'Khu vực bungalow mái rơm', label: 'Bungalow mái rơm' },
+    { value: 'Nhà hàng và quán cafe', label: 'Nhà hàng & Cafe' },
+    { value: 'Khu vực đỗ xe', label: 'Bãi đỗ xe' },
+];
+
+const timeOptions = [
+    { value: 'Ban ngày', label: 'Ban ngày' },
+    { value: 'Hoàng hôn', label: 'Hoàng hôn' },
+    { value: 'Ban đêm', label: 'Ban đêm' },
+];
+
+const weatherOptions = [
+    { value: 'Nắng đẹp', label: 'Nắng đẹp' },
+    { value: 'Nhiều mây', label: 'Nhiều mây' },
+    { value: 'Mưa', label: 'Mưa' },
+];
+
+// Interior Options
+const interiorProjectTypeOptions = [
+    { value: 'Công trình nhà ở', label: 'Nhà ở' },
+    { value: 'Căn hộ chung cư', label: 'Chung cư' },
+    { value: 'Biệt thự', label: 'Biệt thự' },
+    { value: 'Công trình thương mại', label: 'Thương mại' },
+    { value: 'Văn phòng làm việc', label: 'Văn phòng' },
+    { value: 'Nhà hàng / Quán Cafe', label: 'Nhà hàng/Cafe' },
+    { value: 'Khách sạn / Resort', label: 'Khách sạn/Resort' },
+    { value: 'Showroom', label: 'Showroom' },
+];
+
+const interiorStyleOptions = [
+    { value: 'Hiện đại (Modern)', label: 'Hiện đại' },
+    { value: 'Cổ điển (Classic)', label: 'Cổ điển' },
+    { value: 'Tân Cổ điển (Neoclassical)', label: 'Tân Cổ điển' },
+    { value: 'Indochine (Đông Dương)', label: 'Indochine' },
+    { value: 'Vintage', label: 'Vintage' },
+    { value: 'Địa Trung Hải (Mediterranean)', label: 'Địa Trung Hải' },
+    { value: 'Tối giản (Minimalism)', label: 'Tối giản' },
+];
+
 const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { prompt, layoutPrompt, sourceImage, referenceImages, isLoading, error, resultImages, numberOfImages, renderMode, planType, resolution, aspectRatio } = state;
+    const { 
+        prompt, layoutPrompt, sourceImage, referenceImages, isLoading, error, resultImages, 
+        numberOfImages, renderMode, planType, resolution, aspectRatio,
+        projectType, importantArea, time, weather 
+    } = state;
+    
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+
+    // Set default prompt on mount or mode change
+    useEffect(() => {
+        if (renderMode === 'top-down') {
+            if (planType === 'interior') {
+                if (!prompt || prompt === 'Biến thành ảnh chụp thực tế dự án') {
+                    onStateChange({ prompt: 'Biến thành ảnh chụp thực tế nội thất' });
+                }
+            } else if (planType === 'exterior') {
+                if (!prompt || prompt === 'Biến thành ảnh chụp thực tế nội thất') {
+                    onStateChange({ prompt: 'Biến thành ảnh chụp thực tế dự án' });
+                }
+            }
+        }
+    }, [renderMode, planType]);
+
+    const appendToPrompt = (text: string) => {
+        const targetPromptKey = renderMode === 'top-down' ? 'prompt' : 'layoutPrompt';
+        let currentPrompt = state[targetPromptKey] || '';
+        
+        // Avoid duplicate exact phrases to keep prompt clean
+        if (currentPrompt.includes(text)) return;
+
+        const newPrompt = currentPrompt.trim() 
+            ? `${currentPrompt}, ${text}` 
+            : text;
+            
+        onStateChange({ [targetPromptKey]: newPrompt });
+    };
+
+    const handleProjectTypeChange = (val: string) => {
+        appendToPrompt(`Dự án ${val}`);
+        onStateChange({ projectType: val }); 
+    };
+
+    const handleImportantAreaChange = (val: string) => {
+        appendToPrompt(val);
+        onStateChange({ importantArea: val });
+    };
+
+    const handleInteriorStyleChange = (val: string) => {
+        appendToPrompt(`phong cách ${val}`);
+        // We use projectType to store style temporarily or just append to prompt since state might not have style field
+    };
+
+    const handleTimeChange = (val: string) => {
+        appendToPrompt(val);
+        onStateChange({ time: val });
+    };
+
+    const handleWeatherChange = (val: string) => {
+        appendToPrompt(`trời ${val}`);
+        onStateChange({ weather: val });
+    };
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -194,6 +309,14 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         document.body.removeChild(link);
     };
     
+    // Check conditions to show options
+    const showExteriorOptions = planType === 'exterior' && renderMode === 'top-down';
+    const showInteriorOptions = planType === 'interior' && renderMode === 'top-down';
+
+    // Dynamic labels based on planType
+    const topDownLabel = planType === 'exterior' ? 'Phối cảnh tổng thể' : 'Mặt bằng 3D';
+    const perspectiveLabel = planType === 'exterior' ? 'Góc nhìn kiến trúc 3D' : 'Góc nhìn nội thất 3D';
+
     return (
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
@@ -201,10 +324,21 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                 <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Mặt Bằng</h2>
                 <div className="bg-main-bg/50 dark:bg-dark-bg/50 border border-border-color dark:border-gray-700 rounded-xl p-6">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                        <div>
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Mặt Bằng 2D</label>
-                            <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
+                        <div className="space-y-6">
+                            <div>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Mặt Bằng 2D</label>
+                                <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
+                            </div>
+                            
+                            {/* Reference Images: Moved to left column for Perspective modes */}
+                            {renderMode === 'perspective' && (
+                                <div>
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh tham chiếu (Tùy chọn)</label>
+                                    <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                                </div>
+                            )}
                         </div>
+                        
                         <div className="space-y-4 flex flex-col h-full">
                              <div>
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Chọn loại & chế độ</label>
@@ -213,21 +347,48 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                                     <button onClick={() => onStateChange({ planType: 'exterior' })} className={`py-2 rounded-md text-sm font-semibold transition-colors ${planType === 'exterior' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Kiến trúc</button>
                                 </div>
                                 <div className="grid grid-cols-2 gap-2 bg-main-bg dark:bg-gray-800 p-1 rounded-lg mt-2">
-                                    <button onClick={() => onStateChange({ renderMode: 'top-down' })} className={`py-2 rounded-md text-sm font-semibold transition-colors ${renderMode === 'top-down' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Mặt bằng 3D</button>
-                                    <button onClick={() => onStateChange({ renderMode: 'perspective' })} className={`py-2 rounded-md text-sm font-semibold transition-colors ${renderMode === 'perspective' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Góc nhìn nội thất 3D</button>
+                                    <button onClick={() => onStateChange({ renderMode: 'top-down' })} className={`py-2 rounded-md text-sm font-semibold transition-colors ${renderMode === 'top-down' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>{topDownLabel}</button>
+                                    <button onClick={() => onStateChange({ renderMode: 'perspective' })} className={`py-2 rounded-md text-sm font-semibold transition-colors ${renderMode === 'perspective' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>{perspectiveLabel}</button>
                                 </div>
                             </div>
                             
-                            {renderMode === 'top-down' ? (
-                                <textarea rows={3} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-sm" placeholder="Mô tả phong cách..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
-                            ) : (
-                                <div className="space-y-2">
-                                    <textarea rows={3} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-sm" placeholder="Mô tả góc nhìn..." value={layoutPrompt} onChange={(e) => onStateChange({ layoutPrompt: e.target.value })} />
-                                    <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                            {/* Option Selectors - Exterior + Top-down */}
+                            {showExteriorOptions && (
+                                <div className="pt-2 space-y-4">
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh chi tiết (Nhấn để thêm)</label>
+                                    <OptionSelector id="project-type" label="Loại dự án" options={exteriorProjectTypeOptions} value={projectType} onChange={handleProjectTypeChange} disabled={isLoading} variant="grid" />
+                                    <OptionSelector id="important-area" label="Khu vực quan trọng" options={importantAreaOptions} value={importantArea} onChange={handleImportantAreaChange} disabled={isLoading} variant="select" />
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <OptionSelector id="time-selector" label="Thời gian" options={timeOptions} value={time} onChange={handleTimeChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="weather-selector" label="Thời tiết" options={weatherOptions} value={weather} onChange={handleWeatherChange} disabled={isLoading} variant="select" />
+                                    </div>
                                 </div>
                             )}
 
-                            <div className="grid grid-cols-2 gap-4 mt-auto">
+                            {/* Option Selectors - Interior + Top-down */}
+                            {showInteriorOptions && (
+                                <div className="pt-2 space-y-4">
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh chi tiết (Nhấn để thêm)</label>
+                                    <OptionSelector id="int-project-type" label="Thể loại công trình" options={interiorProjectTypeOptions} value={projectType} onChange={handleProjectTypeChange} disabled={isLoading} variant="grid" />
+                                    <OptionSelector id="int-style" label="Phong cách thiết kế" options={interiorStyleOptions} value={""} onChange={handleInteriorStyleChange} disabled={isLoading} variant="grid" />
+                                </div>
+                            )}
+
+                            {renderMode === 'top-down' ? (
+                                <div>
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">
+                                        {showExteriorOptions || showInteriorOptions ? '4. Mô tả chi tiết (Prompt)' : '3. Mô tả chi tiết (Prompt)'}
+                                    </label>
+                                    <textarea rows={6} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-sm" placeholder="Mô tả phong cách..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
+                                </div>
+                            ) : (
+                                <div className="space-y-2">
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Mô tả góc nhìn</label>
+                                    <textarea rows={6} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-sm" placeholder="Mô tả góc nhìn..." value={layoutPrompt} onChange={(e) => onStateChange({ layoutPrompt: e.target.value })} />
+                                </div>
+                            )}
+
+                            <div className="grid grid-cols-2 gap-4 mt-auto pt-4">
                                 <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
                                 <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
                             </div>

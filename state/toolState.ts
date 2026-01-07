@@ -155,6 +155,11 @@ export interface FloorPlanState {
     planType: 'interior' | 'exterior';
     aspectRatio: AspectRatio;
     resolution: ImageResolution;
+    // New options
+    projectType: string;
+    importantArea: string;
+    time: string;
+    weather: string;
 }
 
 export interface RenovationState {
@@ -320,7 +325,7 @@ export interface SketchConverterState {
     error: string | null;
     resultImage: string | null;
     sketchStyle: 'pencil' | 'charcoal' | 'watercolor';
-    detailLevel: 'low' | 'medium' | 'high';
+    detailLevel: 'medium' | 'high';
     resolution: ImageResolution;
 }
 
@@ -426,8 +431,8 @@ export const initialToolStates = {
         resolution: 'Standard',
     } as LandscapeRenderingState,
     [Tool.FloorPlan]: {
-        prompt: 'Render theo phong cách Scandinavian với nội thất gỗ sồi, tường trắng và nhiều ánh sáng tự nhiên.',
-        layoutPrompt: '',
+        prompt: 'Biến thành ảnh chụp thực tế dự án',
+        layoutPrompt: 'Biến thành ảnh chụp thực tế dự án',
         sourceImage: null,
         referenceImages: [], 
         isLoading: false,
@@ -438,6 +443,10 @@ export const initialToolStates = {
         planType: 'interior',
         aspectRatio: '16:9',
         resolution: 'Standard',
+        projectType: 'none',
+        importantArea: 'none',
+        time: 'none',
+        weather: 'none',
     } as FloorPlanState,
     [Tool.Renovation]: {
         prompt: 'Cải tạo mặt tiền ngôi nhà này theo phong cách hiện đại, tối giản. Sử dụng vật liệu gỗ, kính và bê tông. Thêm nhiều cây xanh xung quanh.',

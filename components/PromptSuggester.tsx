@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { FileData } from '../types';
 import { PromptSuggesterState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -14,42 +14,75 @@ interface SuggestionCardProps {
 }
 
 const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelectPrompt }) => {
-    const handleCopy = (text: string) => {
+    const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
+
+    const handleCopy = (text: string, index: number) => {
         navigator.clipboard.writeText(text);
-        // TODO: Add a small notification "Copied!" for better UX
+        setCopiedIndex(index);
+        setTimeout(() => setCopiedIndex(null), 2000);
     };
 
     if (!prompts || prompts.length === 0) {
         return null;
     }
 
+    // Mapping title to icons/colors for visual distinction
+    const getCategoryStyle = (title: string) => {
+        const t = title.toLowerCase();
+        if (t.includes('toàn cảnh')) return { icon: 'landscape', color: 'text-blue-500', bg: 'bg-blue-500/10' };
+        if (t.includes('trung cảnh')) return { icon: 'photo_camera', color: 'text-green-500', bg: 'bg-green-500/10' };
+        if (t.includes('lấy nét') || t.includes('cận')) return { icon: 'center_focus_strong', color: 'text-orange-500', bg: 'bg-orange-500/10' };
+        if (t.includes('chi tiết')) return { icon: 'texture', color: 'text-purple-500', bg: 'bg-purple-500/10' };
+        return { icon: 'lightbulb', color: 'text-gray-500', bg: 'bg-gray-500/10' };
+    };
+
+    const style = getCategoryStyle(title);
+
     return (
-        <div className="bg-surface dark:bg-dark-bg p-4 rounded-lg border border-border-color dark:border-gray-700">
-            <h3 className="text-lg font-semibold text-text-primary dark:text-white mb-3 capitalize">{title}</h3>
-            <div className="space-y-3">
+        <div className="bg-white dark:bg-[#1E1E1E] rounded-xl border border-gray-200 dark:border-[#302839] overflow-hidden shadow-sm hover:shadow-md transition-shadow duration-300">
+            <div className="px-4 py-3 border-b border-gray-100 dark:border-[#302839] flex items-center gap-2 bg-gray-50/50 dark:bg-[#252525]">
+                <div className={`p-1.5 rounded-lg ${style.bg} ${style.color}`}>
+                    <span className="material-symbols-outlined text-lg">{style.icon}</span>
+                </div>
+                <h3 className="text-sm font-bold text-gray-900 dark:text-white capitalize tracking-wide">{title}</h3>
+            </div>
+            
+            <div className="p-2 space-y-2">
                 {prompts.map((prompt, index) => (
-                    <div key={index} className="group flex justify-between items-start gap-2 bg-main-bg dark:bg-gray-700/50 p-3 rounded-md transition-colors hover:bg-gray-100 dark:hover:bg-gray-600">
-                        <p className="text-text-secondary dark:text-gray-300 text-sm">{prompt}</p>
-                        <div className="flex items-center flex-shrink-0 gap-1">
+                    <div 
+                        key={`${index}-${prompt.substring(0, 10)}`}
+                        className="group relative p-3 rounded-lg border border-transparent hover:border-purple-500/30 bg-gray-50 dark:bg-black/20 hover:bg-white dark:hover:bg-[#2A2A2A] transition-all duration-200 flex flex-col gap-2"
+                    >
+                        <p className="text-sm text-gray-600 dark:text-gray-300 leading-relaxed font-medium">
+                            {prompt}
+                        </p>
+                        
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity pt-1 border-t border-gray-200/50 dark:border-gray-700/50 mt-1">
+                            <button 
+                                onClick={() => handleCopy(prompt, index)}
+                                className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-gray-500 hover:text-purple-600 dark:text-gray-400 dark:hover:text-purple-400 bg-white dark:bg-[#333] hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded border border-gray-200 dark:border-gray-600 transition-colors"
+                                title="Sao chép nội dung"
+                            >
+                                {copiedIndex === index ? (
+                                    <>
+                                        <span className="material-symbols-outlined text-[14px] text-green-500">check</span>
+                                        <span className="text-green-500">Đã chép</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-[14px]">content_copy</span>
+                                        <span>Sao chép</span>
+                                    </>
+                                )}
+                            </button>
+                            
                             <button 
                                 onClick={() => onSelectPrompt(prompt)}
-                                title="Sử dụng prompt này trong Đồng Bộ View"
-                                aria-label={`Sử dụng: ${prompt}`}
-                                className="opacity-50 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-[#7f13ec] hover:text-white text-gray-500"
+                                className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded shadow-sm transition-colors"
+                                title="Sử dụng ngay trong Đồng bộ View"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                                </svg>
-                            </button>
-                            <button 
-                                onClick={() => handleCopy(prompt)}
-                                title="Copy prompt"
-                                aria-label={`Sao chép: ${prompt}`}
-                                className="opacity-50 group-hover:opacity-100 transition-opacity p-1.5 rounded-md hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-500"
-                            >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                                </svg>
+                                <span className="material-symbols-outlined text-[14px]">send</span>
+                                <span>Sử dụng</span>
                             </button>
                         </div>
                     </div>
@@ -59,7 +92,6 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelec
     );
 };
 
-// Cập nhật danh sách chủ đề theo đúng yêu cầu
 const suggestionSubjects = [
     { value: 'all', label: 'Tất cả chủ đề' },
     { value: 'Góc toàn cảnh', label: 'Góc toàn cảnh' },
@@ -80,7 +112,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({
             sourceImage: fileData,
-            suggestions: null,
+            suggestions: null, // Clear only on new file to avoid confusion
             error: null,
         });
     };
@@ -91,7 +123,9 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
             return;
         }
 
-        onStateChange({ isLoading: true, error: null, suggestions: null });
+        // FIX FLICKERING: Không set suggestions: null ở đây.
+        // Giữ kết quả cũ hiển thị bên dưới lớp loading cho đến khi có kết quả mới.
+        onStateChange({ isLoading: true, error: null });
 
         try {
             const result = await geminiService.generatePromptSuggestions(sourceImage, selectedSubject, numberOfSuggestions, customInstruction);
@@ -111,107 +145,207 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
         }
     };
 
+    // Helper for number input
+    const handleNumberChange = (val: number) => {
+        let newVal = val;
+        if (newVal < 1) newVal = 1;
+        if (newVal > 10) newVal = 10;
+        onStateChange({ numberOfSuggestions: newVal });
+    };
+
     return (
-        <div className="flex flex-col gap-8">
-            <div>
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Gợi ý prompt đồng bộ View</h2>
-                <p className="text-text-secondary dark:text-gray-300 mb-6">Tải lên một bức ảnh kiến trúc, AI sẽ phân tích và đề xuất các ý tưởng prompt độc đáo để bạn sử dụng trực tiếp trong tính năng "Đồng Bộ View".</p>
+        <div className="flex flex-col gap-8 max-w-[1600px] mx-auto animate-fade-in">
+            <style>{`
+                @keyframes fade-in {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                .animate-fade-in { animation: fade-in 0.3s ease-out forwards; }
+                @keyframes fade-in-up {
+                    from { opacity: 0; transform: translateY(10px); }
+                    to { opacity: 1; transform: translateY(0); }
+                }
+                .animate-fade-in-up { animation: fade-in-up 0.4s ease-out forwards; }
+            `}</style>
+            
+            {/* Header Section */}
+            <div className="flex flex-col gap-2">
+                <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-500 dark:from-purple-400 dark:to-pink-400 w-fit">
+                    AI Gợi Ý Prompt
+                </h2>
+                <p className="text-text-secondary dark:text-gray-300 max-w-2xl text-base leading-relaxed">
+                    Tải lên một bức ảnh kiến trúc, AI sẽ phân tích và đề xuất các ý tưởng prompt chuyên nghiệp, chi tiết để bạn sử dụng trực tiếp cho việc render hoặc đồng bộ view.
+                </p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* --- INPUTS --- */}
-                <div className="space-y-6 flex flex-col">
-                    <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Gốc</label>
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+                {/* --- LEFT COLUMN: INPUTS (4 cols) --- */}
+                <div className="lg:col-span-5 xl:col-span-4 space-y-6">
+                    {/* Upload Card */}
+                    <div className="bg-white dark:bg-[#1E1E1E] p-6 rounded-2xl border border-gray-200 dark:border-[#302839] shadow-sm hover:shadow-md transition-shadow">
+                        <div className="flex justify-between items-center mb-4">
+                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
+                                1. Ảnh cần phân tích
+                            </label>
+                            {sourceImage && (
+                                <span className="text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                    Đã tải lên
+                                </span>
+                            )}
+                        </div>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
 
-                    <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Tùy chỉnh gợi ý</label>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-2">
+                    {/* Settings Card */}
+                    <div className="bg-white dark:bg-[#1E1E1E] p-6 rounded-2xl border border-gray-200 dark:border-[#302839] shadow-sm hover:shadow-md transition-shadow">
+                        <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-4">
+                            2. Cấu hình gợi ý
+                        </label>
+                        
+                        <div className="space-y-5">
                             <OptionSelector 
                                 id="suggestion-subject"
-                                label="Chọn chủ đề"
+                                label="Chủ đề tập trung"
                                 options={suggestionSubjects}
                                 value={selectedSubject}
                                 onChange={(val) => onStateChange({ selectedSubject: val })}
                                 disabled={isLoading}
                             />
+                            
                             <div>
-                                <label htmlFor="suggestion-count" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Số lượng gợi ý (mỗi loại)</label>
-                                <input 
-                                    type="number" 
-                                    id="suggestion-count"
-                                    value={numberOfSuggestions}
-                                    onChange={(e) => {
-                                        const val = parseInt(e.target.value, 10);
-                                        if (val > 0 && val <= 10) {
-                                            onStateChange({ numberOfSuggestions: val });
-                                        }
-                                    }}
-                                    min="1"
-                                    max="5"
-                                    className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
+                                <label htmlFor="suggestion-count" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">
+                                    Số lượng gợi ý (Mỗi loại)
+                                </label>
+                                <div className="relative">
+                                    <input 
+                                        type="number" 
+                                        id="suggestion-count"
+                                        value={numberOfSuggestions}
+                                        onChange={(e) => handleNumberChange(parseInt(e.target.value) || 5)}
+                                        min="1"
+                                        max="10"
+                                        step="1"
+                                        className="w-full bg-white dark:bg-[#252525] border border-gray-200 dark:border-[#302839] rounded-xl p-3 text-sm text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 outline-none transition-all pl-4"
+                                        disabled={isLoading}
+                                    />
+                                    <div className="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5 opacity-50">
+                                        <button 
+                                            onClick={() => handleNumberChange(numberOfSuggestions + 1)}
+                                            className="text-gray-500 hover:text-purple-500 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                            disabled={isLoading}
+                                            type="button"
+                                        >
+                                            <span className="material-symbols-outlined text-[14px] leading-none">expand_less</span>
+                                        </button>
+                                        <button 
+                                            onClick={() => handleNumberChange(numberOfSuggestions - 1)}
+                                            className="text-gray-500 hover:text-purple-500 p-0.5 hover:bg-gray-100 dark:hover:bg-gray-700 rounded"
+                                            disabled={isLoading}
+                                            type="button"
+                                        >
+                                            <span className="material-symbols-outlined text-[14px] leading-none">expand_more</span>
+                                        </button>
+                                    </div>
+                                </div>
+                                <p className="text-[10px] text-gray-400 mt-1.5 px-1">Nhập số lượng từ 1 đến 10 (Mặc định: 5)</p>
+                            </div>
+
+                            <div>
+                                <label htmlFor="custom-instruction" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">
+                                    Yêu cầu đặc biệt (Optional)
+                                </label>
+                                <textarea 
+                                    id="custom-instruction"
+                                    rows={3}
+                                    className="w-full bg-white dark:bg-[#252525] border border-gray-200 dark:border-[#302839] rounded-xl p-3 text-sm text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 outline-none transition-all resize-none placeholder-gray-400 dark:placeholder-gray-600"
+                                    placeholder="VD: Tập trung vào ánh sáng tự nhiên, phong cách wabi-sabi,..."
+                                    value={customInstruction}
+                                    onChange={(e) => onStateChange({ customInstruction: e.target.value })}
                                     disabled={isLoading}
                                 />
                             </div>
-                        </div>
-                        <div className="mt-4">
-                            <label htmlFor="custom-instruction" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">
-                                Thêm yêu cầu (VD: góc nhìn từ dưới lên, cinematic,...)
-                            </label>
-                            <textarea 
-                                id="custom-instruction"
-                                rows={2}
-                                className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                                placeholder="Nhập thêm yêu cầu của bạn ở đây..."
-                                value={customInstruction}
-                                onChange={(e) => onStateChange({ customInstruction: e.target.value })}
-                                disabled={isLoading}
-                            />
                         </div>
                     </div>
 
                     <button
                         onClick={handleGenerate}
                         disabled={isLoading || !sourceImage}
-                        className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg shadow-purple-500/20"
+                        className="w-full py-4 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-2xl shadow-lg hover:shadow-purple-500/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-3 text-lg"
                     >
-                        {isLoading ? <><Spinner /> Đang phân tích...</> : 'Tạo Gợi ý'}
+                        {isLoading ? <Spinner /> : <span className="material-symbols-outlined">auto_fix_high</span>}
+                        {isLoading ? 'Đang phân tích...' : 'Phân tích & Tạo Gợi ý'}
                     </button>
-                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                    
+                    {error && (
+                        <div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-xl flex items-start gap-3 animate-fade-in">
+                            <span className="material-symbols-outlined text-red-500 mt-0.5">error</span>
+                            <div>
+                                <h4 className="text-sm font-bold text-red-700 dark:text-red-400">Đã xảy ra lỗi</h4>
+                                <p className="text-sm text-red-600 dark:text-red-300 mt-1">{error}</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
 
-                {/* --- RESULTS --- */}
-                <div className="space-y-4">
-                     <h3 className="text-lg font-semibold text-text-primary dark:text-white flex items-center justify-between">
-                        Gợi ý từ AI
-                        {suggestions && <span className="text-xs font-normal text-green-500 bg-green-100 dark:bg-green-900/20 px-2 py-1 rounded-full">Đã xong</span>}
-                     </h3>
-                     <div className={`w-full min-h-[400px] bg-surface dark:bg-dark-bg rounded-lg border border-border-color dark:border-gray-700 flex flex-col p-4 ${!suggestions ? 'items-center justify-center' : ''}`}>
-                        {isLoading && (
-                            <>
-                                <Spinner />
-                                <p className="mt-4 text-text-secondary dark:text-gray-400 animate-pulse">AI đang đọc ảnh và suy nghĩ...</p>
-                            </>
+                {/* --- RIGHT COLUMN: RESULTS (8 cols) --- */}
+                <div className="lg:col-span-7 xl:col-span-8 flex flex-col h-full min-h-[500px]">
+                     <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
+                            <span className="material-symbols-outlined text-purple-500">lightbulb</span>
+                            Kết quả từ AI
+                        </h3>
+                        {suggestions && !isLoading && (
+                            <button 
+                                onClick={() => onStateChange({ suggestions: null })} 
+                                className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 transition-colors"
+                            >
+                                <span className="material-symbols-outlined text-sm">delete</span>
+                                Xóa kết quả
+                            </button>
                         )}
+                     </div>
+
+                     <div className={`flex-1 bg-gray-50 dark:bg-[#121212] rounded-2xl border-2 border-dashed border-gray-200 dark:border-[#302839] relative overflow-hidden ${!suggestions ? 'flex items-center justify-center' : 'p-4 sm:p-6'}`}>
+                        
+                        {isLoading && (
+                            <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/80 dark:bg-[#121212]/90 backdrop-blur-sm transition-opacity duration-300">
+                                <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center mb-4 animate-pulse">
+                                    <span className="material-symbols-outlined text-4xl text-purple-500 animate-spin">smart_toy</span>
+                                </div>
+                                <h4 className="text-lg font-bold text-gray-800 dark:text-white mb-2">AI đang suy nghĩ...</h4>
+                                <p className="text-gray-500 dark:text-gray-400 text-sm max-w-xs text-center">
+                                    Đang phân tích hình ảnh, bố cục và ánh sáng để đưa ra gợi ý tốt nhất.
+                                </p>
+                            </div>
+                        )}
+
                         {!isLoading && !suggestions && (
-                             <div className="text-center text-text-secondary dark:text-gray-400 p-4">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="mx-auto h-12 w-12 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                </svg>
-                                <p className="mt-2">Tải lên một ảnh và nhấn "Tạo Gợi ý" để xem kết quả.</p>
+                             <div className="text-center max-w-md p-6">
+                                <div className="w-20 h-20 bg-gray-100 dark:bg-[#1E1E1E] rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
+                                    <span className="material-symbols-outlined text-5xl text-gray-300 dark:text-gray-600">image_search</span>
+                                </div>
+                                <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-2">Chưa có kết quả</h3>
+                                <p className="text-gray-500 dark:text-gray-500 text-sm leading-relaxed">
+                                    Hãy tải lên một bức ảnh ở cột bên trái và nhấn nút 
+                                    <strong className="text-purple-500 mx-1">Phân tích</strong> 
+                                    để AI bắt đầu làm việc.
+                                </p>
                              </div>
                         )}
-                        {!isLoading && suggestions && (
-                            <div className="w-full space-y-4 max-h-[60vh] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600">
-                                {Object.entries(suggestions as Record<string, string[]>).map(([title, prompts]) => (
-                                    <SuggestionCard 
-                                        key={title} 
-                                        title={title} 
-                                        prompts={prompts}
-                                        onSelectPrompt={handleSelectPrompt}
-                                    />
+
+                        {/* FIX FLICKERING: Removed "!isLoading &&" check here. 
+                            Results stay visible under the overlay until new data arrives. */}
+                        {suggestions && (
+                            <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 h-full content-start overflow-y-auto pr-1 pb-10 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700">
+                                {Object.entries(suggestions as Record<string, string[]>).map(([title, prompts], idx) => (
+                                    <div key={title} className="animate-fade-in-up" style={{ animationDelay: `${idx * 100}ms` }}>
+                                        <SuggestionCard 
+                                            title={title} 
+                                            prompts={prompts}
+                                            onSelectPrompt={handleSelectPrompt}
+                                        />
+                                    </div>
                                 ))}
                             </div>
                         )}

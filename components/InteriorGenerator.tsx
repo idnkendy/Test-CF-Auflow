@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
@@ -21,42 +21,46 @@ import { supabase } from '../services/supabaseClient';
 
 const styleOptions = [
     { value: 'none', label: 'Tự động' },
-    { value: 'Hiện đại', label: 'Hiện đại' },
-    { value: 'Tối giản', label: 'Tối giản' },
-    { value: 'Tân Cổ điển', label: 'Tân Cổ điển' },
-    { value: 'Scandinavian', label: 'Scandinavian' },
-    { value: 'Japandi', label: 'Japandi' },
-    { value: 'Công nghiệp', label: 'Industrial' },
-    { value: 'Nhiệt đới', label: 'Nhiệt đới' },
-    { value: 'Bohemian', label: 'Bohemian' },
+    { value: 'Hiện đại (Modern)', label: 'Hiện đại' },
+    { value: 'Cổ điển (Classic)', label: 'Cổ điển' },
+    { value: 'Tân Cổ điển (Neoclassical)', label: 'Tân Cổ điển' },
+    { value: 'Indochine (Đông Dương)', label: 'Indochine' },
+    { value: 'Vintage', label: 'Vintage' },
+    { value: 'Địa Trung Hải (Mediterranean)', label: 'Địa Trung Hải' },
+    { value: 'Tối giản (Minimalism)', label: 'Tối giản' },
+    { value: 'Scandinavian (Bắc Âu)', label: 'Scandinavian' },
+    { value: 'Công nghiệp (Industrial)', label: 'Industrial' },
+    { value: 'Luxury', label: 'Luxury' },
 ];
 
-const roomTypeOptions = [
+const projectTypeOptions = [
     { value: 'none', label: 'Tự động' },
-    { value: 'Phòng khách', label: 'Phòng khách' },
-    { value: 'Phòng ngủ', label: 'Phòng ngủ' },
-    { value: 'Nhà bếp', label: 'Nhà bếp' },
-    { value: 'Phòng ăn', label: 'Phòng ăn' },
-    { value: 'Phòng tắm', label: 'Phòng tắm' },
-    { value: 'Văn phòng tại nhà', label: 'Văn phòng' },
+    { value: 'Công trình nhà ở', label: 'Nhà ở' },
+    { value: 'Căn hộ chung cư', label: 'Chung cư' },
+    { value: 'Biệt thự', label: 'Biệt thự' },
+    { value: 'Công trình thương mại', label: 'Thương mại' },
+    { value: 'Văn phòng làm việc', label: 'Văn phòng' },
+    { value: 'Nhà hàng / Quán Cafe', label: 'Nhà hàng/Cafe' },
+    { value: 'Khách sạn / Resort', label: 'Khách sạn/Resort' },
+    { value: 'Showroom', label: 'Showroom' },
 ];
 
 const interiorLightingOptions = [
     { value: 'none', label: 'Tự động' },
-    { value: 'Ánh sáng tự nhiên ban ngày, chan hòa', label: 'Tự nhiên' },
-    { value: 'Ánh sáng nhân tạo ấm áp buổi tối', label: 'Ấm áp' },
-    { value: 'Ánh sáng studio, làm nổi bật chi tiết', label: 'Studio' },
-    { value: 'Ánh sáng moody, có độ tương phản cao', label: 'Moody' },
-    { value: 'Ánh sáng đèn neon hiện đại', label: 'Neon' },
+    { value: 'Ánh sáng tự nhiên ban ngày', label: 'Tự nhiên' },
+    { value: 'Ánh sáng vàng ấm cúng', label: 'Ấm áp' },
+    { value: 'Ánh sáng trắng sáng, rõ nét', label: 'Trắng sáng' },
+    { value: 'Ánh sáng nghệ thuật (Dramatic)', label: 'Nghệ thuật' },
+    { value: 'Ánh sáng đèn LED hiện đại', label: 'Đèn LED' },
 ];
 
 const colorPaletteOptions = [
     { value: 'none', label: 'Tự động' },
-    { value: 'Tông màu trung tính (trắng, xám, be)', label: 'Trung tính' },
-    { value: 'Tông màu ấm (kem, nâu, cam đất)', label: 'Tông ấm' },
-    { value: 'Tông màu lạnh (xanh dương, xanh lá, xám)', label: 'Tông lạnh' },
-    { value: 'Tông màu tương phản cao (đen và trắng)', label: 'Tương phản' },
-    { value: 'Tông màu pastel nhẹ nhàng', label: 'Pastel' },
+    { value: 'Trung tính (Trắng, Be, Xám)', label: 'Trung tính' },
+    { value: 'Tông màu ấm (Nâu, Cam đất)', label: 'Tông ấm' },
+    { value: 'Tông màu lạnh (Xanh, Ghi)', label: 'Tông lạnh' },
+    { value: 'Pastel nhẹ nhàng', label: 'Pastel' },
+    { value: 'Tương phản mạnh (Đen - Trắng)', label: 'Tương phản' },
 ];
 
 interface InteriorGeneratorProps {
@@ -77,34 +81,64 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     
+    // Set default prompt on mount if empty
+    useEffect(() => {
+        if (!customPrompt || customPrompt === 'Biến thành ảnh chụp thực tế không gian nội thất') {
+            onStateChange({ customPrompt: 'Biến thành ảnh chụp thực tế nội thất' });
+        }
+    }, []);
+
     const escapeRegExp = (string: string) => { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
-    const updatePrompt = useCallback((type: 'style' | 'roomType' | 'lighting' | 'colorPalette', newValue: string, oldValue: string) => {
+    
+    const updatePrompt = useCallback((type: 'style' | 'projectType' | 'lighting' | 'colorPalette', newValue: string, oldValue: string) => {
         const getPromptPart = (partType: string, value: string): string => {
             if (value === 'none' || !value) return '';
             switch (partType) {
                 case 'style': return `phong cách ${value}`;
-                case 'roomType': return `cho ${value}`;
+                case 'projectType': return `cho ${value}`;
                 case 'lighting': return `với ${value}`;
-                case 'colorPalette': return `sử dụng ${value}`;
+                case 'colorPalette': return `tông màu ${value}`;
                 default: return '';
             }
         };
-        const oldPart = getPromptPart(type, oldValue); const newPart = getPromptPart(type, newValue); let nextPrompt = customPrompt;
-        if (oldPart && nextPrompt.includes(oldPart)) { const escapedOldPart = escapeRegExp(oldPart); nextPrompt = newPart ? nextPrompt.replace(oldPart, newPart) : nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), ''); } else if (newPart) { nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart; }
+        const oldPart = getPromptPart(type, oldValue); 
+        const newPart = getPromptPart(type, newValue); 
+        let nextPrompt = customPrompt;
+        
+        // Remove old part if exists
+        if (oldPart && nextPrompt.includes(oldPart)) { 
+            const escapedOldPart = escapeRegExp(oldPart); 
+            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), ''); 
+        } 
+        
+        // Append new part
+        if (newPart) { 
+            nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart; 
+        }
+        
+        // Clean up commas
         const cleanedPrompt = nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ');
         onStateChange({ customPrompt: cleanedPrompt });
     }, [customPrompt, onStateChange]);
 
     const handleStyleChange = (newVal: string) => { updatePrompt('style', newVal, style); onStateChange({ style: newVal }); };
-    const handleRoomTypeChange = (newVal: string) => { updatePrompt('roomType', newVal, roomType); onStateChange({ roomType: newVal }); };
+    // Reuse roomType state for Project Type
+    const handleProjectTypeChange = (newVal: string) => { updatePrompt('projectType', newVal, roomType); onStateChange({ roomType: newVal }); };
     const handleLightingChange = (newVal: string) => { updatePrompt('lighting', newVal, lighting); onStateChange({ lighting: newVal }); };
     const handleColorPaletteChange = (newVal: string) => { updatePrompt('colorPalette', newVal, colorPalette); onStateChange({ colorPalette: newVal }); };
+    
     const handleResolutionChange = (val: ImageResolution) => { onStateChange({ resolution: val }); if (val === 'Standard') { onStateChange({ referenceImages: [] }); } };
     const handleFileSelect = (fileData: FileData | null) => { onStateChange({ sourceImage: fileData, resultImages: [], upscaledImage: null, }); }
     const handleReferenceFilesChange = (files: FileData[]) => { onStateChange({ referenceImages: files }); };
     const getCostPerImage = () => { switch (resolution) { case 'Standard': return 5; case '1K': return 10; case '2K': return 20; case '4K': return 30; default: return 5; } };
     const cost = numberOfImages * getCostPerImage();
-    const constructInteriorPrompt = () => { let basePrompt = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition of the interior scene from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${customPrompt}. Make it photorealistic interior design.`; if (referenceImages && referenceImages.length > 0) { basePrompt += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`; } basePrompt = `You are a professional interior designer. ${basePrompt}`; return basePrompt; };
+    
+    const constructInteriorPrompt = () => { 
+        let basePrompt = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition of the interior scene from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${customPrompt}. Make it photorealistic interior design.`; 
+        if (referenceImages && referenceImages.length > 0) { basePrompt += ` Also, take aesthetic inspiration (colors, materials, atmosphere) from the provided reference image(s).`; } 
+        basePrompt = `You are a professional interior designer. ${basePrompt}`; 
+        return basePrompt; 
+    };
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) { onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` }); return; }
@@ -301,7 +335,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             <div className="pt-2">
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh tùy chọn</label>
                                 <div className="space-y-4">
-                                    <OptionSelector id="room-type-selector" label="Loại phòng" options={roomTypeOptions} value={roomType} onChange={handleRoomTypeChange} disabled={isLoading} variant="grid" />
+                                    <OptionSelector id="project-type-selector" label="Thể loại công trình" options={projectTypeOptions} value={roomType} onChange={handleProjectTypeChange} disabled={isLoading} variant="grid" />
                                     <OptionSelector id="style-selector-int" label="Phong cách thiết kế" options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
                                     
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

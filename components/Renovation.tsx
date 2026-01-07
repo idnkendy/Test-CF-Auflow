@@ -25,7 +25,7 @@ const renovationSuggestions = [
     { label: 'Đổi màu sơn', prompt: 'Thay đổi màu sơn ngoại thất của công trình thành màu trắng kem, các chi tiết cửa sổ màu đen.' },
     { label: 'Giữ lại khối', prompt: 'Cải tạo lại mặt tiền nhưng giữ nguyên hình khối và cấu trúc chính.' },
     { label: 'Thay đổi khối', prompt: 'Cải tạo toàn bộ, thay đổi hình khối của công trình để trở nên ấn tượng và hiện đại hơn.' },
-    { label: 'Đưa ảnh vẽ tay/khối vào không gian', prompt: 'Thiết kế hoàn thiện công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' },
+    { label: 'Đưa ảnh vẽ tay vào không gian', prompt: 'Thiết kế hoàn thiện công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' },
     { label: 'Đưa mẫu công trình vào không gian', prompt: 'Đưa mẫu công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' },
 ];
 
@@ -297,6 +297,18 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         }
     };
 
+    const handleSuggestionChange = (val: string) => {
+        // Logic: Append new text, ignoring previous selection state.
+        // We do not replace old text, we just append to build a complex prompt.
+        let newPrompt = prompt.trim();
+        if (newPrompt && !newPrompt.includes(val)) {
+            newPrompt = `${newPrompt}, ${val}`;
+        } else if (!newPrompt) {
+            newPrompt = val;
+        }
+        onStateChange({ prompt: newPrompt });
+    };
+
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, renovatedImages: [], maskImage: null });
     };
@@ -310,6 +322,11 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         setIsMaskingModalOpen(false);
     };
 
+    const handleRemoveMask = (e?: React.MouseEvent) => {
+        if(e) e.preventDefault();
+        onStateChange({ maskImage: null });
+    };
+
     const handleDownload = () => {
         if (renovatedImages.length !== 1) return;
         const link = document.createElement('a');
@@ -318,6 +335,15 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
+    };
+
+    const scrollToTop = () => {
+        const mainContainer = document.querySelector('main');
+        if (mainContainer) {
+            mainContainer.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
     };
 
     return (
@@ -338,29 +364,48 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                         <div className="space-y-6">
                             <div>
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Hiện Trạng</label>
-                                <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} maskPreviewUrl={maskImage?.objectURL} />
+                                <ImageUpload 
+                                    onFileSelect={handleFileSelect} 
+                                    previewUrl={sourceImage?.objectURL} 
+                                    maskPreviewUrl={maskImage?.objectURL} 
+                                />
+                                
                                 {sourceImage && (
-                                    <div className="mt-2 flex gap-2">
-                                        <button 
-                                            onClick={() => setIsMaskingModalOpen(true)}
-                                            className="text-xs bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 px-3 py-1.5 rounded-md transition-colors flex items-center gap-1"
-                                        >
-                                            <span className="material-symbols-outlined text-sm">edit_square</span>
-                                            {maskImage ? 'Sửa vùng chọn' : 'Khoanh vùng cải tạo'}
-                                        </button>
-                                        {maskImage && (
-                                            <button 
-                                                onClick={() => onStateChange({ maskImage: null })}
-                                                className="text-xs bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200 dark:hover:bg-red-900/50 px-3 py-1.5 rounded-md transition-colors"
+                                    <div className="mt-4">
+                                        <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">Tùy chọn vùng chọn:</p>
+                                        <div className="flex gap-2">
+                                            <button
+                                                type="button"
+                                                onClick={(e) => { 
+                                                    e.preventDefault(); 
+                                                    setIsMaskingModalOpen(true); 
+                                                    scrollToTop(); 
+                                                }}
+                                                className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
+                                                title="Vẽ vùng chọn"
                                             >
-                                                Xóa vùng chọn
+                                               <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
+                                                {maskImage ? 'Sửa vùng chọn' : 'Vẽ vùng chọn (Mask)'}
                                             </button>
-                                        )}
+                                            {maskImage && (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleRemoveMask}
+                                                    className="bg-red-600 hover:bg-red-700 text-white font-semibold p-2 rounded-lg transition-colors"
+                                                    title="Xóa vùng chọn"
+                                                >
+                                                   <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" /></svg>
+                                                </button>
+                                            )}
+                                        </div>
+                                        {maskImage && <p className="text-xs text-green-500 dark:text-green-400 mt-2">Đã áp dụng vùng chọn. AI sẽ chỉ cải tạo trong vùng này.</p>}
                                     </div>
                                 )}
                             </div>
-                            <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu</label>
+
+                            {/* 2. Reference Images */}
+                            <div className="bg-main-bg dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Ảnh Tham Chiếu (Tùy chọn)</label>
                                 {resolution === 'Standard' && !maskImage ? (
                                     <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
                                         <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
@@ -375,26 +420,35 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                         </button>
                                     </div>
                                 ) : (
-                                    <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                                    <>
+                                        <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                                        <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo phong cách.</p>
+                                    </>
                                 )}
                             </div>
                         </div>
-                        <div className="space-y-4">
-                            <OptionSelector 
-                                id="renovation-suggestions"
-                                label="2. Chọn gợi ý cải tạo (Hoặc tự nhập)"
-                                options={renovationSuggestions.map(s => ({ value: s.prompt, label: s.label }))}
-                                value=""
-                                onChange={(val) => onStateChange({ prompt: val })}
-                                disabled={isLoading}
-                                variant="grid"
-                            />
-                            <div>
-                                <label htmlFor="prompt-renovation" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Chi tiết yêu cầu</label>
+
+                        {/* --- RIGHT COLUMN: CONTROLS --- */}
+                        <div className="space-y-6 flex flex-col h-full">
+                            <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 flex-grow flex flex-col">
+                                
+                                <div className="mb-4">
+                                    <OptionSelector 
+                                        id="renovation-suggestions"
+                                        label="3. Thêm gợi ý (nhấn để thêm)"
+                                        options={renovationSuggestions.map(s => ({ value: s.prompt, label: s.label }))}
+                                        value={""} 
+                                        onChange={handleSuggestionChange}
+                                        disabled={isLoading}
+                                        variant="grid"
+                                    />
+                                </div>
+
+                                <label htmlFor="prompt-renovation" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">4. Chi tiết yêu cầu</label>
                                 <textarea
                                     id="prompt-renovation"
-                                    rows={4}
-                                    className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none"
+                                    rows={6}
+                                    className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none flex-grow resize-none"
                                     placeholder="Mô tả chi tiết những thay đổi bạn muốn..."
                                     value={prompt}
                                     onChange={(e) => onStateChange({ prompt: e.target.value })}
@@ -402,33 +456,38 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 />
                             </div>
                             
-                            <div className="grid grid-cols-2 gap-4">
-                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                            <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
+                                <div className="grid grid-cols-2 gap-4">
+                                    <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                                    <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                                </div>
                             </div>
-                            <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
+
+                            <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
+                                <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
+                            </div>
+
+                            <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-1 border border-gray-200 dark:border-gray-700">
+                                <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                                    <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                                </div>
+                                <div className="text-xs">
+                                    {userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
+                                </div>
+                            </div>
+
+                            <button 
+                                onClick={handleGenerate}
+                                disabled={isLoading || !prompt || !sourceImage || userCredits < cost}
+                                className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
+                            >
+                                {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Tạo Phương Án Cải Tạo'}
+                            </button>
+                            {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
+                            {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                         </div>
                     </div>
-
-                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                        </div>
-                        <div className="text-xs">
-                            {userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
-                        </div>
-                    </div>
-
-                    <button 
-                        onClick={handleGenerate}
-                        disabled={isLoading || !prompt || !sourceImage || userCredits < cost}
-                        className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
-                    >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Tạo Phương Án Cải Tạo'}
-                    </button>
-                    {error && <div className="p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
-                    {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
             </div>
 
