@@ -1,5 +1,4 @@
 
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 
 interface Props {
@@ -11,35 +10,35 @@ interface State {
   error: Error | null;
 }
 
-// Fix: Explicitly extend React.Component to ensure instance properties like setState and props are correctly typed and inherited
-export class ErrorBoundary extends React.Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null,
-  };
+export class ErrorBoundary extends Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null,
+    };
+  }
 
-  public static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): State {
     // Update state so the next render will show the fallback UI.
     return { hasError: true, error };
   }
 
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("Uncaught error in component:", error, errorInfo);
   }
 
-  private handleReload = () => {
+  handleReload = () => {
     window.location.reload();
   };
 
-  private handleReset = () => {
-      // Fix: Now correctly inherits setState from React.Component to resolve "Property 'setState' does not exist" error
+  handleReset = () => {
       this.setState({ hasError: false, error: null });
-      // Optional: Clear specific local storage if needed to reset bad state
       localStorage.removeItem('activeTool'); 
       window.location.href = '/'; 
   }
 
-  public render() {
+  render() {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[50vh] p-6 text-center bg-surface dark:bg-[#121212] rounded-xl border border-border-color dark:border-gray-700 m-4 shadow-lg">
@@ -51,7 +50,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
             
             <h2 className="text-xl font-bold text-text-primary dark:text-white mb-2">Đã xảy ra sự cố</h2>
             
-            {/* Hiển thị tên lỗi cụ thể thay vì giấu trong detail */}
             {this.state.error && (
                 <p className="text-red-500 font-medium text-sm mb-2 max-w-md break-words px-4">
                     {this.state.error.message || this.state.error.toString()}
@@ -80,7 +78,6 @@ export class ErrorBoundary extends React.Component<Props, State> {
       );
     }
 
-    // Fix: Now correctly inherits props from React.Component to resolve "Property 'props' does not exist" error
     return this.props.children;
   }
 }

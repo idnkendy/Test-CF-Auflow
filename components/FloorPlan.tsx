@@ -91,6 +91,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
 
     // Set default prompt on mount or mode change
     useEffect(() => {
@@ -160,6 +161,27 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
+    };
+
+    const handleAutoPrompt = async () => {
+        if (!sourceImage) return;
+        setIsAutoPromptLoading(true);
+        onStateChange({ error: null });
+        try {
+            // Pass planType and renderMode to distinguish specific prompt logic
+            const newPrompt = await geminiService.generateFloorPlanPrompt(sourceImage, planType, renderMode);
+            
+            // Assign result to correct state property based on active mode
+            if (renderMode === 'top-down') {
+                onStateChange({ prompt: newPrompt });
+            } else {
+                onStateChange({ layoutPrompt: newPrompt });
+            }
+        } catch (err: any) {
+            onStateChange({ error: err.message || "Không thể tạo prompt tự động." });
+        } finally {
+            setIsAutoPromptLoading(false);
+        }
     };
 
     const handleGenerate = async () => {
@@ -380,11 +402,67 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                                         {showExteriorOptions || showInteriorOptions ? '4. Mô tả chi tiết (Prompt)' : '3. Mô tả chi tiết (Prompt)'}
                                     </label>
                                     <textarea rows={6} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-sm" placeholder="Mô tả phong cách..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
+                                    
+                                    {/* Auto Prompt Button for Top-down modes */}
+                                    {(planType === 'exterior' || planType === 'interior') && (
+                                        <button
+                                            type="button"
+                                            onClick={handleAutoPrompt}
+                                            disabled={!sourceImage || isAutoPromptLoading || isLoading}
+                                            className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200
+                                                ${!sourceImage || isAutoPromptLoading || isLoading
+                                                    ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                                                    : 'bg-[#334155] hover:bg-[#475569] text-white shadow-sm hover:shadow'
+                                                }
+                                            `}
+                                            title="AI tự động phân tích ảnh và viết mô tả theo chuẩn quy hoạch/nội thất"
+                                        >
+                                            {isAutoPromptLoading ? (
+                                                <>
+                                                    <Spinner />
+                                                    <span>Đang phân tích...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="material-symbols-outlined text-lg">auto_awesome</span>
+                                                    <span>Tạo tự động Prompt</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
                                 </div>
                             ) : (
                                 <div className="space-y-2">
                                     <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Mô tả góc nhìn</label>
                                     <textarea rows={6} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-sm" placeholder="Mô tả góc nhìn..." value={layoutPrompt} onChange={(e) => onStateChange({ layoutPrompt: e.target.value })} />
+                                    
+                                    {/* Auto Prompt Button for Interior Perspective Mode */}
+                                    {planType === 'interior' && (
+                                        <button
+                                            type="button"
+                                            onClick={handleAutoPrompt}
+                                            disabled={!sourceImage || isAutoPromptLoading || isLoading}
+                                            className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200
+                                                ${!sourceImage || isAutoPromptLoading || isLoading
+                                                    ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                                                    : 'bg-[#334155] hover:bg-[#475569] text-white shadow-sm hover:shadow'
+                                                }
+                                            `}
+                                            title="AI tự động phân tích mặt bằng và đề xuất góc nhìn 3D"
+                                        >
+                                            {isAutoPromptLoading ? (
+                                                <>
+                                                    <Spinner />
+                                                    <span>Đang phân tích...</span>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <span className="material-symbols-outlined text-lg">auto_awesome</span>
+                                                    <span>Tạo tự động Prompt</span>
+                                                </>
+                                            )}
+                                        </button>
+                                    )}
                                 </div>
                             )}
 

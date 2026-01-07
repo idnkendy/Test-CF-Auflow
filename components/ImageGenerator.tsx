@@ -1,5 +1,4 @@
 
-// ... existing imports ...
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -89,6 +88,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [queuePosition, setQueuePosition] = useState<number | null>(null);
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
@@ -347,6 +347,20 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         }
     };
 
+    const handleAutoPrompt = async () => {
+        if (!sourceImage) return;
+        setIsAutoPromptLoading(true);
+        onStateChange({ error: null });
+        try {
+            const newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage);
+            onStateChange({ customPrompt: newPrompt });
+        } catch (err: any) {
+            onStateChange({ error: err.message || "Không thể tạo prompt tự động." });
+        } finally {
+            setIsAutoPromptLoading(false);
+        }
+    };
+
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
         onStateChange({ isUpscaling: true, error: null });
@@ -394,7 +408,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                                     <button 
                                         onClick={() => handleResolutionChange('1K')}
                                         className="text-xs text-[#7f13ec] hover:underline font-semibold"
-                                    >
+                                        >
                                         Nâng cao chất lượng ảnh ngay
                                     </button>
                                 </div>
@@ -406,7 +420,40 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     <div className="space-y-4 flex flex-col">
                         <div className="relative">
                             <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả ý tưởng (Prompt)</label>
-                            <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none resize-none text-sm" placeholder="VD: Một ngôi nhà phố hiện đại, mặt tiền 5m, nhiều cây xanh..." value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
+                            <div className="relative">
+                                <textarea 
+                                    rows={4} 
+                                    className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none resize-none text-sm" 
+                                    placeholder="VD: Một ngôi nhà phố hiện đại, mặt tiền 5m, nhiều cây xanh..." 
+                                    value={customPrompt} 
+                                    onChange={(e) => onStateChange({ customPrompt: e.target.value })} 
+                                    disabled={isLoading} 
+                                />
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleAutoPrompt}
+                                disabled={!sourceImage || isAutoPromptLoading || isLoading}
+                                className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200
+                                    ${!sourceImage || isAutoPromptLoading || isLoading
+                                        ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                                        : 'bg-[#334155] hover:bg-[#475569] text-white shadow-sm hover:shadow'
+                                    }
+                                `}
+                                title="AI tự động phân tích ảnh và viết mô tả"
+                            >
+                                {isAutoPromptLoading ? (
+                                    <>
+                                        <Spinner />
+                                        <span>Đang phân tích...</span>
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="material-symbols-outlined text-lg">auto_awesome</span>
+                                        <span>Tạo tự động Prompt</span>
+                                    </>
+                                )}
+                            </button>
                         </div>
                         <div className="pt-2">
                             <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh chi tiết</label>

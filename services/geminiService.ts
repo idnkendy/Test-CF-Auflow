@@ -702,6 +702,113 @@ export const generateText = async (prompt: string): Promise<string> => {
     });
 };
 
+export const generateArchitecturalPrompt = async (image: FileData): Promise<string> => {
+    const ai = await getDynamicAIClient();
+    // Using gemini-2.0-flash-exp for better vision analysis capabilities
+    const model = 'gemini-2.0-flash-exp';
+    
+    const prompt = `Phân tích hình ảnh kiến trúc này và tạo một mô tả ngắn gọn bằng tiếng Việt theo đúng cấu trúc sau: 'Biến thành ảnh chụp thực tế công trình [Loại công trình] + [Điểm nhấn: Vật liệu, màu sắc, chi tiết] + [Cảnh quan xung quanh] + [Thời gian/Thời tiết] + yêu cầu giữ nguyên góc nhìn ảnh ban đầu'.
+    Ví dụ: 'Biến thành ảnh chụp thực tế công trình nhà phố hiện đại, tone màu trắng xám, ốp gỗ và kính, có cổng rào sắt, dây leo trên sân thượng, cảnh quan đường phố Việt Nam, thời gian ban ngày nắng đẹp, yêu cầu giữ nguyên góc nhìn ảnh ban đầu'.
+    Chỉ trả về nội dung text, không thêm giải thích.`;
+
+    return retryOperation(async () => {
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: {
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+                    ]
+                }
+            });
+            return response.text?.trim() || "";
+        } catch (e: any) {
+            console.error("Failed to generate architectural prompt", e);
+            throw e;
+        }
+    });
+};
+
+export const generateFloorPlanPrompt = async (
+    image: FileData, 
+    planType: 'exterior' | 'interior' = 'exterior',
+    renderMode: 'top-down' | 'perspective' = 'top-down'
+): Promise<string> => {
+    const ai = await getDynamicAIClient();
+    const model = 'gemini-2.0-flash-exp';
+    
+    let prompt = "";
+    
+    if (planType === 'interior') {
+        if (renderMode === 'perspective') {
+            // New case for Interior Perspective
+            prompt = `Phân tích hình ảnh bản vẽ mặt bằng này và xác định luồng giao thông hoặc góc nhìn tiềm năng. Tạo một mô tả ngắn gọn bằng tiếng Việt theo cấu trúc sau: 'Góc nhìn 3D cận cảnh [Loại phòng] với góc nhìn từ [Vị trí bắt đầu/Chủ thể gần] nhìn sang [Vị trí kết thúc/Chủ thể xa]'. 
+            Ví dụ: 'Góc nhìn 3D cận cảnh phòng khách với góc nhìn từ bộ bàn ăn nhìn sang khu vực sofa'.`;
+        } else {
+            // Interior Top-down (Default/Existing)
+            prompt = `Phân tích hình ảnh mặt bằng nội thất này và tạo một mô tả ngắn gọn bằng tiếng Việt theo đúng cấu trúc sau:
+            'Biến thành ảnh chụp thực tế nội thất [Thể loại công trình] + [Điểm nhấn mặt bằng: phong cách thiết kế, mô tả các khu vực quan trọng, vật liệu, đồ nội thất] + yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.
+
+            Ví dụ: 'Biến thành ảnh chụp thực tế nội thất công trình nhà ở, phong cách thiết kế hiện đại, có phòng khách và 2 phòng ngủ, 2wc. Yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.`;
+        }
+    } else {
+        // Exterior logic (Default)
+        prompt = `Phân tích hình ảnh mặt bằng/quy hoạch này và tạo một mô tả ngắn gọn bằng tiếng Việt theo đúng cấu trúc sau: 
+        'Biến thành ảnh chụp thực tế dự án [Thể loại dự án] + [Các khu vực quan trọng: nhà ở, thương mại, vui chơi, cổng, hồ nước...] + [Cảnh quan xung quanh (phong cách Việt Nam)] + [Thời gian/Thời tiết] + yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.
+        
+        Ví dụ: 'Biến thành ảnh chụp thực tế dự án nghỉ dưỡng sinh thái, Có khu vực hồ nước là hồ câu cá ở trung tâm, có khu vực bungalow mái rơm, có nhà hàng và quán cafe, khu vực đỗ xe, xung quanh được bao bọc bởi các con đường lớn và cánh đồng lúa việt nam, thời gian ban ngày nắng đẹp. Yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.`;
+    }
+    
+    prompt += `\nChỉ trả về nội dung text, không thêm giải thích.`;
+
+    return retryOperation(async () => {
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: {
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+                    ]
+                }
+            });
+            return response.text?.trim() || "";
+        } catch (e: any) {
+            console.error("Failed to generate floor plan prompt", e);
+            throw e;
+        }
+    });
+};
+
+export const generateInteriorPrompt = async (image: FileData): Promise<string> => {
+    const ai = await getDynamicAIClient();
+    // Using gemini-2.0-flash-exp for better vision analysis capabilities
+    const model = 'gemini-2.0-flash-exp';
+    
+    const prompt = `Phân tích hình ảnh nội thất này và tạo một mô tả ngắn gọn bằng tiếng Việt theo đúng cấu trúc sau: 'Biến thành ảnh chụp thực tế [Loại công trình] với [Góc nhìn] + [Loại phòng] + [Phong cách thiết kế] + [Điểm nhấn nội thất: tone màu, vật liệu, trang trí...] + [Ánh sáng] + [Thời gian/Thời tiết]'.
+    Ví dụ: 'Biến thành ảnh chụp thực tế nội thất nhà ở phòng khách hiện đại, sàn lát gạch màu tối, tủ gỗ óc chó, tone màu ấm, thời gian ban ngày nắng đẹp, có ánh sáng chiếu vào phòng'.
+    Chỉ trả về nội dung text, không thêm giải thích.`;
+
+    return retryOperation(async () => {
+        try {
+            const response = await ai.models.generateContent({
+                model: model,
+                contents: {
+                    parts: [
+                        { text: prompt },
+                        { inlineData: { mimeType: image.mimeType, data: image.base64 } }
+                    ]
+                }
+            });
+            return response.text?.trim() || "";
+        } catch (e: any) {
+            console.error("Failed to generate interior prompt", e);
+            throw e;
+        }
+    });
+};
+
 export const generatePromptSuggestions = async (
     image: FileData, 
     subject: string, 
@@ -709,7 +816,8 @@ export const generatePromptSuggestions = async (
     customInstruction: string = ''
 ): Promise<Record<string, string[]> | null> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-3-flash-preview';
+    // Using gemini-2.0-flash-exp for better vision analysis capabilities
+    const model = 'gemini-2.0-flash-exp';
     
     const allCategories = [
         "Góc toàn cảnh", 
@@ -767,7 +875,8 @@ export const generatePromptSuggestions = async (
 
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-3-flash-preview';
+    // Using gemini-2.0-flash-exp for better vision capabilities if image is present
+    const model = 'gemini-2.0-flash-exp';
     
     const parts: any[] = [{ text: `Act as an expert architectural prompt engineer. Enhance the following user input into a detailed, professional prompt suitable for high-quality AI rendering (like Midjourney or Gemini). Focus on lighting, materials, atmosphere, and camera specifications. \n\nUser Input: "${userInput}"` }];
     
@@ -793,7 +902,8 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 // --- VIDEO PROMPT GENERATION ---
 export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-3-flash-preview';
+    // Using gemini-2.0-flash-exp for better vision analysis capabilities
+    const model = 'gemini-2.0-flash-exp';
     
     const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI. 
     Tập trung mô tả chuyển động camera, thay đổi ánh sáng, và các yếu tố khí quyển. Giữ prompt dưới 60 từ.

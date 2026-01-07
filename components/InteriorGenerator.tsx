@@ -80,6 +80,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
     
     // Set default prompt on mount if empty
     useEffect(() => {
@@ -266,6 +267,20 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         }
     };
 
+    const handleAutoPrompt = async () => {
+        if (!sourceImage) return;
+        setIsAutoPromptLoading(true);
+        onStateChange({ error: null });
+        try {
+            const newPrompt = await geminiService.generateInteriorPrompt(sourceImage);
+            onStateChange({ customPrompt: newPrompt });
+        } catch (err: any) {
+            onStateChange({ error: err.message || "Không thể tạo prompt tự động." });
+        } finally {
+            setIsAutoPromptLoading(false);
+        }
+    };
+
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
         onStateChange({ isUpscaling: true, error: null });
@@ -319,17 +334,43 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
                         {/* Prompt and Options (Right Column) */}
                          <div className="space-y-4 flex flex-col">
-                             <div>
+                             <div className="relative">
                                 <label htmlFor="custom-prompt-interior" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả yêu cầu chính</label>
-                                <textarea
-                                    id="custom-prompt-interior"
-                                    rows={4}
-                                    className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                                    placeholder="Mô tả ý tưởng của bạn ở đây..."
-                                    value={customPrompt}
-                                    onChange={(e) => onStateChange({ customPrompt: e.target.value })}
-                                    disabled={isLoading}
-                                />
+                                <div className="relative">
+                                    <textarea
+                                        id="custom-prompt-interior"
+                                        rows={4}
+                                        className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
+                                        placeholder="Mô tả ý tưởng của bạn ở đây..."
+                                        value={customPrompt}
+                                        onChange={(e) => onStateChange({ customPrompt: e.target.value })}
+                                        disabled={isLoading}
+                                    />
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleAutoPrompt}
+                                    disabled={!sourceImage || isAutoPromptLoading || isLoading}
+                                    className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200
+                                        ${!sourceImage || isAutoPromptLoading || isLoading
+                                            ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed'
+                                            : 'bg-[#334155] hover:bg-[#475569] text-white shadow-sm hover:shadow'
+                                        }
+                                    `}
+                                    title="AI tự động phân tích ảnh và viết mô tả"
+                                >
+                                    {isAutoPromptLoading ? (
+                                        <>
+                                            <Spinner />
+                                            <span>Đang phân tích...</span>
+                                        </>
+                                    ) : (
+                                        <>
+                                            <span className="material-symbols-outlined text-lg">auto_awesome</span>
+                                            <span>Tạo tự động Prompt</span>
+                                        </>
+                                    )}
+                                </button>
                              </div>
                             
                             <div className="pt-2">
