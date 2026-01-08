@@ -20,6 +20,12 @@ const GoogleIcon = () => (
 const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  
+  // 'login' or 'signup'
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -36,6 +42,46 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
     }
   };
 
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+        setError("Vui lòng nhập đầy đủ Email và Mật khẩu.");
+        return;
+    }
+    
+    setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+        if (authMode === 'signup') {
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+            });
+            if (error) throw error;
+            if (data.user && !data.session) {
+                setSuccessMsg("Đăng ký thành công! Vui lòng kiểm tra email để xác thực tài khoản.");
+                // Reset form slightly
+                setPassword('');
+            }
+        } else {
+            const { error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+            if (error) throw error;
+        }
+    } catch (err: any) {
+        let msg = err.message;
+        if (msg === "Invalid login credentials") msg = "Email hoặc mật khẩu không chính xác.";
+        if (msg.includes("User already registered")) msg = "Email này đã được đăng ký.";
+        setError(msg);
+    } finally {
+        setLoading(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-main-bg dark:bg-[#0F0F0F] flex flex-col items-center justify-center p-4 relative font-sans transition-colors duration-300">
         <button onClick={onGoHome} className="absolute top-6 left-6 text-text-secondary dark:text-gray-400 hover:text-accent transition-colors flex items-center gap-2 font-medium">
@@ -44,22 +90,30 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
         </button>
 
         <div className="w-full max-w-md">
-            <div className="flex flex-col items-center mb-8 animate-fade-in">
+            <div className="flex flex-col items-center mb-6 animate-fade-in">
                  <Logo className="w-16 h-16 mb-4 drop-shadow-2xl" />
                 <h1 className="text-text-primary dark:text-white text-3xl font-extrabold mb-1 tracking-tight">OPZEN AI</h1>
                 <p className="text-text-secondary dark:text-gray-400 text-center text-sm font-medium opacity-80">Kiến tạo không gian với AI</p>
             </div>
             
             <div className="bg-surface dark:bg-[#191919] p-8 rounded-3xl shadow-2xl border border-border-color dark:border-[#302839] relative overflow-hidden">
-                <div className="text-center mb-6">
-                    <h2 className="text-2xl font-bold text-text-primary dark:text-white">
-                        Đăng nhập
-                    </h2>
-                    <p className="text-sm text-text-secondary dark:text-gray-400 mt-2">
-                        Tiếp tục với tài khoản Google để trải nghiệm
-                    </p>
-                </div>
                 
+                {/* Tabs */}
+                <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-6">
+                    <button
+                        onClick={() => { setAuthMode('login'); setError(null); setSuccessMsg(null); }}
+                        className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${authMode === 'login' ? 'bg-white dark:bg-[#302839] text-text-primary dark:text-white shadow-sm' : 'text-text-secondary dark:text-gray-400 hover:text-text-primary'}`}
+                    >
+                        Đăng nhập
+                    </button>
+                    <button
+                        onClick={() => { setAuthMode('signup'); setError(null); setSuccessMsg(null); }}
+                        className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition-all ${authMode === 'signup' ? 'bg-white dark:bg-[#302839] text-text-primary dark:text-white shadow-sm' : 'text-text-secondary dark:text-gray-400 hover:text-text-primary'}`}
+                    >
+                        Đăng ký
+                    </button>
+                </div>
+
                 {!isSupabaseConfigured && (
                     <div className="mb-6 p-4 bg-yellow-100 border-l-4 border-yellow-500 text-yellow-800 dark:bg-yellow-900/30 dark:border-yellow-500 dark:text-yellow-300 rounded-r-lg text-left">
                         <p className="font-bold text-sm">Cấu hình chưa hoàn tất!</p>
@@ -68,21 +122,58 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                 )}
                 
                 {error && <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-400 rounded-xl text-sm text-left animate-shake">{error}</div>}
+                {successMsg && <div className="mb-6 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 rounded-xl text-sm text-left animate-fade-in">{successMsg}</div>}
 
-                {/* GOOGLE LOGIN */}
                 <div className="space-y-4">
+                    {/* Google Login */}
                     <button
                         onClick={handleGoogleSignIn}
                         disabled={loading || !isSupabaseConfigured}
-                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-4 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group h-14"
+                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-3.5 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group"
                     >
-                        {loading ? <Spinner /> : (
-                            <>
-                                <GoogleIcon />
-                                <span className="text-sm sm:text-base group-hover:text-[#7f13ec] transition-colors">Tiếp tục với Google</span>
-                            </>
-                        )}
+                        <GoogleIcon />
+                        <span className="text-sm sm:text-base group-hover:text-[#7f13ec] transition-colors">Tiếp tục với Google</span>
                     </button>
+
+                    <div className="relative flex py-2 items-center">
+                        <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+                        <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-medium uppercase">Hoặc</span>
+                        <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+                    </div>
+
+                    {/* Email Form */}
+                    <form onSubmit={handleEmailAuth} className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-text-secondary dark:text-gray-400 mb-1.5 ml-1">EMAIL</label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3.5 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] focus:border-transparent outline-none transition-all placeholder-gray-400 dark:placeholder-gray-500"
+                                placeholder="name@example.com"
+                                disabled={loading}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-text-secondary dark:text-gray-400 mb-1.5 ml-1">MẬT KHẨU</label>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl p-3.5 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] focus:border-transparent outline-none transition-all placeholder-gray-400 dark:placeholder-gray-500"
+                                placeholder="••••••••"
+                                disabled={loading}
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading || !isSupabaseConfigured}
+                            className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3.5 px-4 rounded-xl transition-all shadow-lg hover:shadow-purple-500/30 mt-2"
+                        >
+                            {loading ? <Spinner /> : (authMode === 'login' ? 'Đăng nhập' : 'Tạo tài khoản')}
+                        </button>
+                    </form>
                 </div>
             </div>
             
