@@ -56,7 +56,7 @@ interface LandscapeRenderingProps {
   onDeductCredits?: (amount: number, description: string) => Promise<string>;
 }
 
-const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateChange, onSendToViewSync, userCredits, onDeductCredits }) => {
+const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
     const { 
         gardenStyle, timeOfDay, features, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
