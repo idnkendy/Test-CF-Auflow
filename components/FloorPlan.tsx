@@ -92,6 +92,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     // Set default prompt on mount or mode change
     useEffect(() => {
@@ -321,14 +322,11 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         onStateChange({ referenceImages: files });
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (resultImages.length !== 1) return;
-        const link = document.createElement('a');
-        link.href = resultImages[0];
-        link.download = "floorplan-render-3d.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(resultImages[0], "floorplan-render-3d.png");
+        setIsDownloading(false);
     };
     
     // Check conditions to show options
@@ -502,7 +500,12 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
             <div>
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-semibold">Kết quả</h3>
-                    {resultImages.length === 1 && <button onClick={handleDownload} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm">Tải xuống</button>}
+                    {resultImages.length === 1 && (
+                        <button onClick={handleDownload} disabled={isDownloading} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm flex items-center gap-2">
+                            {isDownloading ? <Spinner /> : null}
+                            Tải xuống
+                        </button>
+                    )}
                 </div>
                 <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden">
                     {isLoading ? (

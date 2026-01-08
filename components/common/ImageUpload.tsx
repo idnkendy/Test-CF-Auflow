@@ -8,6 +8,7 @@ interface ImageUploadProps {
   previewUrl?: string | null;
   maskPreviewUrl?: string | null;
   directionPreviewUrl?: string | null;
+  className?: string;
 }
 
 // Helper: Resize and Compress Image
@@ -99,7 +100,7 @@ const CloudUploadIcon = () => (
     </svg>
 );
 
-const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl, maskPreviewUrl, directionPreviewUrl }) => {
+const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl, maskPreviewUrl, directionPreviewUrl, className }) => {
     const [error, setError] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -173,7 +174,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
 
     if (previewUrl) {
         return (
-            <div className="relative group w-full aspect-video bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm">
+            <div className={`relative group w-full aspect-video bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm ${className || ''}`}>
                 <img src={previewUrl} alt="Preview" className="w-full h-full object-contain" />
                 {maskPreviewUrl && (
                     <img 
@@ -221,7 +222,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
     }
     
     return (
-        <div>
+        <div className={className}>
             <div 
                 className={`group relative w-full aspect-video bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-accent hover:bg-accent/5 transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer p-6 ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
                 onClick={handleContainerClick}

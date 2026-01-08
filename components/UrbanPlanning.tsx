@@ -62,6 +62,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     const escapeRegExp = (string: string) => {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -343,12 +344,12 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
         }
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null);
         if (!url) return;
-        const link = document.createElement('a');
-        link.href = url; link.download = "urban-planning-render.png";
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(url, "urban-planning-render.png");
+        setIsDownloading(false);
     };
 
     const handleSendImageToSync = async (imageUrl: string) => {
@@ -446,7 +447,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                              <>
                                 <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold">Đồng bộ</button>
                                 <button onClick={() => setPreviewImage(upscaledImage || resultImages[0])} className="bg-gray-600 text-white p-2 rounded-lg"><span className="material-symbols-outlined">zoom_in</span></button>
-                                <button onClick={handleDownload} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm">Tải xuống</button>
+                                <button onClick={handleDownload} disabled={isDownloading} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm flex items-center gap-2">{isDownloading ? <Spinner /> : null}Tải xuống</button>
                             </>
                         )}
                     </div>

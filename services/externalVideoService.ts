@@ -181,6 +181,37 @@ export const proxyDownload = async (targetUrl: string): Promise<Blob> => {
     return await res.blob();
 }
 
+/**
+ * Forces a browser download by fetching the blob (via proxy if needed) and creating a local link.
+ */
+export const forceDownload = async (url: string, filename: string) => {
+    try {
+        let blob: Blob;
+        // Check if local blob or data URI
+        if (url.startsWith('blob:') || url.startsWith('data:')) {
+             const res = await fetch(url);
+             blob = await res.blob();
+        } else {
+             // Remote URL - use proxy to bypass CORS
+             blob = await proxyDownload(url);
+        }
+        
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        
+        // Clean up
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+    } catch (e) {
+        console.error("Force download failed, falling back to open new tab", e);
+        window.open(url, '_blank');
+    }
+};
+
 // ... existing flow media functions ...
 export const generateFlowImage = async (
     prompt: string,

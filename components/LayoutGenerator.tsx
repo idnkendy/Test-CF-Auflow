@@ -29,6 +29,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
     
     const getCostPerImage = () => {
         switch (resolution) {
@@ -183,14 +184,11 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
         }
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (resultImages.length === 0) return;
-        const link = document.createElement('a');
-        link.href = resultImages[0];
-        link.download = `layout-generated-${Date.now()}.png`;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(resultImages[0], `layout-generated-${Date.now()}.png`);
+        setIsDownloading(false);
     };
 
     return (
@@ -253,11 +251,14 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                                 </button>
                                 <button 
                                     onClick={handleDownload} 
+                                    disabled={isDownloading}
                                     className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                    </svg>
+                                    {isDownloading ? <Spinner /> : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                        </svg>
+                                    )}
                                     <span>Tải xuống</span>
                                 </button>
                             </div>

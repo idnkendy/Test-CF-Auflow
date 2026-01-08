@@ -4,6 +4,7 @@ import { FileData, Tool } from '../types';
 import { UpscaleState } from '../state/toolState';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
+import * as externalVideoService from '../services/externalVideoService';
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -50,6 +51,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
     const { sourceImage, isLoading, error, upscaledImages, detailMode } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
     
     // Internal state for RunningHub tracking
     const [runningHubTaskId, setRunningHubTaskId] = useState<string | null>(null);
@@ -275,31 +277,9 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         const url = upscaledImages[0];
         const filename = `upscaled-${detailMode}-${Date.now()}.png`;
 
-        try {
-            // Force fetch blob to download instead of opening new tab
-            const response = await fetch(url);
-            const blob = await response.blob();
-            const blobUrl = URL.createObjectURL(blob);
-            
-            const link = document.createElement('a');
-            link.href = blobUrl;
-            link.download = filename;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            
-            // Cleanup
-            URL.revokeObjectURL(blobUrl);
-        } catch (e) {
-            console.error("Download failed, fallback to direct link", e);
-            const link = document.createElement('a');
-            link.href = url;
-            link.download = filename;
-            link.target = "_blank"; // Fallback to new tab if blob fetch fails (e.g. CORS)
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        }
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(url, filename);
+        setIsDownloading(false);
     };
 
     return (
@@ -397,11 +377,14 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                                 </button>
                                 <button 
                                     onClick={handleDownload} 
+                                    disabled={isDownloading}
                                     className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
                                 >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                    </svg>
+                                    {isDownloading ? <Spinner /> : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                        </svg>
+                                    )}
                                     <span>Tải xuống</span>
                                 </button>
                             </div>

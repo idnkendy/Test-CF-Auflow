@@ -4,6 +4,8 @@ import { GenerationJob } from '../types';
 import { refundCredits } from './paymentService';
 
 const BUCKET_NAME = 'assets';
+// Proxy URL to bypass CORS for Google Storage URLs
+const PROXY_BASE_URL = "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
 
 const compressImage = async (blob: Blob): Promise<Blob> => {
     if (!blob.type.startsWith('image/')) return blob;
@@ -34,8 +36,10 @@ const compressImage = async (blob: Blob): Promise<Blob> => {
 const persistResultToStorage = async (userId: string, data: string): Promise<string | null> => {
     try {
         if (data.includes('supabase.co') && data.includes(BUCKET_NAME)) return data;
+        
         let blob: Blob;
         let extension = 'webp';
+
         if (data.startsWith('data:')) {
             const arr = data.split(',');
             const mime = arr[0].match(/:(.*?);/)?.[1] || 'image/png';
@@ -43,19 +47,68 @@ const persistResultToStorage = async (userId: string, data: string): Promise<str
             let n = bstr.length; const u8arr = new Uint8Array(n);
             while (n--) { u8arr[n] = bstr.charCodeAt(n); }
             blob = new Blob([u8arr], { type: mime });
-        } else if (data.startsWith('blob:') || data.startsWith('http')) {
-            const response = await fetch(data);
-            blob = await response.blob();
-            if (blob.type.startsWith('video')) extension = 'mp4';
-        } else return data;
+        } else if (data.startsWith('blob:')) {
+             const response = await fetch(data);
+             blob = await response.blob();
+             if (blob.type.startsWith('video')) extension = 'mp4';
+        } else if (data.startsWith('http')) {
+            // REMOTE URL HANDLING WITH PROXY FALLBACK
+            try {
+                // Attempt 1: Direct Fetch (works for CORS-enabled URLs)
+                const response = await fetch(data);
+                if (!response.ok) throw new Error("Direct fetch failed");
+                blob = await response.blob();
+            } catch (directErr) {
+                // Attempt 2: Proxy Fetch (for Google Storage / Signed URLs)
+                try {
+                    const proxyUrl = `${PROXY_BASE_URL}/proxy-download?url=${encodeURIComponent(data)}`;
+                    const proxyResponse = await fetch(proxyUrl);
+                    if (!proxyResponse.ok) throw new Error("Proxy download failed");
+                    blob = await proxyResponse.blob();
+                } catch (proxyErr) {
+                    console.warn("[JobService] Failed to fetch remote URL via proxy:", proxyErr);
+                    return null; // Return null so we fall back to the original URL in updateJobStatus
+                }
+            }
+            
+            // Determine extension from blob type if it's a video
+            if (blob.type.includes('video') || data.includes('.mp4')) {
+                extension = 'mp4';
+            } else if (blob.type.includes('quicktime')) {
+                extension = 'mov';
+            }
+        } else {
+            return data;
+        }
 
-        if (blob.type.startsWith('image/')) { blob = await compressImage(blob); extension = 'webp'; }
+        // Compress if it's an image
+        if (blob.type.startsWith('image/')) { 
+            blob = await compressImage(blob); 
+            extension = 'webp'; 
+        }
+
         const fileName = `${userId}/jobs/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${extension}`;
-        const { error: uploadError } = await supabase.storage.from(BUCKET_NAME).upload(fileName, blob, { cacheControl: '31536000', upsert: false, contentType: blob.type });
-        if (uploadError) return null;
+        
+        const { error: uploadError } = await supabase.storage
+            .from(BUCKET_NAME)
+            .upload(fileName, blob, { 
+                cacheControl: '31536000', 
+                upsert: false, 
+                contentType: blob.type 
+            });
+
+        if (uploadError) {
+            console.error("[JobService] Upload error:", uploadError);
+            return null;
+        }
+
         const { data: publicData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(fileName);
         return publicData.publicUrl;
-    } catch (e) { return null; }
+
+    } catch (e) { 
+        console.error("[JobService] Persist error:", e);
+        return null; 
+    }
 };
 
 /**
@@ -103,16 +156,26 @@ export const createJob = async (jobData: Partial<GenerationJob>, retries = 2): P
 export const updateJobStatus = async (jobId: string, status: 'pending' | 'processing' | 'completed' | 'failed', resultUrl?: string, errorMessage?: string) => {
     try {
         const updates: any = { status, updated_at: new Date().toISOString() };
+        
         if (resultUrl) {
             const { data: jobData } = await supabase.from('generation_jobs').select('user_id').eq('id', jobId).single();
             if (jobData?.user_id) {
+                // Try to upload to Supabase
                 const persistentUrl = await persistResultToStorage(jobData.user_id, resultUrl);
+                
+                // If upload succeeded, use new URL. If failed (null), use original Google URL.
                 updates.result_url = persistentUrl || resultUrl;
-            } else updates.result_url = resultUrl;
+            } else {
+                updates.result_url = resultUrl;
+            }
         }
+        
         if (errorMessage) updates.error_message = errorMessage;
+        
         await supabase.from('generation_jobs').update(updates).eq('id', jobId);
-    } catch (e) {}
+    } catch (e) {
+        console.error("[JobService] Update status error:", e);
+    }
 };
 
 export const getQueuePosition = async (jobId: string): Promise<number> => {

@@ -28,6 +28,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
     
     const getCostPerImage = () => {
         switch (resolution) {
@@ -186,6 +187,13 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
         }
     };
 
+    const handleDownload = async () => {
+        if (resultImages.length === 0) return;
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(resultImages[0], `moodboard-${Date.now()}.png`);
+        setIsDownloading(false);
+    };
+
     return (
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
@@ -212,13 +220,27 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                     </div>
                 </div>
             </div>
-            <div className="aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden">
+            <div className="aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden relative">
                 {isLoading ? (
                     <div className="flex flex-col items-center">
                         <Spinner />
                         <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
                     </div>
-                ) : resultImages.length > 0 ? <ResultGrid images={resultImages} toolName="moodboard" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
+                ) : resultImages.length > 0 ? (
+                    <>
+                        <ResultGrid images={resultImages} toolName="moodboard" />
+                        <div className="absolute top-2 right-2">
+                            <button 
+                                onClick={handleDownload}
+                                disabled={isDownloading} 
+                                className="bg-gray-600/80 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow flex items-center gap-2"
+                            >
+                                {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
+                                Tải xuống
+                            </button>
+                        </div>
+                    </>
+                ) : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
             </div>
         </div>
     );

@@ -82,6 +82,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -327,14 +328,11 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         onStateChange({ maskImage: null });
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (renovatedImages.length !== 1) return;
-        const link = document.createElement('a');
-        link.href = renovatedImages[0];
-        link.download = "renovated-image.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(renovatedImages[0], "renovated-image.png");
+        setIsDownloading(false);
     };
 
     const scrollToTop = () => {
@@ -504,11 +502,12 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 <span className="material-symbols-outlined text-lg">zoom_in</span>
                             </button>
                             <button 
-                                onClick={handleDownload} 
+                                onClick={handleDownload}
+                                disabled={isDownloading}
                                 className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
                             >
-                                <span className="material-symbols-outlined text-lg">download</span>
-                                <span>Tải xuống</span>
+                                {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-lg">download</span>}
+                                <span>{isDownloading ? 'Đang tải...' : 'Tải xuống'}</span>
                             </button>
                         </div>
                     )}

@@ -81,6 +81,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
     
     // Set default prompt on mount if empty
     useEffect(() => {
@@ -292,7 +293,14 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         } catch (err: any) { onStateChange({ error: err.message || "Failed to upscale image." }); } finally { onStateChange({ isUpscaling: false }); setStatusMessage(null); }
     };
     
-    const handleDownload = () => { const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null); if (!url) return; const link = document.createElement('a'); link.href = url; link.download = "generated-interior.png"; document.body.appendChild(link); link.click(); document.body.removeChild(link); };
+    const handleDownload = async () => { 
+        const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null); 
+        if (!url) return; 
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(url, "generated-interior.png");
+        setIsDownloading(false);
+    };
+    
     const handleSendImageToSync = async (imageUrl: string) => { try { const fileData = await geminiService.getFileDataFromUrl(imageUrl); onSendToViewSync(fileData); } catch (e) { onStateChange({ error: "Không thể chuyển ảnh, định dạng không hợp lệ." }); } };
 
     return (
@@ -469,8 +477,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                     </svg>
                                     Phóng to
                                 </button>
-                                 <button onClick={handleDownload} className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm">
-                                    Tải xuống
+                                 <button onClick={handleDownload} disabled={isDownloading} className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2">
+                                    {isDownloading ? <Spinner /> : null} Tải xuống
                                 </button>
                             </>
                         )}

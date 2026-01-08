@@ -66,6 +66,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     const escapeRegExp = (string: string) => {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -348,11 +349,12 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
         }
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null);
         if (!url) return;
-        const link = document.createElement('a'); link.href = url; link.download = "landscape-render.png";
-        document.body.appendChild(link); link.click(); document.body.removeChild(link);
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(url, "landscape-render.png");
+        setIsDownloading(false);
     };
 
     const handleSendImageToSync = async (imageUrl: string) => {
@@ -368,12 +370,12 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <div>
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Sân vườn & Tiểu cảnh</h2>
+                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Sân Vườn & Cảnh Quan</h2>
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                         <div className="space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Phác Thảo</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Bản Vẽ/Ảnh Hiện Trạng</label>
                                 <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
                             </div>
                              <div>
@@ -398,22 +400,22 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                         </div>
                          <div className="space-y-4 flex flex-col">
                              <div>
-                                <label htmlFor="custom-prompt-landscape" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả yêu cầu</label>
-                                <textarea id="custom-prompt-landscape" rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none" value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
+                                <label htmlFor="custom-prompt-landscape" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả ý tưởng</label>
+                                <textarea id="custom-prompt-landscape" rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none" placeholder="Mô tả khu vườn mơ ước..." value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
                              </div>
                             <div className="pt-2">
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh</label>
                                 <div className="space-y-4">
-                                    <OptionSelector id="style-selector" label="Phong cách vườn" options={gardenStyleOptions} value={gardenStyle} onChange={handleGardenStyleChange} disabled={isLoading} variant="grid" />
+                                    <OptionSelector id="garden-style-selector" label="Phong cách" options={gardenStyleOptions} value={gardenStyle} onChange={handleGardenStyleChange} disabled={isLoading} variant="grid" />
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <OptionSelector id="time-selector" label="Thời gian" options={timeOfDayOptions} value={timeOfDay} onChange={handleTimeOfDayChange} disabled={isLoading} variant="select" />
-                                        <OptionSelector id="feature-selector" label="Thêm chi tiết" options={featureOptions} value={features} onChange={handleFeaturesChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="feature-selector" label="Điểm nhấn" options={featureOptions} value={features} onChange={handleFeaturesChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="time-selector-landscape" label="Thời gian" options={timeOfDayOptions} value={timeOfDay} onChange={handleTimeOfDayChange} disabled={isLoading} variant="select" />
                                     </div>
                                 </div>
                             </div>
                             <div className="pt-4 grid grid-cols-2 gap-4">
-                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} disabled={isLoading} />
-                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({aspectRatio: val})} disabled={isLoading} />
+                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
                             </div>
                             <div className="pt-4">
                                 <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
@@ -427,10 +429,14 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                                 <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                             </div>
                             <div className="text-xs">
-                                {userCredits && userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
+                                {userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
                             </div>
                         </div>
-                        <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim() || isUpscaling || ((userCredits || 0) < cost)} className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold rounded-lg transition-colors">
+                        <button 
+                            onClick={handleGenerate} 
+                            disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost} 
+                            className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
+                        >
                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}
                         </button>
                     </div>
@@ -446,7 +452,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                              <>
                                 <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold">Đồng bộ</button>
                                 <button onClick={() => setPreviewImage(upscaledImage || resultImages[0])} className="bg-gray-600 text-white p-2 rounded-lg"><span className="material-symbols-outlined">zoom_in</span></button>
-                                 <button onClick={handleDownload} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm">Tải xuống</button>
+                                <button onClick={handleDownload} disabled={isDownloading} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm flex items-center gap-2">{isDownloading ? <Spinner /> : null}Tải xuống</button>
                             </>
                         )}
                     </div>

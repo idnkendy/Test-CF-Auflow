@@ -78,6 +78,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     const [annotatedPreview, setAnnotatedPreview] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     // Editor State
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
@@ -722,6 +723,15 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         document.body.removeChild(link);
     };
 
+    const scrollToTop = () => {
+        const mainContainer = document.querySelector('main');
+        if (mainContainer) {
+            mainContainer.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+    };
+
     return (
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
@@ -1120,7 +1130,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 {isLoading ? <><Spinner /> Đang xử lý. Vui lòng đợi...</> : 'Tạo Ảnh'}
                             </button>
                             {error && <div className="text-xs text-red-500 text-center bg-red-50 dark:bg-red-900/10 p-2 rounded-lg border border-red-100 dark:border-red-900/20">{error}</div>}
-                            {upscaleWarning && <p className="text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
+                            {upscaleWarning && <p className="text-xs text-yellow-500 text-center mt-2">{upscaleWarning}</p>}
                         </div>
                     </div>
                 </div>

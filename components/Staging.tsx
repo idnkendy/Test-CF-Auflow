@@ -51,6 +51,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     // Calculate cost based on resolution
     const getCostPerImage = () => {
@@ -266,14 +267,11 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
         onStateChange({ objectImages: files });
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (resultImages.length !== 1) return;
-        const link = document.createElement('a');
-        link.href = resultImages[0];
-        link.download = "ai-staging.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(resultImages[0], "ai-staging.png");
+        setIsDownloading(false);
     };
 
     return (
@@ -357,7 +355,12 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                                     </svg>
                                     Phóng to
                                 </button>
-                                <button onClick={handleDownload} className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm">
+                                <button 
+                                    onClick={handleDownload} 
+                                    disabled={isDownloading}
+                                    className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2"
+                                >
+                                    {isDownloading ? <Spinner /> : null}
                                     Tải xuống
                                 </button>
                             </div>

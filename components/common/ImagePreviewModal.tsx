@@ -1,4 +1,6 @@
-import React from 'react';
+
+import React, { useState } from 'react';
+import * as externalVideoService from '../../services/externalVideoService';
 
 interface ImagePreviewModalProps {
   imageUrl: string;
@@ -19,15 +21,13 @@ const CloseIcon = () => (
 
 
 const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({ imageUrl, onClose }) => {
+  const [isDownloading, setIsDownloading] = useState(false);
 
-  const handleDownload = (e: React.MouseEvent) => {
+  const handleDownload = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const link = document.createElement('a');
-    link.href = imageUrl;
-    link.download = `ai-generated-image-${Date.now()}.png`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    setIsDownloading(true);
+    await externalVideoService.forceDownload(imageUrl, `ai-generated-image-${Date.now()}.png`);
+    setIsDownloading(false);
   };
 
   const handleBackdropClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -59,8 +59,13 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({ imageUrl, onClose
                 onClick={handleDownload}
                 className="p-2 bg-black/50 rounded-full text-white hover:bg-blue-600 transition-colors"
                 title="Tải xuống ảnh"
+                disabled={isDownloading}
             >
-                <DownloadIcon />
+                {isDownloading ? (
+                    <div className="w-6 h-6 border-2 border-white/50 border-t-white rounded-full animate-spin"></div>
+                ) : (
+                    <DownloadIcon />
+                )}
             </button>
             <button
                 onClick={onClose}

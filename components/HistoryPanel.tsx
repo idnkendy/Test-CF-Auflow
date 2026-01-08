@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from 'react';
 import * as historyService from '../services/historyService';
+import * as externalVideoService from '../services/externalVideoService';
 import { HistoryItem, Tool } from '../types';
 import Spinner from './Spinner';
 
@@ -180,32 +181,8 @@ const HistoryPanel: React.FC = () => {
                 : `ai-mastery-render-${selectedItem.id}.png`;
 
             setIsDownloading(true);
-            try {
-                // Fetch as blob to force download
-                const response = await fetch(url);
-                const blob = await response.blob();
-                const blobUrl = URL.createObjectURL(blob);
-                
-                const link = document.createElement('a');
-                link.href = blobUrl;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                
-                // Cleanup
-                URL.revokeObjectURL(blobUrl);
-            } catch (e) {
-                console.error("Download failed, fallback to direct link", e);
-                // Fallback
-                const link = document.createElement('a');
-                link.href = url;
-                link.download = filename;
-                link.target = "_blank";
-                link.click();
-            } finally {
-                setIsDownloading(false);
-            }
+            await externalVideoService.forceDownload(url, filename);
+            setIsDownloading(false);
         };
         
         // Backwards compatibility for display

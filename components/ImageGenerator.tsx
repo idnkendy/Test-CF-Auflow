@@ -89,6 +89,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
+    const [isDownloading, setIsDownloading] = useState(false);
 
     useEffect(() => {
         let interval: ReturnType<typeof setInterval>;
@@ -372,10 +373,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         } catch (err: any) { onStateChange({ error: err.message }); } finally { onStateChange({ isUpscaling: false }); setStatusMessage(null); }
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null);
         if (!url) return;
-        const link = document.createElement('a'); link.href = url; link.download = "render.png"; link.click();
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(url, "render.png");
+        setIsDownloading(false);
     };
 
     const handleSendImageToSync = async (imageUrl: string) => {
@@ -524,7 +527,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         <div className="flex flex-wrap items-center gap-2">
                             {!upscaledImage && <button onClick={handleUpscale} disabled={isUpscaling || isLoading} className="flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-600 dark:text-yellow-400 px-3 py-1.5 rounded-lg text-sm font-medium border border-yellow-500/20">{isUpscaling ? <Spinner /> : <span className="material-symbols-outlined text-sm">bolt</span>}<span>Upscale</span></button>}
                             <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="text-accent-600 bg-accent-50 hover:bg-accent-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-accent-200">Đồng bộ View</button>
-                            <button onClick={handleDownload} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium shadow-sm">Tải xuống</button>
+                            <button onClick={handleDownload} disabled={isDownloading} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium shadow-sm flex items-center gap-2">
+                                {isDownloading ? <Spinner /> : null}
+                                Tải xuống
+                            </button>
                         </div>
                     )}
                 </div>

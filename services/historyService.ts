@@ -4,6 +4,8 @@ import { supabase } from './supabaseClient';
 
 const TABLE_NAME = 'generated_assets';
 const BUCKET_NAME = 'assets';
+// Proxy URL to bypass CORS for Google Storage URLs
+const PROXY_BASE_URL = "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
 
 // Helper to upload base64 or blob url to Supabase Storage
 const uploadToStorage = async (userId: string, dataUrlOrBase64: string, folder: 'results' | 'sources'): Promise<string | null> => {
@@ -15,14 +17,24 @@ const uploadToStorage = async (userId: string, dataUrlOrBase64: string, folder: 
         // Check if it's a remote URL (e.g., from Video generation API or Google Image)
         if (dataUrlOrBase64.startsWith('http')) {
             // CRITICAL: We must fetch the file content because the generated URL is often temporary (expires).
-            // By fetching and uploading to our Supabase Storage, we persist it forever in history.
             try {
+                // Attempt 1: Direct Fetch
                 const response = await fetch(dataUrlOrBase64);
-                if (!response.ok) throw new Error("Failed to fetch remote asset");
+                if (!response.ok) throw new Error("Direct fetch failed");
                 blob = await response.blob();
             } catch (err) {
-                console.warn("Could not fetch remote URL for persistence, using original URL:", err);
-                return dataUrlOrBase64; // Fallback to original URL if fetch fails
+                // Attempt 2: Proxy Fetch (Fix for CORS on Google Storage URLs)
+                try {
+                    // Use the proxy endpoint to bypass CORS
+                    const proxyUrl = `${PROXY_BASE_URL}/proxy-download?url=${encodeURIComponent(dataUrlOrBase64)}`;
+                    const proxyResponse = await fetch(proxyUrl);
+                    
+                    if (!proxyResponse.ok) throw new Error("Proxy download failed");
+                    blob = await proxyResponse.blob();
+                } catch (proxyErr) {
+                    console.warn("Could not fetch remote URL for persistence (even via proxy), using original URL:", proxyErr);
+                    return dataUrlOrBase64; // Fallback to original URL if both fail
+                }
             }
         } 
         // Handle Base64 Data URI
