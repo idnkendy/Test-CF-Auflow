@@ -66,6 +66,7 @@ const safeHistoryReplace = (path: string) => {
 
 const App: React.FC = () => {
   const [view, setView] = useState<'homepage' | 'auth' | 'app' | 'pricing' | 'payment' | 'video'>('homepage');
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login'); // NEW STATE
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
@@ -111,7 +112,7 @@ const App: React.FC = () => {
                else if (session) { setView('app'); }
                else { if (plan) { setPendingPlan(plan); localStorage.setItem('pendingPlanId', plan.id); } setView('homepage'); }
           } else if (path === '/pricing') { setView('pricing'); }
-          else if (path === '/video') { if (session) setView('video'); else setView('auth'); }
+          else if (path === '/video') { if (session) setView('video'); else { setAuthMode('login'); setView('auth'); } }
           else if (path === '/') { setView('homepage'); }
           else if (path === '/feature') { if (session) setView('app'); else { safeHistoryReplace('/'); setView('homepage'); } }
       };
@@ -177,8 +178,6 @@ const App: React.FC = () => {
 
   const fetchUserStatus = useCallback(async () => {
     if (session?.user) {
-      // ĐÃ LOẠI BỎ logic recover mồ côi và cleanup stale jobs tại đây
-      // Vì logic này đã được Backend Cron Job xử lý tự động mỗi 15 phút.
       const status = await getUserStatus(session.user.id, session.user.email);
       setUserStatus(status);
     } else { setUserStatus(null); }
@@ -201,12 +200,17 @@ const App: React.FC = () => {
   };
 
   const handleThemeToggle = () => { setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light')); };
-  const handleAuthNavigate = () => { setView('auth'); };
-  const handleStartDesigning = () => { if (session) { setView('app'); safeHistoryPush('/feature'); } else { handleAuthNavigate(); } };
+  
+  const handleAuthNavigate = (mode: 'login' | 'signup' = 'login') => { 
+      setAuthMode(mode);
+      setView('auth'); 
+  };
+  
+  const handleStartDesigning = () => { if (session) { setView('app'); safeHistoryPush('/feature'); } else { handleAuthNavigate('signup'); } };
 
   const handleNavigateToTool = (tool: Tool) => {
-      if (tool === Tool.VideoGeneration) { if (session) { setView('video'); safeHistoryPush('/video'); } else { handleAuthNavigate(); } return; }
-      setActiveTool(tool); if (session) { setView('app'); safeHistoryPush('/feature'); } else { handleAuthNavigate(); }
+      if (tool === Tool.VideoGeneration) { if (session) { setView('video'); safeHistoryPush('/video'); } else { handleAuthNavigate('login'); } return; }
+      setActiveTool(tool); if (session) { setView('app'); safeHistoryPush('/feature'); } else { handleAuthNavigate('signup'); }
   };
 
   const handleSignOut = async () => {
@@ -226,7 +230,7 @@ const App: React.FC = () => {
 
   const handleNavigateToPricing = () => { setView('pricing'); safeHistoryPush('/pricing'); }
   const handleOpenProfile = () => { if (session) { setView('app'); setActiveTool(Tool.Profile); handleToolStateChange(Tool.Profile, { activeTab: 'profile' }); safeHistoryPush('/feature'); } }
-  const handleSelectPlanForPayment = (plan: PricingPlan) => { if (session) { setSelectedPlan(plan); setView('payment'); safeHistoryPush(`/payment?plan=${plan.id}`); } else { setPendingPlan(plan); localStorage.setItem('pendingPlanId', plan.id); handleAuthNavigate(); } };
+  const handleSelectPlanForPayment = (plan: PricingPlan) => { if (session) { setSelectedPlan(plan); setView('payment'); safeHistoryPush(`/payment?plan=${plan.id}`); } else { setPendingPlan(plan); localStorage.setItem('pendingPlanId', plan.id); handleAuthNavigate('signup'); } };
   const handlePaymentBack = () => { setView('pricing'); safeHistoryPush('/pricing'); }
   const handlePaymentSuccess = () => { fetchUserStatus(); setView('app'); setActiveTool(Tool.ArchitecturalRendering); safeHistoryPush('/feature'); };
   const handleSendToViewSync = (image: FileData) => { handleToolStateChange(Tool.ViewSync, { sourceImage: image, resultImages: [], error: null, customPrompt: '', }); setActiveTool(Tool.ViewSync); };
@@ -299,7 +303,7 @@ const App: React.FC = () => {
       );
   }
 
-  if (view === 'auth') { return <AuthPage onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} />; }
+  if (view === 'auth') { return <AuthPage initialMode={authMode} onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} />; }
   return ( <div className="relative"> <Homepage onStart={handleStartDesigning} onAuthNavigate={handleAuthNavigate} onNavigateToPricing={handleNavigateToPricing} session={session} userStatus={userStatus} onGoToGallery={handleOpenGallery} onOpenProfile={handleOpenProfile} onNavigateToTool={handleNavigateToTool} onSignOut={handleSignOut} /> </div> );
 };
 

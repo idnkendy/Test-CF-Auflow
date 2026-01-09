@@ -478,7 +478,13 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
         });
         
         if (res.status === 404 || res.status === 403) throw new Error(`NotFound/Permission (Account ID: ${authData.id})`);
-        if (!res.ok) throw new Error(`Check Status Failed (${res.status})`);
+        
+        // --- IMPROVED ERROR LOGGING HERE ---
+        if (!res.ok) {
+            const errorText = await res.text();
+            throw new Error(`Check Status Failed (${res.status}): ${errorText}`);
+        }
+        // ------------------------------------
         
         const data = await res.json();
         const opResult = data.operations?.[0];

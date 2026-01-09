@@ -1,3 +1,4 @@
+
 import { FileData } from "../types";
 
 // @ts-ignore
@@ -236,7 +237,7 @@ export const generateFlowImage = async (
         });
         
         if (statusRes.code === 'processing') {
-            if (onProgress) onProgress(`Đang xử lý (${i + 1}/${MAX_RETRIES})...`);
+            if (onProgress) onProgress("Đang xử lý. Vui lòng đợi...");
             continue;
         }
 

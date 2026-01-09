@@ -20,6 +20,7 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
   const [cursorPosition, setCursorPosition] = useState({ x: -100, y: -100 });
   const [isCursorVisible, setIsCursorVisible] = useState(false);
 
+  // Hàm căn chỉnh Canvas khớp tuyệt đối với ảnh
   const alignCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const imageEl = imageRef.current;
@@ -27,12 +28,15 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
 
     if (canvas && imageEl && container) {
       const setSize = () => {
+        // Lấy kích thước thực tế của ảnh đang hiển thị
         const imageRect = imageEl.getBoundingClientRect();
         const containerRect = container.getBoundingClientRect();
 
+        // Cập nhật độ phân giải canvas bằng đúng kích thước ảnh
         canvas.width = imageRect.width;
         canvas.height = imageRect.height;
         
+        // Đặt vị trí canvas đè khít lên ảnh
         canvas.style.position = 'absolute';
         canvas.style.top = `${imageRect.top - containerRect.top}px`;
         canvas.style.left = `${imageRect.left - containerRect.left}px`;
@@ -50,28 +54,33 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
 
   useEffect(() => {
     alignCanvas();
+    
+    // ResizeObserver: Tự động chỉnh lại canvas nếu kích thước ảnh thay đổi
+    const resizeObserver = new ResizeObserver(() => {
+        alignCanvas();
+    });
+
+    if (containerRef.current) {
+        resizeObserver.observe(containerRef.current);
+    }
+    if (imageRef.current) {
+        resizeObserver.observe(imageRef.current);
+    }
+
     window.addEventListener('resize', alignCanvas);
+    window.addEventListener('scroll', alignCanvas, true); 
+
     return () => {
       window.removeEventListener('resize', alignCanvas);
+      window.removeEventListener('scroll', alignCanvas, true);
+      resizeObserver.disconnect();
     };
   }, [image, alignCanvas]);
-
-  const getCoordinates = (event: React.MouseEvent | React.TouchEvent): { x: number, y: number } => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: 0, y: 0 };
-    const rect = canvas.getBoundingClientRect();
-    const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
-    const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
-    return {
-      x: clientX - rect.left,
-      y: clientY - rect.top
-    };
-  };
 
   const startDrawing = (event: React.MouseEvent | React.TouchEvent) => {
     event.preventDefault();
     const nativeEvent = event.nativeEvent;
-    if (nativeEvent instanceof MouseEvent && nativeEvent.button !== 0) return; // Only draw on left click
+    if (nativeEvent instanceof MouseEvent && nativeEvent.button !== 0) return;
     
     setIsDrawing(true);
     draw(event.nativeEvent);
@@ -99,24 +108,23 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
   const draw = (event: MouseEvent | TouchEvent) => {
     event.preventDefault();
     const canvas = canvasRef.current;
-    if (!canvas) return; // Check required for TS
+    if (!canvas) return;
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
     const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
     const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
+    
+    // Tọa độ vẽ tính theo canvas (đã được alignCanvas đồng bộ)
     const x = clientX - rect.left;
     const y = clientY - rect.top;
 
     ctx.globalCompositeOperation = mode === 'draw' ? 'source-over' : 'destination-out';
     
-    // FIX: Use solid color (Alpha = 1) for drawing to prevent opacity stacking.
-    // We handle the visual transparency via CSS on the canvas element instead.
     let drawingColor = '#ffffff';
     if (maskColor) {
         if (maskColor.startsWith('rgba')) {
-             // Force alpha to 1. Example: rgba(255, 0, 0, 0.5) -> rgba(255, 0, 0, 1)
              drawingColor = maskColor.replace(/,\s*[\d\.]+\s*\)/, ', 1)');
         } else {
              drawingColor = maskColor;
@@ -132,9 +140,12 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
   
   const handleMouseMove = (e: React.MouseEvent) => {
     const container = containerRef.current;
-    if (!container) return;
-    const rect = container.getBoundingClientRect();
-    setCursorPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    // Cập nhật vị trí con trỏ ảo dựa trên container
+    if (container) {
+        const rect = container.getBoundingClientRect();
+        setCursorPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
+    }
+    
     if (isDrawing) {
       draw(e.nativeEvent);
     }
@@ -146,7 +157,6 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     }
   };
 
-
   const handleClearMask = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -157,21 +167,20 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     }
   };
   
-  // Determine cursor styles for visibility
   const getCursorStyle = () => {
-      const isRedMask = maskColor && maskColor.includes('239, 68, 68'); // Check if red-ish
+      const isRedMask = maskColor && maskColor.includes('239, 68, 68');
       const borderColor = mode === 'draw' 
-          ? (isRedMask ? '#ffffff' : '#ef4444') // If drawing red, white border. If white, red border.
-          : '#000000'; // Erase -> Black border
+          ? (isRedMask ? '#ffffff' : '#ef4444')
+          : '#000000';
       
       const bgColor = mode === 'draw' 
           ? (maskColor || 'rgba(255, 255, 255, 0.3)') 
-          : 'rgba(255, 255, 255, 0.5)'; // Erase -> White hint
+          : 'rgba(255, 255, 255, 0.5)';
 
       return {
           borderColor,
           backgroundColor: bgColor,
-          boxShadow: '0 0 4px 1px rgba(0,0,0,0.4)' // Add shadow for better contrast
+          boxShadow: '0 0 4px 1px rgba(0,0,0,0.4)'
       };
   };
 
@@ -181,7 +190,8 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     <div className="space-y-4">
       <div 
         ref={containerRef}
-        className="relative w-full aspect-video flex items-center justify-center bg-main-bg dark:bg-gray-800 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 overflow-hidden"
+        // Thay đổi quan trọng: Dùng chiều cao linh hoạt (60vh) thay vì cố định tỷ lệ 16:9 (aspect-video)
+        className="relative w-full h-[60vh] min-h-[400px] flex items-center justify-center bg-main-bg dark:bg-gray-800 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 overflow-hidden select-none touch-none"
         style={{ cursor: isCursorVisible ? 'none' : 'default' }}
         onMouseEnter={() => setIsCursorVisible(true)}
         onMouseLeave={() => {
@@ -199,16 +209,16 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
           ref={imageRef}
           src={image.objectURL}
           alt="Original for editing"
-          className="max-w-full max-h-full object-contain pointer-events-none"
+          className="max-w-full max-h-full object-contain pointer-events-none select-none"
           onLoad={alignCanvas}
         />
         <canvas
           ref={canvasRef}
-          style={{ opacity: 0.55 }} // Visual transparency applied here
+          style={{ opacity: 0.55 }}
         />
         {isCursorVisible && (
             <div
-                className="absolute rounded-full pointer-events-none border-2 transition-transform duration-75"
+                className="absolute rounded-full pointer-events-none border-2 transition-transform duration-75 z-50"
                 style={{
                     left: cursorPosition.x,
                     top: cursorPosition.y,
@@ -222,6 +232,8 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
             />
         )}
       </div>
+      
+      {/* Thanh công cụ (Toolbar) */}
       <div className="bg-main-bg dark:bg-gray-800 p-3 rounded-lg border border-border-color dark:border-gray-700 flex flex-col sm:flex-row items-center gap-4">
         <div className="flex items-center gap-2">
             <button
