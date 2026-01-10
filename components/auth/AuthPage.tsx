@@ -1,12 +1,12 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { supabase, isSupabaseConfigured } from '../../services/supabaseClient';
 import Spinner from '../Spinner';
 import { Logo } from '../common/Logo';
 
 interface AuthPageProps {
   onGoHome: () => void;
-  initialMode?: 'login' | 'signup';
+  initialMode?: 'login' | 'signup'; // Kept for compatibility but not used for mode switching anymore
 }
 
 const GoogleIcon = () => (
@@ -18,19 +18,9 @@ const GoogleIcon = () => (
     </svg>
 );
 
-const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) => {
+const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [successMsg, setSuccessMsg] = useState<string | null>(null);
-  
-  // Email/Pass State
-  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-
-  useEffect(() => {
-      setMode(initialMode);
-  }, [initialMode]);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -45,51 +35,6 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) 
         setError(error.message);
         setLoading(false);
     }
-  };
-
-  const handleEmailAuth = async (e: React.FormEvent) => {
-      e.preventDefault();
-      if (!email || !password) {
-          setError("Vui lòng điền đầy đủ email và mật khẩu.");
-          return;
-      }
-      
-      setLoading(true);
-      setError(null);
-      setSuccessMsg(null);
-
-      try {
-          if (mode === 'signup') {
-              const { data, error } = await supabase.auth.signUp({
-                  email,
-                  password,
-              });
-              if (error) throw error;
-              if (data.user && !data.session) {
-                  setSuccessMsg("Đăng ký thành công! Vui lòng kiểm tra email để xác thực tài khoản.");
-                  // Reset form or switch mode? Keep in signup to show message.
-              } else {
-                  // If auto-confirm is on, App.tsx will handle redirection via onAuthStateChange
-              }
-          } else {
-              const { error } = await supabase.auth.signInWithPassword({
-                  email,
-                  password,
-              });
-              if (error) throw error;
-              // Success handled by App.tsx
-          }
-      } catch (err: any) {
-          setError(err.message || "Đã xảy ra lỗi.");
-      } finally {
-          setLoading(false);
-      }
-  };
-
-  const toggleMode = () => {
-      setMode(prev => prev === 'login' ? 'signup' : 'login');
-      setError(null);
-      setSuccessMsg(null);
   };
 
   return (
@@ -109,7 +54,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) 
             <div className="bg-surface dark:bg-[#191919] p-8 rounded-3xl shadow-2xl border border-border-color dark:border-[#302839] relative overflow-hidden text-center">
                 
                 <h2 className="text-xl font-bold text-text-primary dark:text-white mb-6">
-                    {mode === 'login' ? 'Đăng nhập tài khoản' : 'Đăng ký tài khoản'}
+                    Đăng nhập / Đăng ký
                 </h2>
 
                 {!isSupabaseConfigured && (
@@ -121,8 +66,6 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) 
                 
                 {error && <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-400 rounded-xl text-sm text-left animate-shake">{error}</div>}
                 
-                {successMsg && <div className="mb-6 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 rounded-xl text-sm text-left">{successMsg}</div>}
-
                 <div className="space-y-4">
                     {/* Google Login */}
                     <button
@@ -134,60 +77,12 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) 
                             <>
                                 <GoogleIcon />
                                 <span className="text-sm sm:text-base group-hover:text-[#7f13ec] transition-colors">
-                                    {mode === 'login' ? 'Đăng nhập với Google' : 'Đăng ký với Google'}
+                                    Tiếp tục với Google
                                 </span>
                             </>
                         )}
                     </button>
-
-                    <div className="relative flex py-2 items-center">
-                        <div className="flex-grow border-t border-gray-300 dark:border-gray-700"></div>
-                        <span className="flex-shrink-0 mx-4 text-gray-400 text-xs">Hoặc</span>
-                        <div className="flex-grow border-t border-gray-300 dark:border-gray-700"></div>
-                    </div>
-
-                    {/* Email/Password Form */}
-                    <form onSubmit={handleEmailAuth} className="space-y-4">
-                        <input 
-                            type="email" 
-                            placeholder="Email" 
-                            className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-700 rounded-xl p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none"
-                            value={email}
-                            onChange={(e) => setEmail(e.target.value)}
-                            disabled={loading}
-                            required
-                        />
-                        <input 
-                            type="password" 
-                            placeholder="Mật khẩu" 
-                            className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-700 rounded-xl p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none"
-                            value={password}
-                            onChange={(e) => setPassword(e.target.value)}
-                            disabled={loading}
-                            required
-                            minLength={6}
-                        />
-                        <button
-                            type="submit"
-                            disabled={loading || !isSupabaseConfigured}
-                            className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3.5 px-4 rounded-xl transition-all duration-200 shadow-lg shadow-purple-500/20 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center"
-                        >
-                            {loading ? <Spinner /> : (mode === 'login' ? 'Đăng nhập' : 'Đăng ký')}
-                        </button>
-                    </form>
                 </div>
-            </div>
-            
-            <div className="text-center mt-6">
-                <button 
-                    onClick={toggleMode}
-                    className="text-sm text-text-secondary dark:text-gray-400 hover:text-[#7f13ec] dark:hover:text-[#7f13ec] transition-colors font-medium"
-                >
-                    {mode === 'login' 
-                        ? "Chưa có tài khoản? Đăng ký ngay" 
-                        : "Đã có tài khoản? Đăng nhập ngay"
-                    }
-                </button>
             </div>
             
             <p className="text-center text-[10px] text-text-secondary dark:text-gray-500 mt-8 leading-relaxed px-4 opacity-60">
