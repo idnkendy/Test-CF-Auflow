@@ -221,8 +221,38 @@ const VirtualTour: React.FC<VirtualTourProps> = ({ state, onStateChange, userCre
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
 
                     {/* Navigation Panel */}
-                    <div className="mt-6 bg-main-bg/50 dark:bg-dark-bg/50 p-4 rounded-xl border border-border-color dark:border-gray-700 flex justify-center items-center gap-2">
-                         <button title="Quay trái" onClick={() => handleTourStep('orbit-left')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><OrbitLeftIcon /></button>
-                         <div className="grid grid-cols-3 gap-2">
+                    <div className="mt-6 bg-main-bg/50 dark:bg-dark-bg/50 p-4 rounded-xl border border-border-color dark:border-gray-700 flex justify-center items-center gap-4">
+                         {/* Orbit Left */}
+                         <button title="Xoay trái" onClick={() => handleTourStep('orbit-left')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200 dark:border-gray-600 shadow-sm"><OrbitLeftIcon /></button>
+                         
+                         {/* Directional Pad */}
+                         <div className="grid grid-cols-3 gap-2 bg-surface dark:bg-gray-800 p-2 rounded-full border border-gray-200 dark:border-gray-600 shadow-inner">
                             <div></div>
-                            <button
+                            <button title="Lên trên" onClick={() => handleTourStep('tilt-up')} disabled={!currentTourImage || isLoading} className="p-2 rounded-lg hover:bg-accent/20 disabled:opacity-30"><PanUpIcon /></button>
+                            <div></div>
+                            
+                            <button title="Sang trái" onClick={() => handleTourStep('pan-left')} disabled={!currentTourImage || isLoading} className="p-2 rounded-lg hover:bg-accent/20 disabled:opacity-30"><PanLeftIcon /></button>
+                            <div className="w-6 h-6 rounded-full bg-gray-300 dark:bg-gray-600 m-auto"></div>
+                            <button title="Sang phải" onClick={() => handleTourStep('pan-right')} disabled={!currentTourImage || isLoading} className="p-2 rounded-lg hover:bg-accent/20 disabled:opacity-30"><PanRightIcon /></button>
+                            
+                            <div></div>
+                            <button title="Xuống dưới" onClick={() => handleTourStep('tilt-down')} disabled={!currentTourImage || isLoading} className="p-2 rounded-lg hover:bg-accent/20 disabled:opacity-30"><PanDownIcon /></button>
+                            <div></div>
+                         </div>
+
+                         {/* Orbit Right */}
+                         <button title="Xoay phải" onClick={() => handleTourStep('orbit-right')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200 dark:border-gray-600 shadow-sm"><OrbitRightIcon /></button>
+                         
+                         {/* Zoom Controls */}
+                         <div className="flex flex-col gap-2 ml-4">
+                            <button title="Phóng to" onClick={() => handleTourStep('zoom-in')} disabled={!currentTourImage || isLoading} className="p-2 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200 dark:border-gray-600 shadow-sm"><ZoomInIcon /></button>
+                            <button title="Thu nhỏ" onClick={() => handleTourStep('zoom-out')} disabled={!currentTourImage || isLoading} className="p-2 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed border border-gray-200 dark:border-gray-600 shadow-sm"><ZoomOutIcon /></button>
+                         </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default VirtualTour;

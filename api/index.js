@@ -481,7 +481,7 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
             }] 
         };
 
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchCheckAsyncVideoGenerationStatus', { 
+        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', { 
             method: 'POST', 
             headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, }, 
             body: JSON.stringify(payload) 
