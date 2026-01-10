@@ -19,7 +19,11 @@ const ONEWISE_PROXY_URL_CHECK = "https://flow-api.nanoai.pics/api/fix/task-statu
 const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjkwNzI2OH0.qd76QwKE8PCazfvyCmcgbyE0GV7VLQvJKCtxP4ADqcE";
 
 // --- RUNNINGHUB CONFIGURATION (Moved from Frontend) ---
-const RUNNINGHUB_API_KEY = '01a2e547c40744d4961df371645e981b';
+// UPDATED: Sử dụng mảng keys để chạy luân phiên
+const RUNNINGHUB_API_KEYS = [
+    '01a2e547c40744d4961df371645e981b',
+    '921962784549478f806e829ac2ce1e0a'
+];
 const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
 const UPSCALE_FAST_WEBAPP_ID = "1983430456135852034";
 
@@ -33,6 +37,12 @@ const HEADERS = {
 function cleanToken(token) {
     if (!token) return "";
     return token.trim().replace(/^["']|["']$/g, '');
+}
+
+// Helper: Lấy ngẫu nhiên một RunningHub Key
+function getRandomRunningHubKey() {
+    const randomIndex = Math.floor(Math.random() * RUNNINGHUB_API_KEYS.length);
+    return RUNNINGHUB_API_KEYS[randomIndex];
 }
 
 async function getGeminiKeySecurely(env) {
@@ -581,13 +591,13 @@ async function handleRunningHubProxy(action, body) {
     if (action === 'upscale_create' || action === 'runninghub_create') {
         url = 'https://www.runninghub.ai/task/openapi/ai-app/run';
         payload = body; // Pass entire body payload (webappId, apiKey, nodeInfoList)
-        // Inject API Key securely
-        payload.apiKey = RUNNINGHUB_API_KEY;
+        // Inject API Key securely using Load Balancing
+        payload.apiKey = getRandomRunningHubKey();
     } 
     else if (action === 'upscale_check' || action === 'runninghub_check') {
         url = 'https://www.runninghub.ai/task/openapi/outputs';
         payload = { 
-            apiKey: RUNNINGHUB_API_KEY, 
+            apiKey: getRandomRunningHubKey(), 
             taskId: body.taskId 
         };
     } else {

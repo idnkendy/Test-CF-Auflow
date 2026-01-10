@@ -109,12 +109,8 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     }, []);
 
-    useEffect(() => {
-        if (sourceImage) {
-            setAnnotations([]);
-            setAnnotatedPreview(null);
-        }
-    }, [sourceImage]);
+    // Removed the useEffect that was clearing annotations on sourceImage change.
+    // Cleanup is now handled explicitly in handleFileSelect.
 
     useEffect(() => {
         if (isEditorOpen) {
@@ -161,6 +157,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             img.src = fileData.objectURL;
         }
         onStateChange({ sourceImage: fileData, resultImages: [] });
+        // Reset annotations explicitly when a new file is selected
         setAnnotations([]);
         setAnnotatedPreview(null);
         setPanOffset({ x: 0, y: 0 });
