@@ -94,6 +94,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [isDownloading, setIsDownloading] = useState(false);
 
 
     const handleFileSelect = (fileData: FileData | null) => {
@@ -141,7 +142,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
 
@@ -302,19 +303,17 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
         } catch (err: any) {
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) {
-                errorMessage += " (Credits đã được hoàn lại)";
-            }
-            onStateChange({ error: errorMessage });
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
-
-            // Refund logic
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ảnh (${err.message})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ảnh (${rawMsg})`, logId);
+                friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            onStateChange({ error: friendlyMsg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
@@ -331,14 +330,11 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         onStateChange({ maskImage: null });
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (resultImages.length !== 1) return;
-        const link = document.createElement('a');
-        link.href = resultImages[0];
-        link.download = "edited-image.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(resultImages[0], "edited-image.png");
+        setIsDownloading(false);
     };
 
     const scrollToTop = () => {
@@ -498,7 +494,12 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                 </svg>
                                 Phóng to
                             </button>
-                            <button onClick={handleDownload} className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm">
+                            <button 
+                                onClick={handleDownload} 
+                                disabled={isDownloading}
+                                className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2"
+                            >
+                                {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
                                 Tải xuống
                             </button>
                         </div>

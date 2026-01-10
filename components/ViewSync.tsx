@@ -95,7 +95,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
 
@@ -265,15 +265,17 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
             
         } catch (err: any) {
-            let errorMessage = err.message || "Lỗi xử lý.";
-            if (logId) errorMessage += " (Credits đã hoàn lại)";
-            onStateChange({ error: errorMessage });
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi đồng bộ view (${err.message})`, logId);
+            if (user && logId) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi đồng bộ view (${rawMsg})`, logId);
+                friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            onStateChange({ error: friendlyMsg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);

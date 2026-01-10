@@ -37,49 +37,23 @@ const loadingMessages = [
 ];
 
 const mapFriendlyErrorMessage = (errorMsg: string): string => {
-    if (!errorMsg) return "Lỗi Kỹ Thuật: Đã xảy ra sự cố. Vui lòng thử lại sau.";
-    
+    // Log lỗi chi tiết ra console để developer debug
+    console.error("Technical Error Detail:", errorMsg);
+
+    if (!errorMsg) return "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.";
+
     const msg = errorMsg.toUpperCase();
-    const suffix = " Vui lòng thử lại sau.";
-    
-    // Check for JSON error from worker
-    try {
-        if (errorMsg.trim().startsWith('{')) {
-             const parsed = JSON.parse(errorMsg);
-             if (parsed.status === 'MEDIA_GENERATION_STATUS_FAILED') {
-                 // Try to extract nested error message
-                 const nestedMsg = parsed.operation?.error?.message;
-                 if (nestedMsg && nestedMsg.includes("Video not found")) {
-                     return "Lỗi Tạo Video: Hệ thống không thể hoàn tất video (Video Not Found). Bạn đã được hoàn tiền." + suffix;
-                 }
-                 return `Lỗi Tạo Video: ${nestedMsg || "Không xác định"}. Bạn đã được hoàn tiền.` + suffix;
-             }
-        }
-    } catch(e) {}
 
-    if (msg.includes("SAFETY_ERROR") || msg.includes("SAFETY") || msg.includes("BLOCK") || msg.includes("PROHIBITED")) {
-        return "Lỗi Nội Dung: Vi phạm chính sách an toàn." + suffix;
-    }
-    if (msg.includes("QUOTA_ERROR") || msg.includes("429") || msg.includes("RESOURCE") || msg.includes("OVERLOAD")) {
-        return "Lỗi Quá Tải: Hệ thống đang bận." + suffix;
-    }
-    if (msg.includes("TIMEOUT_ERROR") || msg.includes("HẾT THỜI GIAN") || msg.includes("TIMEOUT")) {
-        return "Lỗi Timeout: Quá trình xử lý quá lâu." + suffix;
-    }
-    if (msg.includes("AUTH_ERROR") || msg.includes("401") || msg.includes("403") || msg.includes("TOKEN")) {
-        return "Lỗi Xác Thực: Phiên kết nối lỗi." + suffix;
-    }
-    if (msg.includes("SYSTEM_ERROR") || msg.includes("500") || msg.includes("502") || msg.includes("NETWORK")) {
-        return "Lỗi Hệ Thống: Máy chủ gặp sự cố." + suffix;
-    }
+    // 1. Nhóm lỗi do người dùng (Giữ nguyên thông báo cụ thể)
     if (msg.includes("KHÔNG ĐỦ CREDITS")) {
-        return "Lỗi Thanh Toán: Bạn không đủ credits." + suffix;
+        return "Bạn không đủ credits để thực hiện tác vụ này.";
     }
-    if (msg.includes("GENERATION_FAILED") || msg.includes("VIDEO NOT FOUND")) {
-        return "Lỗi Tạo Video: Hệ thống không thể hoàn tất video. Bạn đã được hoàn tiền." + suffix;
+    if (msg.includes("SAFETY_ERROR") || msg.includes("SAFETY") || msg.includes("BLOCK") || msg.includes("PROHIBITED")) {
+        return "Nội dung vi phạm chính sách an toàn của Google.";
     }
 
-    return `Lỗi Kỹ Thuật: ${errorMsg.substring(0, 40)}...` + suffix;
+    // 2. Nhóm lỗi kỹ thuật (Server, Network, Timeout...) -> Trả về thông báo chung chung theo yêu cầu
+    return "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.";
 };
 
 interface ConfirmationModalProps {

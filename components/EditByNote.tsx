@@ -141,7 +141,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     const getCost = () => {
         switch (resolution) {
             case 'Standard': return 5;
-            case '1K': return 15;
+            case '1K': return 10;
             case '2K': return 20;
             case '4K': return 30;
             default: return 5;
@@ -695,17 +695,18 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             setSelectedId(null);
 
         } catch (err: any) {
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) {
-                errorMessage += " (Credits đã được hoàn lại)";
-            }
-            onStateChange({ error: errorMessage });
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
-
+            const rawMsg = err.message || "";
+            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            // UI shows friendly message
+            onStateChange({ error: friendlyMsg });
+            
+            // DB records specific raw message
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ghi chú (${err.message})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ghi chú (${rawMsg})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
@@ -713,14 +714,11 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     };
 
-    const handleDownload = () => {
+    const handleDownload = async () => {
         if (resultImages.length !== 1) return;
-        const link = document.createElement('a');
-        link.href = resultImages[0];
-        link.download = "edited-image.png";
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+        setIsDownloading(true);
+        await externalVideoService.forceDownload(resultImages[0], "edited-image.png");
+        setIsDownloading(false);
     };
 
     const scrollToTop = () => {
@@ -1069,7 +1067,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                         onClick={handleDownload} 
                                         className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
                                     >
-                                        <span className="material-symbols-outlined text-lg">download</span>
+                                        {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
                                         <span>Tải xuống</span>
                                     </button>
                                 </div>

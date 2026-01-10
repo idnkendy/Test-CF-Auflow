@@ -187,7 +187,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
 
@@ -300,14 +300,17 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
             }
 
         } catch (err: any) {
-            let msg = err.message;
-            if (logId) msg += " (Credits đã hoàn lại)";
-            onStateChange({ error: msg });
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi render mặt bằng (${err.message})`, logId);
+            if (user && logId) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${rawMsg})`, logId);
+                friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            onStateChange({ error: friendlyMsg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);

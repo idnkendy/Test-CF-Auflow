@@ -48,7 +48,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
 
@@ -100,7 +100,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                     aspectEnum,
                     1,
                     modelName,
-                    (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                    (msg) => setStatusMessage(msg)
                 );
 
                 if (result.imageUrls && result.imageUrls.length > 0) {
@@ -141,12 +141,17 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
             if (jobId && resultUrl) await jobService.updateJobStatus(jobId, 'completed', resultUrl);
 
         } catch (err: any) {
-            let msg = err.message;
-            if (logId) msg += " (Credits đã hoàn lại)";
-            onStateChange({ error: msg });
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi sketch (${err.message})`, logId);
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi sketch (${rawMsg})`, logId);
+                friendlyMsg += " (Credits đã được hoàn trả)";
+            }
+            
+            onStateChange({ error: friendlyMsg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);

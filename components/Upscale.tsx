@@ -172,7 +172,9 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
     const handleError = async (msg: string) => {
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
         setRunningHubTaskId(null);
-        onStateChange({ isLoading: false, error: msg });
+        
+        const friendlyMsg = jobService.mapFriendlyErrorMessage(msg);
+        onStateChange({ isLoading: false, error: friendlyMsg });
         setStatusMessage(null);
 
         if (currentJobId) {
@@ -187,7 +189,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
 
@@ -258,16 +260,19 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             setStatusMessage(detailMode === 'fast' ? 'AI đang nâng cấp nhanh...' : 'AI đang tái tạo chi tiết...');
 
         } catch (err: any) {
-            let msg = err.message;
-            if (logId) msg += " (Credits đã hoàn lại)";
-            onStateChange({ error: msg, isLoading: false });
-            setStatusMessage(null);
+            let msg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(msg);
             
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Upscale (${err.message})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Upscale (${msg})`, logId);
+                friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            onStateChange({ error: friendlyMsg, isLoading: false });
+            setStatusMessage(null);
+            
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
             setCurrentJobId(null);
         }
     };

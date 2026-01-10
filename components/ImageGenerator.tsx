@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -171,7 +172,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     ratioEnum,
                     1,
                     modelName,
-                    () => {} // Không cập nhật chi tiết process
+                    (msg) => setStatusMessage(msg)
                 );
 
                 if (result.imageUrls?.length > 0) {
@@ -179,7 +180,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds?.length > 0;
 
                     if (shouldUpscale) {
-                        // Vẫn giữ message chung chung, không cập nhật chi tiết upscale
+                        // Vẫn giữ message chung chung
                         const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
                         const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes);
                         if (upscaleRes.imageUrl) finalUrl = upscaleRes.imageUrl;
@@ -200,8 +201,15 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
 
         } catch (err: any) {
-            onStateChange({ error: err.message });
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
+            const rawMsg = err.message || "";
+            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            // UI shows friendly message
+            onStateChange({ error: friendlyMsg });
+            
+            // DB records specific raw message
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống`, logId);
         } finally {

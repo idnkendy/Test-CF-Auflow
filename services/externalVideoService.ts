@@ -1,4 +1,3 @@
-
 import { FileData } from "../types";
 
 // @ts-ignore
@@ -150,8 +149,14 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     try { data = JSON.parse(text); } catch (e) { throw new Error(`Phản hồi không hợp lệ.`); }
     
     if (!res.ok) throw new Error(formatErrorMessage(data.error?.message || data.message || `Lỗi (${res.status})`));
+    
+    // Updated Logic: Handle "queue" or "waiting" messages as processing state, not error.
     if (data.status === 'failed' || data.code === 'failed' || data.success === false) {
-         if (data.code === 'processing') return data;
+         const msg = (data.message || "").toLowerCase();
+         // If explicit processing code OR message indicates queuing
+         if (data.code === 'processing' || data.code === 'queue' || msg.includes('queue') || msg.includes('waiting')) {
+             return { ...data, code: 'processing', message: data.message || "Đang xếp hàng chờ máy chủ..." };
+         }
          throw new Error(formatErrorMessage(data.message || "Unknown error"));
     }
     return data;
@@ -167,19 +172,36 @@ export const proxyDownload = async (targetUrl: string): Promise<Blob> => {
 
 export const forceDownload = async (url: string, filename: string) => {
     try {
-        let blob: Blob = url.startsWith('blob:') || url.startsWith('data:') 
-            ? await (await fetch(url)).blob() 
-            : await proxyDownload(url);
+        let downloadUrl = url;
+        let shouldRevoke = false;
+
+        // Nếu là URL blob, dùng trực tiếp, KHÔNG fetch lại (gây tốn bộ nhớ và lỗi tiềm ẩn)
+        if (url.startsWith('blob:')) {
+            downloadUrl = url;
+        } 
+        // Nếu là Data URI, có thể dùng trực tiếp hoặc chuyển sang Blob nếu cần (ở đây dùng trực tiếp cho nhanh)
+        else if (url.startsWith('data:')) {
+            downloadUrl = url;
+        }
+        // Nếu là URL remote (http/https), dùng proxy để tải về blob
+        else {
+            const blob = await proxyDownload(url);
+            downloadUrl = URL.createObjectURL(blob);
+            shouldRevoke = true;
+        }
         
-        const blobUrl = URL.createObjectURL(blob);
         const link = document.createElement('a');
-        link.href = blobUrl;
+        link.href = downloadUrl;
         link.download = filename;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+        
+        if (shouldRevoke) {
+            setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+        }
     } catch (e) {
+        console.error("Force download failed, falling back to new tab", e);
         window.open(url, '_blank');
     }
 };
@@ -226,50 +248,70 @@ export const generateFlowImage = async (
     const projectId = createRes.projectId;
     
     const POLLING_DELAY = 5000;
-    const MAX_RETRIES = 60; 
+    const MAX_RETRIES = 120; // Increased to 10 minutes for long queues
+    
+    // --- GRACE PERIOD CONFIGURATION ---
+    const startTime = Date.now();
+    const GRACE_PERIOD = 120000; // 2 minutes (120,000 ms)
 
     for (let i = 0; i < MAX_RETRIES; i++) {
         await wait(POLLING_DELAY);
-        const statusRes = await fetchJson('/flow-check', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'flow_check', taskId })
-        });
         
-        if (statusRes.code === 'processing') {
-            if (onProgress) onProgress("Đang xử lý. Vui lòng đợi...");
-            continue;
-        }
+        try {
+            const statusRes = await fetchJson('/flow-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'flow_check', taskId })
+            });
+            
+            if (statusRes.code === 'processing') {
+                if (onProgress) {
+                    onProgress("Đang xử lý. Vui lòng đợi...");
+                }
+                continue;
+            }
 
-        const urls: string[] = [];
-        const mediaIds: string[] = [];
+            const urls: string[] = [];
+            const mediaIds: string[] = [];
 
-        // Kiểm tra MediaId từ mảng media (cần cho Upscale)
-        if (statusRes.result?.media && Array.isArray(statusRes.result.media)) {
-            for (const item of statusRes.result.media) {
-                const mId = item.mediaGenerationId || item.id || item.image?.generatedImage?.mediaGenerationId;
-                if (mId) mediaIds.push(mId);
+            // Kiểm tra MediaId từ mảng media (cần cho Upscale)
+            if (statusRes.result?.media && Array.isArray(statusRes.result.media)) {
+                for (const item of statusRes.result.media) {
+                    const mId = item.mediaGenerationId || item.id || item.image?.generatedImage?.mediaGenerationId;
+                    if (mId) mediaIds.push(mId);
 
-                const base64 = item.encodedImage || item.image?.generatedImage?.encodedImage;
-                if (base64) {
-                    urls.push(await base64ToBlobUrl(base64, 'image/jpeg'));
-                } else if (item.fifeUrl || item.image?.generatedImage?.fifeUrl) {
-                    urls.push(item.fifeUrl || item.image?.generatedImage?.fifeUrl);
+                    const base64 = item.encodedImage || item.image?.generatedImage?.encodedImage;
+                    if (base64) {
+                        urls.push(await base64ToBlobUrl(base64, 'image/jpeg'));
+                    } else if (item.fifeUrl || item.image?.generatedImage?.fifeUrl) {
+                        urls.push(item.fifeUrl || item.image?.generatedImage?.fifeUrl);
+                    }
                 }
             }
-        }
 
-        // Kiểm tra encodedImage ở root (dành cho các mẫu mới nhất)
-        if (statusRes.result?.encodedImage && urls.length === 0) {
-            urls.push(await base64ToBlobUrl(statusRes.result.encodedImage, 'image/jpeg'));
-            // Nếu root có mediaGenerationId thì thêm vào mảng mediaIds
-            if (statusRes.result.mediaGenerationId) mediaIds.push(statusRes.result.mediaGenerationId);
-        }
+            // Kiểm tra encodedImage ở root (dành cho các mẫu mới nhất)
+            if (statusRes.result?.encodedImage && urls.length === 0) {
+                urls.push(await base64ToBlobUrl(statusRes.result.encodedImage, 'image/jpeg'));
+                // Nếu root có mediaGenerationId thì thêm vào mảng mediaIds
+                if (statusRes.result.mediaGenerationId) mediaIds.push(statusRes.result.mediaGenerationId);
+            }
 
-        if (urls.length > 0) return { imageUrls: [...new Set(urls)], mediaIds, projectId };
-        if (statusRes.status === 'FAILED') throw new Error("AI từ chối tạo ảnh.");
+            if (urls.length > 0) return { imageUrls: [...new Set(urls)], mediaIds, projectId };
+            if (statusRes.status === 'FAILED') throw new Error("AI từ chối tạo ảnh.");
+
+        } catch (error: any) {
+            // --- GRACE PERIOD CHECK ---
+            // Nếu lỗi xảy ra trong vòng 2 phút đầu tiên, bỏ qua lỗi và tiếp tục vòng lặp
+            if (Date.now() - startTime < GRACE_PERIOD) {
+                console.warn(`[Grace Period] Lỗi tạm thời: ${error.message}. Đang thử lại...`);
+                if (onProgress) onProgress("Đang kết nối lại...");
+                continue; 
+            }
+            // Nếu quá 2 phút, ném lỗi ra ngoài
+            throw error;
+        }
     }
-    throw new Error("Hết thời gian chờ xử lý.");
+    throw new Error("Hết thời gian chờ xử lý (Timeout).");
 };
 
 export const upscaleFlowImage = async (mediaId: string, projectId: string | undefined, targetResolution: string = 'UPSAMPLE_IMAGE_RESOLUTION_2K'): Promise<{ imageUrl: string }> => {
@@ -280,17 +322,32 @@ export const upscaleFlowImage = async (mediaId: string, projectId: string | unde
     });
     
     const taskId = createRes.taskId;
-    const MAX_RETRIES = 30;
+    const MAX_RETRIES = 60;
+    
+    // --- GRACE PERIOD CONFIGURATION FOR UPSCALE ---
+    const startTime = Date.now();
+    const GRACE_PERIOD = 120000; // 2 minutes
+
     for (let i = 0; i < MAX_RETRIES; i++) {
         await wait(6000);
-        const statusRes = await fetchJson('/flow-check', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ action: 'flow_check', taskId })
-        });
-        if (statusRes.code === 'processing') continue;
-        if (statusRes.result?.encodedImage) {
-            return { imageUrl: await base64ToBlobUrl(statusRes.result.encodedImage, 'image/jpeg') };
+        
+        try {
+            const statusRes = await fetchJson('/flow-check', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'flow_check', taskId })
+            });
+            if (statusRes.code === 'processing') continue;
+            if (statusRes.result?.encodedImage) {
+                return { imageUrl: await base64ToBlobUrl(statusRes.result.encodedImage, 'image/jpeg') };
+            }
+        } catch (error: any) {
+             // --- GRACE PERIOD CHECK ---
+             if (Date.now() - startTime < GRACE_PERIOD) {
+                 console.warn(`[Upscale Grace Period] Lỗi tạm thời: ${error.message}. Đang thử lại...`);
+                 continue;
+             }
+             throw error;
         }
     }
     throw new Error("Upscale thất bại.");
@@ -355,6 +412,11 @@ async function _executeVideoGeneration(
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'check', task_id, scene_id, account_id }) 
         });
+        
+        if (checkData.code === 'processing' || (checkData.status === 'processing' && checkData.message?.includes('queue'))) {
+             continue; // Just wait
+        }
+
         if (checkData.status === 'completed' && checkData.video_url) return { videoUrl: checkData.video_url, mediaId: checkData.mediaId };
         if (checkData.status === 'failed') throw new Error(`GENERATION_FAILED: ${checkData.message}`);
     }
@@ -393,6 +455,11 @@ export const generateVideoWithReferences = async (prompt: string, sceneImage: Fi
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ action: 'check', task_id, scene_id, account_id }) 
         });
+        
+        if (checkData.code === 'processing' || (checkData.status === 'processing' && checkData.message?.includes('queue'))) {
+             continue; // Just wait
+        }
+
         if (checkData.status === 'completed' && checkData.video_url) return { videoUrl: checkData.video_url, mediaId: checkData.mediaId };
         if (checkData.status === 'failed') throw new Error(`GENERATION_FAILED: ${checkData.message}`);
     }

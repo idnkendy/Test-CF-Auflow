@@ -162,6 +162,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
             } else {
                 // Fallback (Not reached with useFlow=true)
+                setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage);
                     return { imageUrl: images[0] };
@@ -182,18 +183,19 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
         } catch (err: any) {
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) {
-                errorMessage += " (Credits đã được hoàn lại)";
-            }
-            onStateChange({ error: errorMessage });
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
-
+            const rawMsg = err.message || "";
+            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            // UI shows friendly message
+            onStateChange({ error: friendlyMsg });
+            
+            // DB records specific raw message
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            
             // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${err.message})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${rawMsg})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });

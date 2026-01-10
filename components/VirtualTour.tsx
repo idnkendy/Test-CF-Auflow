@@ -2,6 +2,7 @@
 import React from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
+import * as jobService from '../services/jobService'; // Import jobService for error mapping
 import { FileData, Tool, ImageResolution } from '../types';
 import { VirtualTourState } from '../state/toolState';
 import { refundCredits } from '../services/paymentService';
@@ -62,7 +63,7 @@ const VirtualTour: React.FC<VirtualTourProps> = ({ state, onStateChange, userCre
         if (!currentTourImage) return;
         
         if (onDeductCredits && userCredits < costPerStep) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${costPerStep} credits/bước nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
 
@@ -125,17 +126,17 @@ const VirtualTour: React.FC<VirtualTourProps> = ({ state, onStateChange, userCre
             });
 
         } catch (err: any) {
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) {
-                errorMessage += " (Credits đã được hoàn lại)";
-            }
-            onStateChange({ error: errorMessage });
-
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
             // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, costPerStep, `Hoàn tiền: Lỗi tour (${err.message})`);
+                await refundCredits(user.id, costPerStep, `Hoàn tiền: Lỗi tour (${rawMsg})`);
+                friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            onStateChange({ error: friendlyMsg });
         } finally {
             onStateChange({ isLoading: false });
         }
@@ -224,24 +225,4 @@ const VirtualTour: React.FC<VirtualTourProps> = ({ state, onStateChange, userCre
                          <button title="Quay trái" onClick={() => handleTourStep('orbit-left')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><OrbitLeftIcon /></button>
                          <div className="grid grid-cols-3 gap-2">
                             <div></div>
-                            <button title="Nhìn lên" onClick={() => handleTourStep('tilt-up')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><PanUpIcon /></button>
-                            <div></div>
-                            <button title="Lia trái" onClick={() => handleTourStep('pan-left')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><PanLeftIcon /></button>
-                            <div className="flex flex-col gap-2">
-                                <button title="Phóng to" onClick={() => handleTourStep('zoom-in')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><ZoomInIcon /></button>
-                                <button title="Thu nhỏ" onClick={() => handleTourStep('zoom-out')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><ZoomOutIcon /></button>
-                            </div>
-                            <button title="Lia phải" onClick={() => handleTourStep('pan-right')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><PanRightIcon /></button>
-                            <div></div>
-                            <button title="Nhìn xuống" onClick={() => handleTourStep('tilt-down')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><PanDownIcon /></button>
-                            <div></div>
-                         </div>
-                         <button title="Quay phải" onClick={() => handleTourStep('orbit-right')} disabled={!currentTourImage || isLoading} className="p-3 rounded-full bg-surface dark:bg-gray-700 hover:bg-accent/20 disabled:opacity-50 disabled:cursor-not-allowed"><OrbitRightIcon /></button>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-export default VirtualTour;
+                            <button

@@ -196,12 +196,17 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
         } catch (err: any) {
-            let msg = err.message;
-            if (logId) msg += " (Credits đã hoàn lại)";
-            onStateChange({ error: msg });
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
+            const rawMsg = err.message || "";
+            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            // UI shows friendly message
+            onStateChange({ error: friendlyMsg });
+            
+            // DB records specific raw message
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi diagram (${err.message})`, logId);
+            if (user && logId && onDeductCredits) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi diagram (${rawMsg})`, logId);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);

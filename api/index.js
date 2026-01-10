@@ -481,8 +481,19 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
         
         // --- IMPROVED ERROR LOGGING HERE ---
         if (!res.ok) {
-            const errorText = await res.text();
-            throw new Error(`Check Status Failed (${res.status}): ${errorText}`);
+            let errorMsg = `Check Status Failed (${res.status})`;
+            try {
+                const errJson = await res.json();
+                if (errJson.error && errJson.error.message) {
+                    errorMsg += `: ${errJson.error.message}`;
+                } else {
+                    errorMsg += `: ${JSON.stringify(errJson)}`;
+                }
+            } catch (e) {
+                const text = await res.text();
+                errorMsg += `: ${text.substring(0, 200)}`;
+            }
+            throw new Error(errorMsg);
         }
         // ------------------------------------
         

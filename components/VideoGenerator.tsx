@@ -32,8 +32,8 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
     };
 
     const handleGenerate = async () => {
-        if (onDeductCredits && userCredits < 5) {
-             onStateChange({ error: "Bạn không đủ credits. Cần 5 credits." });
+        if (onDeductCredits && (userCredits || 0) < 5) {
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
         if (!prompt) {
@@ -82,15 +82,17 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
             });
 
         } catch (err: any) {
-            const msg = err.message || "Lỗi tạo video";
-            onStateChange({ error: msg });
-            
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
-                await refundCredits(user.id, 5, `Hoàn tiền: Lỗi tạo video (${msg})`);
+                await refundCredits(user.id, 5, `Hoàn tiền: Lỗi tạo video (${rawMsg})`, logId);
+                friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            onStateChange({ error: friendlyMsg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
         }

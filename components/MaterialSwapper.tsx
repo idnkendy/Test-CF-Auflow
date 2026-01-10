@@ -173,13 +173,20 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             }
 
         } catch (err: any) {
-            let msg = err.message;
-            if (logId) msg += " (Credits đã hoàn lại)";
-            onStateChange({ error: msg });
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            if (logId) friendlyMsg += " (Credits đã hoàn lại)";
+            
+            // UI shows friendly message
+            onStateChange({ error: friendlyMsg });
+            
+            // DB records specific raw message
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi thay vật liệu (${err.message})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi thay vật liệu (${rawMsg})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });

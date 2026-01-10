@@ -169,7 +169,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
 
@@ -236,7 +236,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                             aspectEnum,
                             1,
                             modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(msg)
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -265,6 +265,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                             collectedUrls.push(finalUrl);
                             completedCount++;
                             onStateChange({ resultImages: [...collectedUrls] });
+                            setStatusMessage('Đang xử lý. Vui lòng đợi...');
                             
                             historyService.addToHistory({
                                 tool: Tool.UrbanPlanning,
@@ -313,16 +314,17 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             }
 
         } catch (err: any) {
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) errorMessage += " (Credits đã được hoàn lại)";
-            onStateChange({ error: errorMessage });
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
-
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi quy hoạch (${err.message})`, logId);
+            if (user && logId) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${rawMsg})`, logId);
+                friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            onStateChange({ error: friendlyMsg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);

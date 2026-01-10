@@ -40,8 +40,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
     
     // Support multiple images for AITechnicalDrawings in the future, for now treating resultImage as single but we can use ResultGrid if needed.
     // For now the state uses `resultImage` (string) but Flow returns array. Let's fix state later or adapt.
-    // Actually state `resultImage` is string | null. Let's assume 1 image for now or adapt to array.
-    // Wait, the state in toolState.ts is `resultImage: string | null`. Let's stick to single image for now to avoid breaking changes, or update state if needed.
+    // Actually state `resultImage` is string | null. Let's stick to single image for now to avoid breaking changes, or update state if needed.
     // But result grid handles array.
     // Let's use a local resultImages array for grid support if needed, or just use the single resultImage.
     
@@ -62,7 +61,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
              return;
         }
 
@@ -116,7 +115,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                     aspectEnum,
                     1,
                     modelName,
-                    (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                    (msg) => setStatusMessage(msg)
                 );
 
                 if (result.imageUrls && result.imageUrls.length > 0) {
@@ -154,14 +153,17 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             if (jobId && resultUrl) await jobService.updateJobStatus(jobId, 'completed', resultUrl);
 
         } catch (err: any) {
-            let msg = err.message;
-            if (logId) msg += " (Credits đã hoàn lại)";
-            onStateChange({ error: msg });
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${err.message})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${rawMsg})`, logId);
+                friendlyMsg += " (Credits đã được hoàn trả)";
             }
+            
+            onStateChange({ error: friendlyMsg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
@@ -245,6 +247,8 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                             </div>
                         ) : resultImage && sourceImage ? (
                             <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImage} />
+                        ) : resultImage ? (
+                             <img src={resultImage} alt="Result" className="w-full h-full object-contain" />
                         ) : (
                              <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
                         )}

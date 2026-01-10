@@ -189,7 +189,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             aspectEnum,
                             1,
                             modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(msg)
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -254,14 +254,17 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
             }
 
         } catch (err: any) {
-            let errorMessage = err.message || 'Đã xảy ra lỗi không mong muốn.';
-            if (logId) errorMessage += " (Credits đã được hoàn lại)";
-            onStateChange({ error: errorMessage });
+            const rawMsg = err.message || "";
+            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, errorMessage);
+            // UI shows friendly message
+            onStateChange({ error: friendlyMsg });
+            
+            // DB records specific raw message
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi render nội thất (${errorMessage})`, logId);
+            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi render nội thất (${rawMsg})`, logId);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);

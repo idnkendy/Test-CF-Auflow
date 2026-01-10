@@ -7,6 +7,28 @@ const BUCKET_NAME = 'assets';
 // Proxy URL to bypass CORS for Google Storage URLs
 const PROXY_BASE_URL = "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
 
+// --- ERROR HANDLING HELPER (NEW) ---
+export const mapFriendlyErrorMessage = (errorMsg: string): string => {
+    // Log lỗi gốc ra console để lập trình viên debug
+    console.error("Technical Error Detail:", errorMsg);
+
+    if (!errorMsg) return "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.";
+
+    const msg = errorMsg.toUpperCase();
+
+    // 1. Nhóm lỗi do người dùng (Vẫn giữ thông báo cụ thể nếu là lỗi credits)
+    if (msg.includes("KHÔNG ĐỦ CREDITS")) {
+        return "Bạn không đủ credits để thực hiện tác vụ này.";
+    }
+    // Lỗi Safety đôi khi cũng cần báo rõ
+    if (msg.includes("SAFETY_ERROR") || msg.includes("SAFETY") || msg.includes("BLOCK") || msg.includes("PROHIBITED")) {
+        return "Nội dung vi phạm chính sách an toàn của Google.";
+    }
+    
+    // 2. Nhóm lỗi kỹ thuật (Server, Network, Timeout, Queue, 503, v.v...) -> Trả về thông báo mặc định
+    return "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.";
+};
+
 const compressImage = async (blob: Blob): Promise<Blob> => {
     if (!blob.type.startsWith('image/')) return blob;
     return new Promise((resolve) => {
