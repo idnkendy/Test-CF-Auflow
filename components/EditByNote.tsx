@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FileData, ImageResolution, Tool, AspectRatio } from '../types';
@@ -15,6 +16,8 @@ import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
+import ResultGrid from './common/ResultGrid';
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 interface EditByNoteProps {
     state: EditByNoteState;
@@ -81,6 +84,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     // Editor State
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
@@ -111,9 +115,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     }, []);
 
-    // Removed the useEffect that was clearing annotations on sourceImage change.
-    // Cleanup is now handled explicitly in handleFileSelect.
-
     useEffect(() => {
         if (isEditorOpen) {
             document.body.style.overflow = 'hidden';
@@ -136,7 +137,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         }
     }, [selectedId, annotations]);
 
-    const getCost = () => {
+    const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
             case '1K': return 10;
@@ -145,7 +146,9 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             default: return 5;
         }
     };
-    const cost = numberOfImages * getCost();
+    
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     // --- HANDLERS ---
 
@@ -159,7 +162,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             img.src = fileData.objectURL;
         }
         onStateChange({ sourceImage: fileData, resultImages: [] });
-        // Reset annotations explicitly when a new file is selected
         setAnnotations([]);
         setAnnotatedPreview(null);
         setPanOffset({ x: 0, y: 0 });
@@ -546,9 +548,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Use Flow for ALL resolutions
-        const useFlow = true;
-
         try {
             const tempImg = new Image();
             tempImg.src = sourceImage.objectURL;
@@ -602,30 +601,22 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            let imageUrls: string[] = [];
+            // --- FLOW LOGIC WITH BATCH PROCESSING ---
+            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+            if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+            else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' ) {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16' ) {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-                }
-
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                const collectedUrls: string[] = [];
-                
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                    
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
                     const result = await externalVideoService.generateFlowImage(
                         fullPrompt,
                         [compositeImage], 
                         aspectEnum,
                         1,
                         modelName,
-                        (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                        (msg) => setStatusMessage(msg)
                     );
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
@@ -634,7 +625,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                         // Upscale Check (2K or 4K)
                         const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
                         if (shouldUpscale) {
-                            setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
                             try {
                                 const mediaId = result.mediaIds[0];
                                 if (mediaId) {
@@ -645,64 +635,60 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                     }
                                 }
                             } catch (e: any) {
-                                // STRICT FAILURE
-                                throw new Error(`Lỗi Upscale: ${e.message}`);
+                                console.error(`Lỗi Upscale: ${e.message}`);
                             }
                         }
                         
-                        collectedUrls.push(finalUrl);
-                        onStateChange({ resultImages: [...collectedUrls] });
-                        
-                        historyService.addToHistory({ 
-                            tool: Tool.EditByNote, 
-                            prompt: `Flow (${modelName}): ${fullPrompt}`, 
-                            sourceImageURL: sourceImage.objectURL, 
-                            resultImageURL: finalUrl 
-                        });
+                        return finalUrl;
                     }
-                });
-                
-                await Promise.all(promises);
-                if (collectedUrls.length === 0) throw new Error("Không thể tạo ảnh.");
-                imageUrls = collectedUrls;
+                    return null;
+                } catch (e: any) {
+                    console.error(`Image ${index+1} failed`, e);
+                    return null;
+                }
+            });
+            
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            const failedCount = numberOfImages - successfulUrls.length;
 
-            } else {
-                // Fallback (Not used with useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(
-                        fullPrompt, 
-                        aspectRatio, 
-                        resolution, 
-                        compositeImage,
-                        jobId || undefined
-                    );
-                    return { imageUrl: images[0] };
-                });
-                const results = await Promise.all(promises);
-                imageUrls = results.map(r => r.imageUrl);
-                onStateChange({ resultImages: imageUrls });
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
                 
-                imageUrls.forEach(url => {
-                    historyService.addToHistory({
-                        tool: Tool.EditByNote,
-                        prompt: fullPrompt,
-                        sourceImageURL: sourceImage.objectURL,
-                        resultImageURL: url,
+                successfulUrls.forEach(url => {
+                    historyService.addToHistory({ 
+                        tool: Tool.EditByNote, 
+                        prompt: `Flow (${modelName}): ${fullPrompt}`, 
+                        sourceImageURL: sourceImage.objectURL, 
+                        resultImageURL: url 
                     });
                 });
-            }
 
-            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+            } else {
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
+            }
 
             setSelectedId(null);
 
         } catch (err: any) {
             const rawMsg = err.message || "";
-            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // UI shows friendly message
-            onStateChange({ error: friendlyMsg });
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                onStateChange({ error: friendlyMsg });
+            }
             
             // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
@@ -718,8 +704,9 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     };
 
     const handleDownload = async () => {
-        if (resultImages.length !== 1) return;
+        if (resultImages.length === 0) return;
         setIsDownloading(true);
+        // Only download the first one for simplicity, or handle batch download if needed
         await externalVideoService.forceDownload(resultImages[0], "edited-image.png");
         setIsDownloading(false);
     };
@@ -735,6 +722,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
             {isEditorOpen && sourceImage && createPortal(
@@ -1059,13 +1047,15 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             <h3 className="text-lg font-bold text-text-primary dark:text-white">2. Kết Quả</h3>
                              {resultImages.length > 0 && (
                                 <div className="flex items-center gap-2">
-                                    <button
-                                        onClick={() => setPreviewImage(resultImages[0])}
-                                        className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
-                                        title="Phóng to"
-                                    >
-                                        <span className="material-symbols-outlined text-lg">zoom_in</span>
-                                    </button>
+                                     {resultImages.length === 1 && (
+                                        <button
+                                            onClick={() => setPreviewImage(resultImages[0])}
+                                            className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
+                                            title="Phóng to"
+                                        >
+                                            <span className="material-symbols-outlined text-lg">zoom_in</span>
+                                        </button>
+                                     )}
                                     <button 
                                         onClick={handleDownload} 
                                         className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
@@ -1085,12 +1075,14 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 </div>
                             )}
                             
-                            {!isLoading && resultImages.length > 0 ? (
+                            {!isLoading && resultImages.length === 1 && sourceImage ? (
                                  <ImageComparator 
                                     originalImage={sourceImage?.objectURL || ''}
                                     resultImage={resultImages[0]}
                                  />
-                            ) : (
+                            ) : !isLoading && resultImages.length > 1 ? (
+                                <ResultGrid images={resultImages} toolName="edit-by-note" />
+                            ) : !isLoading && resultImages.length === 0 ? (
                                 <div className="text-center text-text-secondary dark:text-gray-500 p-8">
                                     <div className="w-16 h-16 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
                                         <span className="material-symbols-outlined text-3xl opacity-50">image</span>
@@ -1098,7 +1090,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                     <p className="font-medium">Kết quả sẽ hiện ở đây</p>
                                     <p className="text-xs mt-1 opacity-70">Sẵn sàng để tạo tác phẩm của bạn</p>
                                 </div>
-                            )}
+                            ) : null}
                         </div>
 
                         <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
