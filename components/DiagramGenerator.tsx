@@ -62,7 +62,8 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
             default: return 5;
         }
     };
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImages: [] });
@@ -186,6 +187,17 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
                     const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
                     throw new Error(errorMsg);
                 }
+                
+                // --- PARTIAL REFUND ---
+                const failedCount = numberOfImages - collectedUrls.length;
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${collectedUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+                
                 imageUrls = collectedUrls;
 
             } else {
@@ -219,7 +231,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi diagram (${rawMsg})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ (${rawMsg})`, logId);
                 if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
             }
         } finally {

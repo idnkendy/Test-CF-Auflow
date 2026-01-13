@@ -3,7 +3,7 @@ import React, { useState, useCallback } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService'; // Flow Import
+import * as externalVideoService from '../services/externalVideoService';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { LandscapeRenderingState } from '../state/toolState';
 import { refundCredits } from '../services/paymentService';
@@ -18,7 +18,7 @@ import OptionSelector from './common/OptionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 const gardenStyleOptions = [
     { value: 'none', label: 'Tự động' },
@@ -69,7 +69,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     const escapeRegExp = (string: string) => {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -128,7 +128,6 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
-        // Nếu chuyển về Standard, xóa ảnh tham chiếu
         if (val === 'Standard') {
             onStateChange({ referenceImages: [] });
         }
@@ -156,9 +155,9 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
         }
     };
     
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
-    // Unified Prompt
     const constructLandscapePrompt = () => {
         let basePrompt = "";
         if (sourceImage) {
@@ -169,7 +168,6 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
         } else {
             basePrompt = `${customPrompt}, photorealistic landscape rendering, detailed garden design, masterpiece`;
         }
-        // Unified Persona
         basePrompt = `You are a professional landscape architect. ${basePrompt}`;
         return basePrompt;
     };
@@ -197,9 +195,6 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
 
         const promptForService = constructLandscapePrompt();
         
-        // Use Flow for ALL resolutions
-        const useFlow = true;
-
         try {
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Render sân vườn (${numberOfImages} ảnh) - ${resolution || 'Standard'}`);
@@ -218,117 +213,74 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-                }
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
+                    const inputImages: FileData[] = [];
+                    if (sourceImage) inputImages.push(sourceImage);
+                    if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
 
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                const collectedUrls: string[] = [];
-                let completedCount = 0;
-                let lastError: any = null;
-
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                        
-                        // Prepare input images array (Source + References)
-                        const inputImages: FileData[] = [];
-                        if (sourceImage) inputImages.push(sourceImage);
-                        if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
-
-                        const result = await externalVideoService.generateFlowImage(
-                            promptForService,
-                            inputImages,
-                            aspectEnum,
-                            1,
-                            modelName,
-                            (msg) => setStatusMessage(msg)
-                        );
-
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-
-                            // Check for 2K/4K Upscale
-                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-
-                            if (shouldUpscale) {
-                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
-                                        if (upscaleResult && upscaleResult.imageUrl) {
-                                            finalUrl = upscaleResult.imageUrl;
-                                        }
-                                    }
-                                } catch (upscaleErr: any) {
-                                    // STRICT FAILURE
-                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
-                                }
-                            }
-                            
-                            collectedUrls.push(finalUrl);
-                            completedCount++;
-                            onStateChange({ resultImages: [...collectedUrls] });
-                            setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                            
-                            historyService.addToHistory({
-                                tool: Tool.LandscapeRendering,
-                                prompt: `Flow (${modelName}): ${promptForService}`,
-                                sourceImageURL: sourceImage?.objectURL,
-                                resultImageURL: finalUrl,
-                            });
-                        }
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
-                    }
-                });
-
-                await Promise.all(promises);
-                if (collectedUrls.length === 0) {
-                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
-                    throw new Error(errorMsg);
-                }
-                if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
-
-            } else {
-                // Fallback (Not used with useFlow=true)
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(
-                        promptForService, 
-                        aspectRatio, 
-                        resolution, 
-                        sourceImage || undefined, 
-                        undefined, 
-                        referenceImages
+                    const result = await externalVideoService.generateFlowImage(
+                        promptForService,
+                        inputImages,
+                        aspectRatio,
+                        1,
+                        modelName,
+                        (msg) => setStatusMessage(msg)
                     );
-                    return images[0];
+
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+
+                        if (shouldUpscale) {
+                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                            const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
+                            if (upscaleResult && upscaleResult.imageUrl) {
+                                finalUrl = upscaleResult.imageUrl;
+                            }
+                        }
+                        return finalUrl;
+                    }
+                    return null;
+                } catch (e) {
+                    console.error(`Image ${index+1} failed`, e);
+                    return null;
+                }
+            });
+
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            const failedCount = numberOfImages - successfulUrls.length;
+
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
+                successfulUrls.forEach(url => {
+                    historyService.addToHistory({
+                        tool: Tool.LandscapeRendering,
+                        prompt: `Flow ${modelName}: ${promptForService}`,
+                        sourceImageURL: sourceImage?.objectURL,
+                        resultImageURL: url,
+                    });
                 });
-                const imageUrls = await Promise.all(promises);
-                
-                onStateChange({ resultImages: imageUrls });
-                if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-                
-                imageUrls.forEach(url => historyService.addToHistory({
-                    tool: Tool.LandscapeRendering,
-                    prompt: `Gemini API: ${promptForService}`,
-                    sourceImageURL: sourceImage?.objectURL,
-                    resultImageURL: url,
-                }));
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+            } else {
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 
         } catch (err: any) {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
@@ -338,8 +290,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${rawMsg})`, logId);
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ (${rawMsg})`, logId);
             }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);

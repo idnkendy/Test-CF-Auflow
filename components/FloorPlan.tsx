@@ -5,7 +5,7 @@ import { FloorPlanState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService'; // Flow Import
+import * as externalVideoService from '../services/externalVideoService';
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -18,7 +18,7 @@ import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import MultiImageUpload from './common/MultiImageUpload';
 import OptionSelector from './common/OptionSelector';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 interface FloorPlanProps {
     state: FloorPlanState;
@@ -28,7 +28,6 @@ interface FloorPlanProps {
     onInsufficientCredits?: () => void;
 }
 
-// Exterior Options
 const exteriorProjectTypeOptions = [
     { value: 'Nhà phố', label: 'Nhà phố' },
     { value: 'Biệt thự', label: 'Biệt thự' },
@@ -61,7 +60,6 @@ const weatherOptions = [
     { value: 'Mưa', label: 'Mưa' },
 ];
 
-// Interior Options
 const interiorProjectTypeOptions = [
     { value: 'Công trình nhà ở', label: 'Nhà ở' },
     { value: 'Căn hộ chung cư', label: 'Chung cư' },
@@ -95,9 +93,8 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
-    // Set default prompt on mount or mode change
     useEffect(() => {
         if (renderMode === 'top-down') {
             if (planType === 'interior') {
@@ -116,7 +113,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         const targetPromptKey = renderMode === 'top-down' ? 'prompt' : 'layoutPrompt';
         let currentPrompt = state[targetPromptKey] || '';
         
-        // Avoid duplicate exact phrases to keep prompt clean
         if (currentPrompt.includes(text)) return;
 
         const newPrompt = currentPrompt.trim() 
@@ -138,7 +134,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
 
     const handleInteriorStyleChange = (val: string) => {
         appendToPrompt(`phong cách ${val}`);
-        // We use projectType to store style temporarily or just append to prompt since state might not have style field
     };
 
     const handleTimeChange = (val: string) => {
@@ -161,7 +156,8 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         }
     };
     
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
@@ -172,10 +168,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         setIsAutoPromptLoading(true);
         onStateChange({ error: null });
         try {
-            // Pass planType and renderMode to distinguish specific prompt logic
             const newPrompt = await geminiService.generateFloorPlanPrompt(sourceImage, planType, renderMode);
-            
-            // Assign result to correct state property based on active mode
             if (renderMode === 'top-down') {
                 onStateChange({ prompt: newPrompt });
             } else {
@@ -197,7 +190,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
     };
 
     const handleGenerate = async () => {
-        // --- CHECK CREDITS INSIDE HANDLER ---
         if (onDeductCredits && userCredits < cost) {
              if (onInsufficientCredits) {
                  onInsufficientCredits();
@@ -252,108 +244,74 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            let imageUrls: string[] = [];
+            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+            if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+            else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                const collectedUrls: string[] = [];
-                let lastError: any = null;
-                
-                const inputImages = sourceImage ? [sourceImage, ...referenceImages] : [];
-
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                        const result = await externalVideoService.generateFlowImage(
-                            finalPrompt,
-                            inputImages,
-                            aspectEnum,
-                            1,
-                            modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
-                        );
-
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-                            
-                            // Upscale Check (2K or 4K)
-                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-                            
-                            if (shouldUpscale) {
-                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
-                                        if (upscaleResult && upscaleResult.imageUrl) {
-                                            finalUrl = upscaleResult.imageUrl;
-                                        }
-                                    }
-                                } catch (upscaleErr: any) {
-                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
-                                }
-                            }
-                            
-                            collectedUrls.push(finalUrl);
-                            onStateChange({ resultImages: [...collectedUrls] });
-                            historyService.addToHistory({
-                                tool: Tool.FloorPlan,
-                                prompt: `Flow (${modelName}): ${finalPrompt}`,
-                                sourceImageURL: sourceImage?.objectURL,
-                                resultImageURL: finalUrl,
-                            });
-                        }
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
-                    }
-                });
-
-                await Promise.all(promises);
-                if (collectedUrls.length === 0) {
-                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
-                    throw new Error(errorMsg);
-                }
-                imageUrls = collectedUrls;
-
-            } else {
-                // Fallback (Not reached with useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(
-                        finalPrompt, 
-                        aspectRatio, 
-                        resolution, 
-                        sourceImage || undefined,
-                        jobId || undefined,
-                        referenceImages
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
+                    const inputImages = sourceImage ? [sourceImage, ...referenceImages] : [];
+                    const result = await externalVideoService.generateFlowImage(
+                        finalPrompt,
+                        inputImages,
+                        aspectEnum,
+                        1,
+                        modelName,
+                        (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                     );
-                    return images[0];
-                });
-                imageUrls = await Promise.all(promises);
-                
-                onStateChange({ resultImages: imageUrls });
-                imageUrls.forEach(url => historyService.addToHistory({
-                    tool: Tool.FloorPlan,
-                    prompt: `Gemini API: ${finalPrompt}`,
-                    sourceImageURL: sourceImage?.objectURL,
-                    resultImageURL: url,
-                }));
-            }
 
-            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                        if (shouldUpscale) {
+                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                            const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes);
+                            if (upscaleRes && upscaleRes.imageUrl) {
+                                finalUrl = upscaleRes.imageUrl;
+                            }
+                        }
+                        return finalUrl;
+                    }
+                    return null;
+                } catch (e) {
+                    console.error(`Image ${index+1} failed`, e);
+                    return null;
+                }
+            });
+
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            const failedCount = numberOfImages - successfulUrls.length;
+
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
+                successfulUrls.forEach(url => {
+                    historyService.addToHistory({
+                        tool: Tool.FloorPlan,
+                        prompt: `Flow ${modelName}: ${finalPrompt}`,
+                        sourceImageURL: sourceImage?.objectURL,
+                        resultImageURL: url,
+                    });
+                });
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+            } else {
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
+            }
 
         } catch (err: any) {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
@@ -361,13 +319,11 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                 onStateChange({ error: friendlyMsg });
             }
             
-            // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${rawMsg})`, logId);
-                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ (${rawMsg})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
@@ -382,11 +338,8 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         setIsDownloading(false);
     };
 
-    // Check conditions to show options
     const showExteriorOptions = planType === 'exterior' && renderMode === 'top-down';
     const showInteriorOptions = planType === 'interior' && renderMode === 'top-down';
-
-    // Dynamic labels based on planType
     const topDownLabel = planType === 'exterior' ? 'Phối cảnh tổng thể' : 'Mặt bằng 3D';
     const perspectiveLabel = planType === 'exterior' ? 'Góc nhìn kiến trúc 3D' : 'Góc nhìn nội thất 3D';
 
@@ -406,7 +359,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                             <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                         </div>
                         
-                        {/* Reference Images: Moved to left column for Perspective modes */}
                         {renderMode === 'perspective' && (
                             <div>
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh tham chiếu (Tùy chọn)</label>
@@ -428,7 +380,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                             </div>
                         </div>
                         
-                        {/* Option Selectors - Exterior + Top-down */}
                         {showExteriorOptions && (
                             <div className="pt-2 space-y-4">
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh chi tiết (Nhấn để thêm)</label>
@@ -441,7 +392,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                             </div>
                         )}
 
-                        {/* Option Selectors - Interior + Top-down */}
                         {showInteriorOptions && (
                             <div className="pt-2 space-y-4">
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh chi tiết (Nhấn để thêm)</label>
@@ -457,7 +407,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                                 </label>
                                 <textarea rows={6} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-sm" placeholder="Mô tả phong cách..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                                 
-                                {/* Auto Prompt Button for Top-down modes */}
                                 {(planType === 'exterior' || planType === 'interior') && (
                                     <button
                                         type="button"
@@ -490,7 +439,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Mô tả góc nhìn</label>
                                 <textarea rows={6} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-sm" placeholder="Mô tả góc nhìn..." value={layoutPrompt} onChange={(e) => onStateChange({ layoutPrompt: e.target.value })} />
                                 
-                                {/* Auto Prompt Button for Interior Perspective Mode */}
                                 {planType === 'interior' && (
                                     <button
                                         type="button"
@@ -533,7 +481,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                             </div>
                             <div className="text-xs">
                                 {userCredits < cost ? (
-                                    <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                    <span className="text-red-500 font-semibold">Không đủ</span>
                                 ) : (
                                     <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
                                 )}
@@ -541,7 +489,6 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                         </div>
                         <button 
                             onClick={handleGenerate} 
-                            // REMOVED: userCredits < cost check in disabled prop
                             disabled={isLoading || !sourceImage}
                             className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg"
                         >

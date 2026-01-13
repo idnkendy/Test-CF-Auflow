@@ -4,10 +4,10 @@ import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { ImageEditorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
-import * as externalVideoService from '../services/externalVideoService'; // Import externalVideoService
+import * as externalVideoService from '../services/externalVideoService';
 import { refundCredits } from '../services/paymentService'; 
 import { supabase } from '../services/supabaseClient'; 
-import * as jobService from '../services/jobService'; // Added import
+import * as jobService from '../services/jobService';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ResultGrid from './common/ResultGrid';
@@ -18,7 +18,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import MultiImageUpload from './common/MultiImageUpload';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 interface ImageEditorProps {
     state: ImageEditorState;
@@ -28,7 +28,6 @@ interface ImageEditorProps {
     onInsufficientCredits?: () => void;
 }
 
-// Helper to merge source and mask into a single composite image
 const createCompositeImage = async (source: FileData, mask: FileData): Promise<FileData> => {
     return new Promise((resolve, reject) => {
         const imgSource = new Image();
@@ -46,11 +45,9 @@ const createCompositeImage = async (source: FileData, mask: FileData): Promise<F
                 return;
             }
             
-            // Draw Source
             ctx.drawImage(imgSource, 0, 0);
 
             imgMask.onload = () => {
-                // Draw Mask Overlay
                 ctx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
                 
                 const dataUrl = canvas.toDataURL('image/png');
@@ -99,8 +96,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
-
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     const handleFileSelect = (fileData: FileData | null) => {
         if (fileData?.objectURL) {
@@ -111,7 +107,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     sourceImage: fileData,
                     resultImages: [],
                     maskImage: null,
-                    aspectRatio: detected // Auto-detect and set ratio
+                    aspectRatio: detected
                 });
             };
             img.src = fileData.objectURL;
@@ -128,7 +124,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         onStateChange({ referenceImages: files });
     };
 
-    // Calculate cost based on resolution
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -139,7 +134,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         }
     };
     
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
@@ -171,10 +167,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Use Flow for ALL resolutions
-        const useFlow = true;
-
-        // Use selected Aspect Ratio
         const effectiveAspectRatio = aspectRatio || '1:1';
 
         try {
@@ -195,127 +187,98 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            let imageUrls: string[] = [];
+            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+            if (effectiveAspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+            else if (effectiveAspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (effectiveAspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (effectiveAspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                
-                // Construct prompt for Flow
-                let flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described. Ensure aspect ratio is ${effectiveAspectRatio}.`;
-                
-                // Input Images Logic
-                let inputImages: FileData[] = [sourceImage];
-                
-                if (maskImage) {
-                     try {
-                         // MERGE SOURCE AND MASK into one composite image
-                         const compositeImage = await createCompositeImage(sourceImage, maskImage);
-                         
-                         // Update Prompt to instruct model about the two images
-                         flowPrompt = `I have provided two images. 
-                         1. The first image is the original. 
-                         2. The second image shows the original with a RED MASK overlay indicating the area to edit.
-                         
-                         TASK: Edit the area covered by the RED MASK in the original image based on this instruction: "${prompt}".
-                         Ensure the edit blends seamlessly with the surrounding environment, matching lighting, shadows, and perspective.`;
-                         
-                         // Send Original + Composite
-                         inputImages = [sourceImage, compositeImage];
-                     } catch (e) {
-                         console.error("Composite creation failed, falling back to source + mask", e);
-                         flowPrompt = `Edit the first image based on the second mask image (white area is the edit zone). Instruction: ${prompt}. Seamlessly blended with the environment, matching perspective and lighting.`;
-                         inputImages.push(maskImage);
-                     }
-                }
-                
-                if (referenceImages.length > 0) {
-                    inputImages.push(...referenceImages);
-                }
-
-                const collectedUrls: string[] = [];
-                let completedCount = 0;
-                let lastError: any = null;
-
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage(`[1/2] Đang xử lý (${modelName})... (${index + 1}/${numberOfImages})`);
-                        
-                        const result = await externalVideoService.generateFlowImage(
-                            flowPrompt,
-                            inputImages, 
-                            aspectEnum,
-                            1,
-                            modelName,
-                            (msg) => setStatusMessage(msg)
-                        );
-
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-
-                            // Upscale Check (2K or 4K)
-                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-                            
-                            if (shouldUpscale) {
-                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
-                                        if (upscaleResult && upscaleResult.imageUrl) {
-                                            finalUrl = upscaleResult.imageUrl;
-                                        }
-                                    }
-                                } catch (upscaleErr: any) {
-                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
-                                }
-                            }
-                            
-                            collectedUrls.push(finalUrl);
-                            completedCount++;
-                            onStateChange({ resultImages: [...collectedUrls] });
-                            setStatusMessage(`Hoàn tất ${completedCount}/${numberOfImages}`);
-                            
-                            historyService.addToHistory({
-                                tool: Tool.ImageEditing,
-                                prompt: `Flow (${modelName}): ${flowPrompt}`,
-                                sourceImageURL: sourceImage?.objectURL,
-                                resultImageURL: finalUrl,
-                            });
-                        }
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
+                    let flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described. Ensure aspect ratio is ${effectiveAspectRatio}.`;
+                    let inputImages: FileData[] = [sourceImage];
+                    
+                    if (maskImage) {
+                         try {
+                             const compositeImage = await createCompositeImage(sourceImage, maskImage);
+                             flowPrompt = `I have provided two images. 
+                             1. The first image is the original. 
+                             2. The second image shows the original with a RED MASK overlay indicating the area to edit.
+                             
+                             TASK: Edit the area covered by the RED MASK in the original image based on this instruction: "${prompt}".
+                             Ensure the edit blends seamlessly with the surrounding environment, matching lighting, shadows, and perspective.`;
+                             inputImages = [sourceImage, compositeImage];
+                         } catch (e) {
+                             console.error("Composite creation failed, falling back to source + mask", e);
+                             flowPrompt = `Edit the first image based on the second mask image (white area is the edit zone). Instruction: ${prompt}. Seamlessly blended with the environment, matching perspective and lighting.`;
+                             inputImages.push(maskImage);
+                         }
                     }
-                });
+                    
+                    if (referenceImages.length > 0) {
+                        inputImages.push(...referenceImages);
+                    }
 
-                await Promise.all(promises);
-                imageUrls = collectedUrls;
-                if (collectedUrls.length === 0) {
-                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
-                    throw new Error(errorMsg);
+                    const result = await externalVideoService.generateFlowImage(
+                        flowPrompt,
+                        inputImages, 
+                        aspectEnum,
+                        1,
+                        modelName,
+                        (msg) => setStatusMessage(msg)
+                    );
+
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                        
+                        if (shouldUpscale) {
+                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                            const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes);
+                            if (upscaleResult && upscaleResult.imageUrl) {
+                                finalUrl = upscaleResult.imageUrl;
+                            }
+                        }
+                        return finalUrl;
+                    }
+                    return null;
+                } catch (e) {
+                    console.error(`Image ${index+1} failed`, e);
+                    return null;
                 }
+            });
 
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            const failedCount = numberOfImages - successfulUrls.length;
+
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
+                successfulUrls.forEach(url => {
+                    historyService.addToHistory({
+                        tool: Tool.ImageEditing,
+                        prompt: `Flow ${modelName}: ${prompt}`,
+                        sourceImageURL: sourceImage?.objectURL,
+                        resultImageURL: url,
+                    });
+                });
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
             } else {
-                // Fallback (Not reached with useFlow=true)
-                const results = await geminiService.editImage(prompt, sourceImage, numberOfImages);
-                imageUrls = results.map(r => r.imageUrl);
-                onStateChange({ resultImages: imageUrls });
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
-
-            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
         } catch (err: any) {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
@@ -326,7 +289,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ảnh (${rawMsg})`, logId);
-                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
             }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
@@ -371,21 +333,20 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     image={sourceImage}
                     onClose={() => setIsMaskingModalOpen(false)}
                     onApply={handleApplyMask}
-                    maskColor="rgba(239, 68, 68, 0.5)" // Red mask with 50% opacity
+                    maskColor="rgba(239, 68, 68, 0.5)"
                 />
             )}
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Chỉnh Sửa Ảnh</h2>
             <p className="text-text-secondary dark:text-gray-300 mb-6">Tải lên một bức ảnh và mô tả những thay đổi bạn muốn. Bạn cũng có thể dùng công cụ mask để chỉ định vùng cần chỉnh sửa.</p>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {/* --- INPUTS --- */}
                 <div className="space-y-6 flex flex-col">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Gốc</label>
                         <ImageUpload 
                             onFileSelect={handleFileSelect} 
                             previewUrl={sourceImage?.objectURL}
-                            maskPreviewUrl={maskImage?.objectURL} // Pass mask here for overlay
+                            maskPreviewUrl={maskImage?.objectURL}
                         />
                          {sourceImage && (
                             <div className="mt-4">
@@ -396,7 +357,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                         onClick={(e) => { 
                                             e.preventDefault(); 
                                             setIsMaskingModalOpen(true); 
-                                            scrollToTop(); // Force scroll to top
+                                            scrollToTop(); 
                                         }}
                                         className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
                                         title="Vẽ vùng chọn"
@@ -444,7 +405,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     </div>
                 </div>
 
-                {/* --- CONTROLS --- */}
                  <div className="space-y-6 flex flex-col h-full">
                      <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 flex-grow flex flex-col">
                          <label htmlFor="prompt-editor" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Mô tả thay đổi mong muốn</label>
@@ -478,7 +438,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                <span className="text-red-500 font-semibold">Không đủ</span>
                             ) : (
                                 <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
                             )}
@@ -496,7 +456,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                  </div>
             </div>
 
-            {/* --- RESULTS --- */}
             <div>
                 <div className="flex justify-between items-center mb-4">
                     <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Chỉnh sửa</h3>

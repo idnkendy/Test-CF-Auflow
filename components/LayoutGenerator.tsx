@@ -5,7 +5,7 @@ import { LayoutGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService'; // Flow Import
+import * as externalVideoService from '../services/externalVideoService'; 
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -43,7 +43,8 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
             default: return 5;
         }
     };
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImages: [] });
@@ -162,6 +163,17 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                     const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
                     throw new Error(errorMsg);
                 }
+                
+                // --- PARTIAL REFUND ---
+                const failedCount = numberOfImages - collectedUrls.length;
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${collectedUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+                
                 imageUrls = collectedUrls;
 
             } else {
@@ -195,7 +207,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi layout (${rawMsg})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ (${rawMsg})`, logId);
                 if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
             }
         } finally {
@@ -252,7 +264,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                <span className="text-red-500 font-semibold">Không đủ</span>
                             ) : (
                                 <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
                             )}

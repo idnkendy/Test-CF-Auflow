@@ -44,7 +44,8 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
         }
     };
     
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImages: [] });
@@ -165,6 +166,17 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                     const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
                     throw new Error(errorMsg);
                 }
+                
+                // --- PARTIAL REFUND ---
+                const failedCount = numberOfImages - collectedUrls.length;
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${collectedUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+                
                 imageUrls = collectedUrls;
 
             } else {

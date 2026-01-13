@@ -18,7 +18,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 const styleOptions = [
     { value: 'none', label: 'Tự động' },
@@ -84,9 +84,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
-    
-    // Set default prompt on mount if empty
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
+
     useEffect(() => {
         if (!customPrompt || customPrompt === 'Biến thành ảnh chụp thực tế không gian nội thất') {
             onStateChange({ customPrompt: 'Biến thành ảnh chụp thực tế nội thất' });
@@ -110,24 +109,20 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         const newPart = getPromptPart(type, newValue); 
         let nextPrompt = customPrompt;
         
-        // Remove old part if exists
         if (oldPart && nextPrompt.includes(oldPart)) { 
             const escapedOldPart = escapeRegExp(oldPart); 
             nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), ''); 
         } 
         
-        // Append new part
         if (newPart) { 
             nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart; 
         }
         
-        // Clean up commas
         const cleanedPrompt = nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ');
         onStateChange({ customPrompt: cleanedPrompt });
     }, [customPrompt, onStateChange]);
 
     const handleStyleChange = (newVal: string) => { updatePrompt('style', newVal, style); onStateChange({ style: newVal }); };
-    // Reuse roomType state for Project Type
     const handleProjectTypeChange = (newVal: string) => { updatePrompt('projectType', newVal, roomType); onStateChange({ roomType: newVal }); };
     const handleLightingChange = (newVal: string) => { updatePrompt('lighting', newVal, lighting); onStateChange({ lighting: newVal }); };
     const handleColorPaletteChange = (newVal: string) => { updatePrompt('colorPalette', newVal, colorPalette); onStateChange({ colorPalette: newVal }); };
@@ -136,7 +131,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const handleFileSelect = (fileData: FileData | null) => { onStateChange({ sourceImage: fileData, resultImages: [], upscaledImage: null, }); }
     const handleReferenceFilesChange = (files: FileData[]) => { onStateChange({ referenceImages: files }); };
     const getCostPerImage = () => { switch (resolution) { case 'Standard': return 5; case '1K': return 10; case '2K': return 20; case '4K': return 30; default: return 5; } };
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
     
     const constructInteriorPrompt = () => { 
         let basePrompt = `Generate an image with a strict aspect ratio of ${aspectRatio}. Adapt the composition of the interior scene from the source image to fit this new frame. Do not add black bars or letterbox. The main creative instruction is: ${customPrompt}. Make it photorealistic interior design.`; 
@@ -165,104 +161,69 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         let jobId: string | null = null;
         let logId: string | null = null;
         
-        // Use Flow for all resolutions (Standard, 1K, 2K, 4K)
-        const useFlow = true;
-
         try {
             if (onDeductCredits) { logId = await onDeductCredits(cost, `Render nội thất (${numberOfImages} ảnh) - ${resolution || 'Standard'}`); }
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) { jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.InteriorRendering, prompt: customPrompt, cost: cost, usage_log_id: logId }); }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            if (useFlow) {
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                const collectedUrls: string[] = [];
-                let completedCount = 0;
-                let lastError: any = null;
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
+                    const inputImages: FileData[] = [];
+                    if (sourceImage) inputImages.push(sourceImage);
+                    if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
 
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                        
-                        const inputImages: FileData[] = [];
-                        if (sourceImage) inputImages.push(sourceImage);
-                        if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
-
-                        const result = await externalVideoService.generateFlowImage(
-                            promptForService,
-                            inputImages,
-                            aspectRatio, // Pass raw ratio
-                            1,
-                            modelName,
-                            (msg) => setStatusMessage(msg)
-                        );
-
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-
-                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-
-                            if (shouldUpscale) {
-                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
-                                        if (upscaleResult && upscaleResult.imageUrl) {
-                                            finalUrl = upscaleResult.imageUrl;
-                                        }
-                                    }
-                                } catch (upscaleErr: any) {
-                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
-                                }
-                            }
-                            
-                            collectedUrls.push(finalUrl);
-                            completedCount++;
-                            onStateChange({ resultImages: [...collectedUrls] });
-                            
-                            historyService.addToHistory({ tool: Tool.InteriorRendering, prompt: `Flow (${modelName}): ${promptForService}`, sourceImageURL: sourceImage?.objectURL, resultImageURL: finalUrl });
-                        }
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
-                    }
-                });
-
-                await Promise.all(promises);
-                if (collectedUrls.length === 0) {
-                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
-                    throw new Error(errorMsg);
-                }
-                if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
-
-            } else {
-                // --- GOOGLE API LOGIC (Fallback) ---
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(
-                        promptForService, 
+                    const result = await externalVideoService.generateFlowImage(
+                        promptForService,
+                        inputImages,
                         aspectRatio, 
-                        resolution,
-                        sourceImage || undefined, 
-                        jobId || undefined, 
-                        referenceImages
+                        1, 
+                        modelName,
+                        (msg) => setStatusMessage(msg)
                     );
-                    return images[0];
-                });
-                
-                const imageUrls = await Promise.all(promises);
-                onStateChange({ resultImages: imageUrls });
-                if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-                
-                imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.InteriorRendering, prompt: `Gemini Pro 4K: ${promptForService}`, sourceImageURL: sourceImage?.objectURL, resultImageURL: url, }));
+
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+
+                        if (shouldUpscale) {
+                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                            const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
+                            if (upscaleRes && upscaleRes.imageUrl) finalUrl = upscaleRes.imageUrl;
+                        }
+                        return finalUrl;
+                    }
+                    return null;
+                } catch (e) {
+                    console.error(`Image ${index+1} failed`, e);
+                    return null;
+                }
+            });
+
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            const failedCount = numberOfImages - successfulUrls.length;
+
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
+                successfulUrls.forEach(url => historyService.addToHistory({ tool: Tool.InteriorRendering, prompt: `Flow ${modelName}: ${promptForService}`, sourceImageURL: sourceImage?.objectURL, resultImageURL: url }));
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` });
+                }
+            } else {
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 
         } catch (err: any) {
             const rawMsg = err.message || "";
             const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
@@ -270,11 +231,9 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 onStateChange({ error: friendlyMsg });
             }
             
-            // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
-            
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi render nội thất (${rawMsg})`, logId);
+            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi toàn bộ (${rawMsg})`, logId);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
@@ -324,10 +283,8 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Nội thất</h2>
                 <p className="text-text-secondary dark:text-gray-300 mb-6">Tải lên ảnh phác thảo, mặt bằng hoặc ảnh thực tế của một không gian, AI sẽ giúp bạn hoàn thiện với đầy đủ vật liệu, ánh sáng và đồ đạc.</p>
                 
-                {/* --- INPUTS --- */}
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                        {/* Image Uploads (Left Column) */}
                         <div className="space-y-6">
                             <div>
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Phác Thảo / Không Gian</label>
@@ -354,7 +311,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             </div>
                         </div>
 
-                        {/* Prompt and Options (Right Column) */}
                          <div className="space-y-4 flex flex-col">
                              <div className="relative">
                                 <label htmlFor="custom-prompt-interior" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả yêu cầu chính</label>
@@ -451,7 +407,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 </div>
             </div>
 
-            {/* --- RESULTS VIEW --- */}
              <div>
                 <div className="flex justify-between items-center mb-2">
                     <h3 className="text-lg font-semibold text-text-primary dark:text-white">So sánh Trước & Sau</h3>

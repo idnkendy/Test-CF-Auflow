@@ -5,7 +5,7 @@ import { MaterialSwapperState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService'; // Import Flow
+import * as externalVideoService from '../services/externalVideoService'; 
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
@@ -16,7 +16,7 @@ import ResultGrid from './common/ResultGrid';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 interface MaterialSwapperProps {
     state: MaterialSwapperState;
@@ -32,7 +32,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -43,7 +43,9 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             default: return 5;
         }
     };
-    const cost = numberOfImages * getCostPerImage();
+    
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
@@ -67,9 +69,6 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
         let logId: string | null = null;
         let jobId: string | null = null;
         
-        // Use Flow for ALL resolutions
-        const useFlow = true;
-
         try {
              if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Thay vật liệu (${numberOfImages} ảnh) - ${resolution}`);
@@ -89,115 +88,82 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             const fullPrompt = `${prompt}. Maintain ${aspectRatio} ratio. Photorealistic quality.`;
-            let imageUrls: string[] = [];
+            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+            if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+            else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            const inputImages = [sceneImage, materialImage];
 
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                const collectedUrls: string[] = [];
-                // Input images: Scene first, then Material
-                const inputImages = [sceneImage, materialImage];
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
+                    const result = await externalVideoService.generateFlowImage(
+                        fullPrompt,
+                        inputImages,
+                        aspectEnum,
+                        1,
+                        modelName,
+                        (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                    );
 
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                        
-                        const result = await externalVideoService.generateFlowImage(
-                            fullPrompt,
-                            inputImages,
-                            aspectEnum,
-                            1,
-                            modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
-                        );
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
 
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-                            
-                            // Check for 2K/4K Upscale
-                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-
-                            if (shouldUpscale) {
-                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
-                                        if (upscaleResult && upscaleResult.imageUrl) {
-                                            finalUrl = upscaleResult.imageUrl;
-                                        }
-                                    }
-                                } catch (upscaleErr: any) {
-                                    // STRICT FAILURE
-                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
-                                }
+                        if (shouldUpscale) {
+                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                            const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes);
+                            if (upscaleResult && upscaleResult.imageUrl) {
+                                finalUrl = upscaleResult.imageUrl;
                             }
-                            
-                            collectedUrls.push(finalUrl);
-                            onStateChange({ resultImages: [...collectedUrls] });
-                            
-                            historyService.addToHistory({
-                                tool: Tool.MaterialSwap,
-                                prompt: `Flow (${modelName}): ${fullPrompt}`,
-                                sourceImageURL: sceneImage.objectURL,
-                                resultImageURL: finalUrl,
-                            });
                         }
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        throw e;
+                        return finalUrl;
                     }
-                });
-
-                await Promise.all(promises);
-                if (collectedUrls.length === 0) throw new Error("Không thể tạo ảnh.");
-                imageUrls = collectedUrls;
-
-            } else {
-                // Fallback (Not reached if useFlow=true)
-                if (resolution === '1K' || resolution === '2K' || resolution === '4K') {
-                    const promises = Array.from({ length: numberOfImages }).map(async () => {
-                        const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sceneImage, jobId || undefined, [materialImage]);
-                        return images[0];
-                    });
-                    imageUrls = await Promise.all(promises);
-                } else {
-                    const results = await geminiService.editImageWithReference(fullPrompt, sceneImage, materialImage, numberOfImages);
-                    imageUrls = results.map(r => r.imageUrl);
+                    return null;
+                } catch (e) {
+                    console.error(`Image ${index+1} failed`, e);
+                    return null;
                 }
+            });
 
-                onStateChange({ resultImages: imageUrls });
-                if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            const failedCount = numberOfImages - successfulUrls.length;
 
-                imageUrls.forEach(url => {
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
+                successfulUrls.forEach(url => {
                      historyService.addToHistory({ tool: Tool.MaterialSwap, prompt: fullPrompt, sourceImageURL: sceneImage.objectURL, resultImageURL: url });
                 });
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+            } else {
+                throw new Error("Không thể tạo ảnh nào.");
             }
 
         } catch (err: any) {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
             } else {
-                if (logId) friendlyMsg += " (Credits đã hoàn lại)";
                 onStateChange({ error: friendlyMsg });
             }
             
-            // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi thay vật liệu (${rawMsg})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi thay vật liệu toàn bộ (${rawMsg})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
@@ -235,7 +201,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                <span className="text-red-500 font-semibold">Không đủ</span>
                             ) : (
                                 <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
                             )}

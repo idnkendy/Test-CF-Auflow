@@ -19,7 +19,7 @@ import MaskingModal from './MaskingModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import MultiImageUpload from './common/MultiImageUpload';
 import OptionSelector from './common/OptionSelector';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 const renovationSuggestions = [
     { label: 'Nâng tầng', prompt: 'Nâng thêm 1 tầng cho công trình, giữ phong cách kiến trúc hiện có.' },
@@ -30,7 +30,6 @@ const renovationSuggestions = [
     { label: 'Đưa mẫu công trình vào không gian', prompt: 'Đưa mẫu công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' },
 ];
 
-// Helper to merge source and mask into a single composite image
 const createCompositeImage = async (source: FileData, mask: FileData): Promise<FileData> => {
     return new Promise((resolve, reject) => {
         const imgSource = new Image();
@@ -48,11 +47,9 @@ const createCompositeImage = async (source: FileData, mask: FileData): Promise<F
                 return;
             }
             
-            // Draw Source
             ctx.drawImage(imgSource, 0, 0);
 
             imgMask.onload = () => {
-                // Draw Mask Overlay
                 ctx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
                 
                 const dataUrl = canvas.toDataURL('image/png');
@@ -85,7 +82,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -97,7 +94,8 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         }
     };
     
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
@@ -141,7 +139,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Use Flow for ALL cases (Standard, 1K, 2K, 4K) even with Mask
         const useFlow = true; 
         let promptForService = constructRenovationPrompt();
 
@@ -163,134 +160,87 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            let imageUrls: string[] = [];
-
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                } else if (aspectRatio === '9:16') {
-                    aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-                }
-
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                const collectedUrls: string[] = [];
-                let completedCount = 0;
-                let lastError: any = null;
-
-                // PREPARE INPUT IMAGES
-                let inputImages: FileData[] = [sourceImage];
-                
-                // MASK HANDLING
-                if (maskImage) {
-                     try {
-                        const composite = await createCompositeImage(sourceImage, maskImage);
-                        // If mask exists, send Original + Composite (Red Mask)
-                        inputImages = [sourceImage, composite];
-                        promptForService += " I have provided two images. The second image contains a RED MASK overlay indicating the specific area to renovate. Apply the renovation design ONLY to the masked area, blending it seamlessly with the rest of the original image.";
-                     } catch(e) {
-                        console.error("Composite creation failed", e);
-                        inputImages.push(maskImage);
-                        promptForService += " Use the second image as a mask for renovation.";
-                     }
-                }
-
-                if (referenceImages && referenceImages.length > 0) {
-                    inputImages.push(...referenceImages);
-                }
-
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                        
-                        const result = await externalVideoService.generateFlowImage(
-                            promptForService,
-                            inputImages,
-                            aspectEnum,
-                            1,
-                            modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
-                        );
-
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-
-                            // Upscale Check
-                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-                            if (shouldUpscale) {
-                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
-                                        if (upscaleResult && upscaleResult.imageUrl) {
-                                            finalUrl = upscaleResult.imageUrl;
-                                        }
-                                    }
-                                } catch (upscaleErr: any) {
-                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
-                                }
-                            }
-                            
-                            collectedUrls.push(finalUrl);
-                            completedCount++;
-                            onStateChange({ renovatedImages: [...collectedUrls] });
-                            
-                            historyService.addToHistory({
-                                tool: Tool.Renovation,
-                                prompt: `Flow (${modelName}): ${promptForService}`,
-                                sourceImageURL: sourceImage?.objectURL,
-                                resultImageURL: finalUrl,
-                            });
-                        }
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
+                    let inputImages: FileData[] = [sourceImage];
+                    
+                    if (maskImage) {
+                         try {
+                            const composite = await createCompositeImage(sourceImage, maskImage);
+                            inputImages = [sourceImage, composite];
+                            promptForService += " I have provided two images. The second image contains a RED MASK overlay indicating the specific area to renovate. Apply the renovation design ONLY to the masked area, blending it seamlessly with the rest of the original image.";
+                         } catch(e) {
+                            console.error("Composite creation failed", e);
+                            inputImages.push(maskImage);
+                            promptForService += " Use the second image as a mask for renovation.";
+                         }
                     }
-                });
 
-                await Promise.all(promises);
-                if (collectedUrls.length === 0) {
-                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
-                    throw new Error(errorMsg);
-                }
-                if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
+                    if (referenceImages && referenceImages.length > 0) {
+                        inputImages.push(...referenceImages);
+                    }
 
-            } else {
-                // --- GOOGLE API LOGIC (Fallback - Unreachable if useFlow=true) ---
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(
-                        promptForService, 
-                        aspectRatio, 
-                        resolution === 'Standard' ? '1K' : resolution, 
-                        sourceImage, 
-                        jobId || undefined, 
-                        referenceImages,
-                        maskImage || undefined
+                    const result = await externalVideoService.generateFlowImage(
+                        promptForService,
+                        inputImages,
+                        aspectRatio,
+                        1,
+                        modelName,
+                        (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                     );
-                    return images[0];
+
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                        if (shouldUpscale) {
+                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                            const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
+                            if (upscaleResult && upscaleResult.imageUrl) {
+                                finalUrl = upscaleResult.imageUrl;
+                            }
+                        }
+                        return finalUrl;
+                    }
+                    return null;
+                } catch (e) {
+                    console.error(`Image ${index+1} failed`, e);
+                    return null;
+                }
+            });
+
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            const failedCount = numberOfImages - successfulUrls.length;
+
+            if (successfulUrls.length > 0) {
+                onStateChange({ renovatedImages: successfulUrls });
+                successfulUrls.forEach(url => {
+                    historyService.addToHistory({
+                        tool: Tool.Renovation,
+                        prompt: `Flow ${modelName}: ${promptForService}`,
+                        sourceImageURL: sourceImage?.objectURL,
+                        resultImageURL: url,
+                    });
                 });
-                
-                const imageUrls = await Promise.all(promises);
-                onStateChange({ renovatedImages: imageUrls });
-                if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-                
-                imageUrls.forEach(url => historyService.addToHistory({
-                    tool: Tool.Renovation,
-                    prompt: `Gemini API: ${promptForService}`,
-                    sourceImageURL: sourceImage?.objectURL,
-                    resultImageURL: url,
-                }));
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+            } else {
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 
         } catch (err: any) {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
@@ -300,8 +250,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${rawMsg})`, logId);
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ (${rawMsg})`, logId);
             }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
@@ -312,8 +261,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
     };
 
     const handleSuggestionChange = (val: string) => {
-        // Logic: Append new text, ignoring previous selection state.
-        // We do not replace old text, we just append to build a complex prompt.
         let newPrompt = prompt.trim();
         if (newPrompt && !newPrompt.includes(val)) {
             newPrompt = `${newPrompt}, ${val}`;
@@ -415,7 +362,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 )}
                             </div>
 
-                            {/* 2. Reference Images */}
                             <div className="bg-main-bg dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                                 <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Ảnh Tham Chiếu (Tùy chọn)</label>
                                 {resolution === 'Standard' && !maskImage ? (
@@ -440,7 +386,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             </div>
                         </div>
 
-                        {/* --- RIGHT COLUMN: CONTROLS --- */}
                         <div className="space-y-6 flex flex-col h-full">
                             <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 flex-grow flex flex-col">
                                 
@@ -486,7 +431,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 </div>
                                 <div className="text-xs">
                                     {userCredits < cost ? (
-                                        <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                        <span className="text-red-500 font-semibold">Không đủ</span>
                                     ) : (
                                         <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
                                     )}
@@ -495,7 +440,6 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
                             <button 
                                 onClick={handleGenerate}
-                                // Removed credit check from disabled
                                 disabled={isLoading || !prompt || !sourceImage}
                                 className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                             >

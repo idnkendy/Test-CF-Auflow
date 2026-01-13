@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { RealEstatePosterState } from '../state/toolState';
@@ -17,6 +16,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
 import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import ImageComparator from './ImageComparator';
 
 interface RealEstatePosterProps {
     state: RealEstatePosterState;
@@ -54,7 +54,8 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
             default: return 5;
         }
     };
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImages: [] });
@@ -183,6 +184,17 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                     const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
                     throw new Error(errorMsg);
                 }
+                
+                // --- PARTIAL REFUND ---
+                const failedCount = numberOfImages - collectedUrls.length;
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${collectedUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+                
                 imageUrls = collectedUrls;
 
             } else {
@@ -331,14 +343,16 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                             </div>
                         )}
                     </div>
-                    <div className="w-full aspect-[3/4] bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
+                    <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
                         {isLoading ? (
                             <div className="flex flex-col items-center">
                                 <Spinner />
                                 <p className="mt-2 text-gray-400">{statusMessage}</p>
                             </div>
+                        ) : resultImages.length === 1 && sourceImage ? (
+                            <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
                         ) : resultImages.length > 0 ? (
-                             <img src={resultImages[0]} alt="Poster Result" className="w-full h-full object-contain" />
+                             <img src={resultImages[0]} alt="Result" className="w-full h-full object-contain" />
                         ) : (
                              <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
                         )}

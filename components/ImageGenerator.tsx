@@ -136,7 +136,11 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const handleFileSelect = (fileData: FileData | null) => onStateChange({ sourceImage: fileData, resultImages: [], upscaledImage: null });
     const handleReferenceFilesChange = (files: FileData[]) => onStateChange({ referenceImages: files });
 
-    const cost = numberOfImages * (resolution === '4K' ? 30 : resolution === '2K' ? 20 : resolution === '1K' ? 10 : 5);
+    const getCostPerImage = () => {
+        return resolution === '4K' ? 30 : resolution === '2K' ? 20 : resolution === '1K' ? 10 : 5;
+    };
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleGenerate = async () => {
         // --- MODAL TRIGGER: Check credits ---
@@ -158,6 +162,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         let logId: string | null = null;
 
         try {
+            // 1. Trừ tiền toàn bộ trước
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Render kiến trúc (${numberOfImages} ảnh) - ${resolution}`);
             }
@@ -168,66 +173,96 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            // Pass raw aspectRatio string (e.g. '4:3', '16:9') to service. Service handles mapping and cropping.
+            // 2. Chạy tạo ảnh (Xử lý từng ảnh để bắt lỗi riêng lẻ)
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-            const collectedUrls: string[] = [];
-            
             const promptForService = `You are a professional architectural renderer. ${sourceImage ? `Based on source image, generate ${aspectRatio} render.` : ''} ${customPrompt}, photorealistic, high detail.`;
 
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                const result = await externalVideoService.generateFlowImage(
-                    promptForService,
-                    [sourceImage, ...referenceImages].filter(Boolean) as FileData[], 
-                    aspectRatio, // Pass raw ratio
-                    1,
-                    modelName,
-                    (msg) => setStatusMessage(msg)
-                );
+                try {
+                    const result = await externalVideoService.generateFlowImage(
+                        promptForService,
+                        [sourceImage, ...referenceImages].filter(Boolean) as FileData[], 
+                        aspectRatio, // Pass raw ratio
+                        1,
+                        modelName,
+                        (msg) => setStatusMessage(msg)
+                    );
 
-                if (result.imageUrls?.length > 0) {
-                    let finalUrl = result.imageUrls[0];
-                    const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds?.length > 0;
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds?.length > 0;
 
-                    if (shouldUpscale) {
-                        // Vẫn giữ message chung chung
-                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                        // IMPORTANT: Pass aspectRatio here to ensure crop is re-applied after upscale for 4:3 or 3:4
-                        const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
-                        if (upscaleRes.imageUrl) finalUrl = upscaleRes.imageUrl;
+                        if (shouldUpscale) {
+                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                            const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
+                            if (upscaleRes.imageUrl) finalUrl = upscaleRes.imageUrl;
+                        }
+                        
+                        return finalUrl; // Thành công trả về URL
                     }
-                    
-                    collectedUrls.push(finalUrl);
-                    onStateChange({ resultImages: [...collectedUrls] });
+                    return null; // Thất bại trả về null
+                } catch (e) {
+                    console.error(`Image generation ${index + 1} failed:`, e);
+                    return null;
+                }
+            });
+
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            const failedCount = numberOfImages - successfulUrls.length;
+
+            if (successfulUrls.length > 0) {
+                // --- TRƯỜNG HỢP CÓ ẢNH THÀNH CÔNG (Toàn bộ hoặc một phần) ---
+                onStateChange({ resultImages: successfulUrls });
+                
+                // Lưu lịch sử các ảnh thành công
+                successfulUrls.forEach(url => {
                     historyService.addToHistory({
                         tool: Tool.ArchitecturalRendering,
                         prompt: `Flow ${resolution}: ${customPrompt}`,
                         sourceImageURL: sourceImage?.objectURL,
-                        resultImageURL: finalUrl,
+                        resultImageURL: url,
+                    });
+                });
+
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+
+                // *** LOGIC HOÀN TIỀN CHO ẢNH LỖI ***
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    
+                    // Thông báo người dùng
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
                     });
                 }
-            });
 
-            await Promise.all(promises);
-            if (jobId && collectedUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', collectedUrls[0]);
+            } else {
+                // --- TRƯỜNG HỢP LỖI TOÀN BỘ ---
+                // Ném lỗi để catch block bên dưới xử lý hoàn tiền toàn bộ
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
+            }
 
         } catch (err: any) {
+            // --- XỬ LÝ LỖI TOÀN BỘ (Hoàn tiền 100%) ---
             const rawMsg = err.message || "";
             const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
             } else {
-                // UI shows friendly message
                 onStateChange({ error: friendlyMsg });
             }
             
-            // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống`, logId);
+            // Chỉ hoàn tiền ở đây nếu chưa hoàn tiền từng phần (tức là lỗi toàn bộ)
+            if (user && logId) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ`, logId);
+            }
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
