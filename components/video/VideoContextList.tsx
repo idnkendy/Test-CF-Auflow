@@ -165,13 +165,11 @@ const VideoContextList: React.FC<VideoContextListProps> = ({
 
                                                 <button
                                                     onClick={() => onGenerateClip(item)}
-                                                    disabled={item.isGeneratingVideo || (userStatus?.credits || 0) < 5}
+                                                    disabled={item.isGeneratingVideo}
                                                     className={`w-full py-2.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 ${
                                                         item.isGeneratingVideo 
                                                             ? 'bg-gray-100 dark:bg-[#2A2A2A] text-gray-400'
-                                                            : (userStatus?.credits || 0) < 5
-                                                                ? 'bg-gray-200 dark:bg-gray-700 text-gray-400 cursor-not-allowed'
-                                                                : 'bg-[#7f13ec] hover:bg-[#690fca] text-white hover:shadow-purple-500/20'
+                                                            : 'bg-[#7f13ec] hover:bg-[#690fca] text-white hover:shadow-purple-500/20'
                                                     }`}
                                                 >
                                                     {item.isGeneratingVideo ? <Spinner /> : <span className="material-symbols-outlined text-xs notranslate">movie_creation</span>}

@@ -5,36 +5,44 @@ import { SketchConverterState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService'; // Flow Import
+import * as externalVideoService from '../services/externalVideoService'; 
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
-import ResolutionSelector from './common/ResolutionSelector';
 import OptionSelector from './common/OptionSelector';
+import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
+import AspectRatioSelector from './common/AspectRatioSelector';
+import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 
 interface SketchConverterProps {
     state: SketchConverterState;
     onStateChange: (newState: Partial<SketchConverterState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
-const styleOptions = [
-    { value: 'pencil', label: 'Bút chì' },
-    { value: 'charcoal', label: 'Than củi' },
-    { value: 'watercolor', label: 'Màu nước' },
+const sketchStyleOptions = [
+    { value: 'pencil', label: 'Chì (Pencil)' },
+    { value: 'charcoal', label: 'Than (Charcoal)' },
+    { value: 'watercolor', label: 'Màu nước (Watercolor)' },
 ];
 
-const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { sourceImage, isLoading, error, resultImage, sketchStyle, detailLevel, resolution } = state;
+const detailLevelOptions = [
+    { value: 'medium', label: 'Trung bình' },
+    { value: 'high', label: 'Chi tiết cao' },
+];
+
+const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { sourceImage, isLoading, error, resultImage, sketchStyle, detailLevel, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    
+
+    // Cost logic
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -44,32 +52,47 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
             default: return 5;
         }
     };
-    const cost = getCostPerImage();
+    const cost = getCostPerImage(); 
+
+    const handleFileSelect = (fileData: FileData | null) => {
+        onStateChange({ sourceImage: fileData, resultImage: null });
+    };
+
+    const handleResolutionChange = (val: ImageResolution) => {
+        onStateChange({ resolution: val });
+    };
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             }
              return;
         }
 
         if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên một ảnh để chuyển đổi.' });
+            onStateChange({ error: 'Vui lòng tải lên ảnh để chuyển đổi.' });
             return;
         }
-        onStateChange({ isLoading: true, error: null, resultImage: null });
-        setStatusMessage('Đang chuyển đổi...');
-        setUpscaleWarning(null);
 
-        let logId: string | null = null;
-        let jobId: string | null = null;
-        
+        onStateChange({ isLoading: true, error: null, resultImage: null });
+        setStatusMessage('Đang phác thảo...');
+
+        // Prompt construction
+        const styleText = sketchStyle === 'pencil' ? 'pencil sketch' : sketchStyle === 'charcoal' ? 'charcoal drawing' : 'watercolor painting';
+        const detailText = detailLevel === 'high' ? 'highly detailed, intricate' : 'loose, artistic';
+        const fullPrompt = `Convert this image into a ${styleText}. Style: ${detailText}. Professional architectural rendering style. Keep main lines and perspective. White background if pencil/charcoal.`;
+
         // Use Flow for ALL resolutions
         const useFlow = true;
-        const prompt = `Convert this realistic image into a highly detailed ${sketchStyle} sketch on clean white background.`;
+        let logId: string | null = null;
+        let jobId: string | null = null;
 
         try {
             if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Chuyển đổi Sketch (${sketchStyle}) - ${resolution}`);
+                logId = await onDeductCredits(cost, `Sketch Converter (${sketchStyle}) - ${resolution}`);
             }
 
             const { data: { user } } = await supabase.auth.getUser();
@@ -77,7 +100,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                 jobId = await jobService.createJob({
                     user_id: user.id,
                     tool_id: Tool.SketchConverter,
-                    prompt: `Convert to ${sketchStyle} sketch`,
+                    prompt: fullPrompt,
                     cost: cost,
                     usage_log_id: logId
                 });
@@ -89,24 +112,26 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
-                // Default to Landscape for Sketch conversion
-                const aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE'; 
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
+                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
+                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+                
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const result = await externalVideoService.generateFlowImage(
-                    prompt,
+                    fullPrompt,
                     [sourceImage],
                     aspectEnum,
                     1,
                     modelName,
-                    (msg) => setStatusMessage(msg)
+                    (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
                 );
 
                 if (result.imageUrls && result.imageUrls.length > 0) {
                     resultUrl = result.imageUrls[0];
                     
-                    // Check for 2K/4K Upscale
+                    // Upscale Check
                     const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
                     
                     if (shouldUpscale) {
@@ -118,23 +143,19 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                                 const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
                                 if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
                             }
-                        } catch (upscaleErr: any) {
-                            // STRICT FAILURE
-                            throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
+                        } catch (e: any) {
+                            throw new Error(`Lỗi Upscale: ${e.message}`);
                         }
                     }
-                    
-                    historyService.addToHistory({ tool: Tool.SketchConverter, prompt: `Flow: ${prompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
-                } else {
-                    throw new Error("Không nhận được ảnh.");
-                }
+                    historyService.addToHistory({ tool: Tool.SketchConverter, prompt: `Flow: ${fullPrompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
+                } else throw new Error("Lỗi không có ảnh.");
 
             } else {
-                // Fallback (Not reached if useFlow=true)
+                // Fallback
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                const images = await geminiService.generateHighQualityImage(prompt, '1:1', resolution, sourceImage, jobId || undefined);
+                const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                 resultUrl = images[0];
-                historyService.addToHistory({ tool: Tool.SketchConverter, prompt: prompt, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
+                historyService.addToHistory({ tool: Tool.SketchConverter, prompt: fullPrompt, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
             }
 
             onStateChange({ resultImage: resultUrl });
@@ -161,28 +182,78 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
     const handleDownload = async () => {
         if (!resultImage) return;
         setIsDownloading(true);
-        await externalVideoService.forceDownload(resultImage, `sketch-converted-${Date.now()}.png`);
+        await externalVideoService.forceDownload(resultImage, `sketch-${Date.now()}.png`);
         setIsDownloading(false);
     };
 
     return (
         <div className="flex flex-col gap-8">
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <h2 className="text-2xl font-bold">AI Biến Ảnh Thành Sketch</h2>
+            
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Biến Ảnh Thành Sketch</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border">
-                    <ImageUpload onFileSelect={(f) => onStateChange({ sourceImage: f, resultImage: null })} previewUrl={sourceImage?.objectURL} />
-                    <OptionSelector id="style" label="Phong cách" options={styleOptions} value={sketchStyle} onChange={(v) => onStateChange({ sketchStyle: v as any })} variant="grid" />
-                    <ResolutionSelector value={resolution} onChange={(v) => onStateChange({ resolution: v })} disabled={isLoading} />
-                    <button onClick={handleGenerate} disabled={isLoading || !sourceImage || userCredits < cost} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg shadow-lg">
+                <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
+                    <div>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Gốc</label>
+                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
+                    </div>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <OptionSelector 
+                            id="sketch-style" 
+                            label="Phong cách" 
+                            options={sketchStyleOptions} 
+                            value={sketchStyle} 
+                            onChange={(v) => onStateChange({ sketchStyle: v as any })} 
+                            variant="select" 
+                        />
+                        <OptionSelector 
+                            id="detail-level" 
+                            label="Độ chi tiết" 
+                            options={detailLevelOptions} 
+                            value={detailLevel} 
+                            onChange={(v) => onStateChange({ detailLevel: v as any })} 
+                            variant="select" 
+                        />
+                    </div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                        <div>
+                            <AspectRatioSelector value={aspectRatio} onChange={(v) => onStateChange({ aspectRatio: v })} disabled={isLoading} />
+                        </div>
+                        {/* Use hidden for number selector as this tool usually produces 1 result, but grid layout needs spacing */}
+                        <div className="hidden"><NumberOfImagesSelector value={1} onChange={()=>{}} disabled={true} /></div>
+                    </div>
+                    
+                    <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
+
+                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+                            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
+                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                        </div>
+                        <div className="text-xs">
+                            {userCredits < cost ? (
+                                <span className="text-red-500 font-semibold">Không đủ</span>
+                            ) : (
+                                <span className="text-green-600 dark:text-green-400">Khả dụng</span>
+                            )}
+                        </div>
+                    </div>
+
+                    <button
+                        onClick={handleGenerate}
+                        disabled={isLoading || !sourceImage}
+                        className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
+                    >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Tạo Sketch'}
                     </button>
-                    {error && <div className="p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
-                    {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
+                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                 </div>
+
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold">Kết quả</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Sketch</h3>
                         {resultImage && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -209,13 +280,19 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                             </div>
                         )}
                     </div>
-                    <div className="aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden">
+                    <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
                         {isLoading ? (
                             <div className="flex flex-col items-center">
                                 <Spinner />
                                 <p className="mt-2 text-gray-400">{statusMessage}</p>
                             </div>
-                        ) : resultImage && sourceImage ? <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImage} /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
+                        ) : resultImage && sourceImage ? (
+                            <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImage} />
+                        ) : resultImage ? (
+                             <img src={resultImage} alt="Result" className="w-full h-full object-contain" />
+                        ) : (
+                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                        )}
                     </div>
                 </div>
             </div>

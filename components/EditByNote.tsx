@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { FileData, ImageResolution, Tool, AspectRatio } from '../types';
@@ -22,6 +21,7 @@ interface EditByNoteProps {
     onStateChange: (newState: Partial<EditByNoteState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
 type EditorTool = 'move' | 'text' | 'arrow';
@@ -53,7 +53,9 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
     const ratios: { [key in AspectRatio]: number } = {
         "1:1": 1,
         "9:16": 9/16,
-        "16:9": 16/9
+        "16:9": 16/9,
+        "4:3": 4/3,
+        "3:4": 3/4
     };
     
     let closest: AspectRatio = '1:1';
@@ -69,7 +71,7 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
     return closest;
 };
 
-const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
+const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio = '1:1' } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     
@@ -487,7 +489,11 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             }
              return;
         }
 
@@ -1119,7 +1125,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
                             <button
                                 onClick={handleGenerate}
-                                disabled={isLoading || !sourceImage || annotations.length === 0 || userCredits < cost}
+                                disabled={isLoading || !sourceImage || annotations.length === 0}
                                 className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg"
                             >
                                 {isLoading ? <><Spinner /> Đang xử lý. Vui lòng đợi...</> : 'Tạo Ảnh'}

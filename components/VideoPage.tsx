@@ -113,6 +113,7 @@ interface VideoPageProps {
     onToggleNav: () => void;
     onDeductCredits: (amount: number, description: string) => Promise<string>;
     onRefreshCredits: () => Promise<void>;
+    onInsufficientCredits?: () => void;
 }
 
 const VideoPage: React.FC<VideoPageProps> = (props) => {
@@ -432,7 +433,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const handleGenerateClip = async (item: VideoContextItem) => {
         const cost = 5;
         if ((props.userStatus?.credits || 0) < cost) {
-             setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
+             if (props.onInsufficientCredits) {
+                 props.onInsufficientCredits();
+             } else {
+                 setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
+             }
              return;
         }
         if (!item.prompt) {
@@ -811,7 +816,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const handleSingleGeneration = async () => {
         const cost = 5;
         if ((props.userStatus?.credits || 0) < cost) {
-             setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
+             if (props.onInsufficientCredits) {
+                 props.onInsufficientCredits();
+             } else {
+                 setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
+             }
              return;
         }
         if (!singlePrompt) {

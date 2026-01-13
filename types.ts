@@ -32,7 +32,7 @@ export enum Tool {
   EditByNote = 'EditByNote',
 }
 
-export type AspectRatio = "1:1" | "9:16" | "16:9";
+export type AspectRatio = "1:1" | "9:16" | "16:9" | "4:3" | "3:4";
 export type ImageResolution = "Standard" | "1K" | "2K" | "4K";
 
 export interface FileData {

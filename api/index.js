@@ -566,9 +566,7 @@ async function handleProxyDownload(request) {
         
         // Ensure headers mimic the allowed client
         const proxyHeaders = {
-            ...HEADERS,
-            // Don't force content-type on GET download
-            'content-type': undefined
+            'user-agent': HEADERS['user-agent']
         };
 
         const response = await fetch(url, {

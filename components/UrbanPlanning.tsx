@@ -50,9 +50,10 @@ interface UrbanPlanningProps {
   onSendToViewSync: (image: FileData) => void;
   userCredits?: number;
   onDeductCredits?: (amount: number, description: string) => Promise<string>;
+  onInsufficientCredits?: () => void;
 }
 
-const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
+const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { 
         viewType, density, lighting, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
@@ -169,7 +170,11 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             }
              return;
         }
 
@@ -431,7 +436,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                         </div>
                         <button 
                             onClick={handleGenerate} 
-                            disabled={isLoading || !customPrompt.trim() || isUpscaling || userCredits < cost} 
+                            disabled={isLoading || !customPrompt.trim() || isUpscaling} 
                             className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                         >
                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}

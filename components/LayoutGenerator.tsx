@@ -22,9 +22,10 @@ interface LayoutGeneratorProps {
     onStateChange: (newState: Partial<LayoutGeneratorState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
-const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
+const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -52,7 +53,11 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             }
              return;
         }
 
@@ -229,9 +234,23 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                     
                     <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
 
+                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+                            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
+                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                        </div>
+                        <div className="text-xs">
+                            {userCredits < cost ? (
+                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                            ) : (
+                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                            )}
+                        </div>
+                    </div>
+
                     <button
                         onClick={handleGenerate}
-                        disabled={isLoading || userCredits < cost}
+                        disabled={isLoading}
                         className="w-full flex justify-center items-center gap-2 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang tạo...'}</> : 'Tạo Layout'}

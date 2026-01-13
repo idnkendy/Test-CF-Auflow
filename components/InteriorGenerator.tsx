@@ -69,9 +69,10 @@ interface InteriorGeneratorProps {
   onSendToViewSync: (image: FileData) => void;
   userCredits?: number;
   onDeductCredits?: (amount: number, description: string) => Promise<string>;
+  onInsufficientCredits?: () => void;
 }
 
-const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
+const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { 
         style, roomType, lighting, colorPalette, customPrompt, referenceImages, sourceImage, 
         isLoading, isUpscaling, error, resultImages, upscaledImage, numberOfImages, aspectRatio, resolution
@@ -143,7 +144,14 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     };
 
     const handleGenerate = async () => {
-        if (onDeductCredits && userCredits < cost) { onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` }); return; }
+        if (onDeductCredits && userCredits < cost) { 
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+             }
+             return; 
+        }
         if (!sourceImage) { onStateChange({ error: 'Vui lòng tải lên một hình ảnh phác thảo hoặc không gian.' }); return; }
         if (!customPrompt.trim()) { onStateChange({ error: 'Lời nhắc (prompt) không được để trống.' }); return; }
 
@@ -165,11 +173,6 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             if (useFlow) {
-                // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 let completedCount = 0;
@@ -186,7 +189,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                         const result = await externalVideoService.generateFlowImage(
                             promptForService,
                             inputImages,
-                            aspectEnum,
+                            aspectRatio, // Pass raw ratio
                             1,
                             modelName,
                             (msg) => setStatusMessage(msg)
@@ -429,13 +432,13 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                         </div>
                         <button
                             onClick={handleGenerate}
-                            disabled={isLoading || !sourceImage || isUpscaling || userCredits < cost}
+                            disabled={isLoading || !sourceImage || isUpscaling}
                             className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                         >
                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}
                         </button>
                     </div>
-                    {error && <p className="mt-3 text-sm text-red-500 text-center font-medium">{error}</p>}
+                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <p className="mt-3 text-sm text-yellow-500 text-center font-medium bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded">{upscaleWarning}</p>}
                 </div>
             </div>

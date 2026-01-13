@@ -16,9 +16,10 @@ interface VideoGeneratorProps {
     onStateChange: (newState: Partial<VideoGeneratorState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
-const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
+const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { prompt, startImage, isLoading, error, generatedVideoUrl, aspectRatio } = state;
 
     const handleFileSelect = (fileData: FileData | null) => {
@@ -33,7 +34,11 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
     const handleGenerate = async () => {
         if (onDeductCredits && (userCredits || 0) < 5) {
-             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             }
              return;
         }
         if (!prompt) {
@@ -138,7 +143,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
                     <button
                         onClick={handleGenerate}
-                        disabled={isLoading || userCredits < 5}
+                        disabled={isLoading}
                         className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
                         {isLoading ? <><Spinner /> Đang tạo...</> : 'Tạo Video (5 Credits)'}

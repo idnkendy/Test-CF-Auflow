@@ -22,9 +22,10 @@ interface MaterialSwapperProps {
     onStateChange: (newState: Partial<MaterialSwapperState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
-const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
+const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { prompt, sceneImage, materialImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -44,7 +45,11 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             }
              return;
         }
 
@@ -215,14 +220,25 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                         <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
                     </div>
                     <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} disabled={isLoading} />
-                    <div className="flex justify-between text-sm">
-                        <span>Chi phí: <b>{cost} Credits</b></span>
-                        <span>{userCredits < cost ? 'Không đủ' : `Còn: ${userCredits}`}</span>
+                    
+                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+                            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
+                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                        </div>
+                        <div className="text-xs">
+                            {userCredits < cost ? (
+                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                            ) : (
+                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                            )}
+                        </div>
                     </div>
-                    <button onClick={handleGenerate} disabled={isLoading || !sceneImage || !materialImage || userCredits < cost} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg shadow-lg">
+
+                    <button onClick={handleGenerate} disabled={isLoading || !sceneImage || !materialImage} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg shadow-lg">
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Thực Hiện Thay Thế'}
                     </button>
-                    {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded text-sm">{error}</div>}
+                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
                 <div>

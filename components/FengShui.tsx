@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { FengShuiState } from '../state/toolState';
 import { FileData, Tool, ImageResolution } from '../types';
@@ -17,6 +16,7 @@ interface FengShuiProps {
     onStateChange: (newState: Partial<FengShuiState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
 const analysisTypes = [
@@ -59,7 +59,7 @@ const houseDirections = [
     { value: 'tay-bac-can', label: 'Tây Bắc (Càn)' },
 ];
 
-const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
+const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { 
         name, birthDay, birthMonth, birthYear, gender, analysisType, 
         floorPlanImage, houseDirection, isLoading, error, resultImage, analysisText,
@@ -110,7 +110,11 @@ const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits =
 
     const handleAnalyze = async () => {
         if (onDeductCredits && userCredits < cost) {
-            onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+            if (onInsufficientCredits) {
+                onInsufficientCredits();
+            } else {
+                onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+            }
             return;
         }
 

@@ -22,9 +22,10 @@ interface DrawingGeneratorProps {
     onStateChange: (newState: Partial<DrawingGeneratorState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
-const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
+const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -53,7 +54,11 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             }
              return;
         }
 
@@ -249,7 +254,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
                     <button
                         onClick={handleGenerate}
-                        disabled={isLoading || userCredits < cost || !sourceImage}
+                        disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Tạo Bản Vẽ'}

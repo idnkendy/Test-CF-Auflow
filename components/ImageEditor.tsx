@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { ImageEditorState } from '../state/toolState';
@@ -24,6 +23,7 @@ interface ImageEditorProps {
     onStateChange: (newState: Partial<ImageEditorState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
 // Helper to merge source and mask into a single composite image
@@ -71,7 +71,9 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
     const ratios: { [key in AspectRatio]: number } = {
         "1:1": 1,
         "9:16": 9/16,
-        "16:9": 16/9
+        "16:9": 16/9,
+        "4:3": 4/3,
+        "3:4": 3/4
     };
     
     let closest: AspectRatio = '1:1';
@@ -87,7 +89,7 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
     return closest;
 };
 
-const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
+const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { prompt, sourceImage, maskImage, referenceImages, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
@@ -142,7 +144,11 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             }
              return;
         }
 
@@ -469,7 +475,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     </div>
                     <button
                         onClick={handleGenerate}
-                        disabled={isLoading || !sourceImage || !prompt || userCredits < cost}
+                        disabled={isLoading || !sourceImage || !prompt}
                         className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Chỉnh sửa'}

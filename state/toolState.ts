@@ -1,4 +1,3 @@
-
 import { FileData, AspectRatio, Tool, ImageResolution } from '../types';
 
 export interface LuBanRulerState {
@@ -313,6 +312,8 @@ export interface AITechnicalDrawingsState {
     isLoading: boolean;
     error: string | null;
     resultImage: string | null;
+    resultImages: string[];
+    numberOfImages: number;
     drawingType: 'floor-plan' | 'elevation' | 'section';
     detailLevel: 'basic' | 'detailed' | 'annotated' | 'terrain';
     aspectRatio: AspectRatio; // Added
@@ -327,6 +328,7 @@ export interface SketchConverterState {
     sketchStyle: 'pencil' | 'charcoal' | 'watercolor';
     detailLevel: 'medium' | 'high';
     resolution: ImageResolution;
+    aspectRatio: AspectRatio;
 }
 
 export interface FengShuiState {
@@ -575,6 +577,8 @@ export const initialToolStates = {
         isLoading: false,
         error: null,
         resultImage: null,
+        resultImages: [],
+        numberOfImages: 1,
         drawingType: 'floor-plan',
         detailLevel: 'basic',
         aspectRatio: '16:9', // Added default
@@ -588,6 +592,7 @@ export const initialToolStates = {
         sketchStyle: 'pencil',
         detailLevel: 'medium',
         resolution: 'Standard',
+        aspectRatio: '16:9', // Added default
     } as SketchConverterState,
     [Tool.FengShui]: {
         name: '',

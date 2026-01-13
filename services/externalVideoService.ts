@@ -1,3 +1,4 @@
+
 import { FileData } from "../types";
 
 // @ts-ignore
@@ -41,16 +42,6 @@ const base64ToBlobUrl = async (base64Data: string, contentType: string = 'image/
     }
 };
 
-const generateUUID = () => {
-    if (typeof crypto !== 'undefined' && crypto.randomUUID) {
-        return crypto.randomUUID();
-    }
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-        return v.toString(16);
-    });
-};
-
 const getImageDimensions = (fileData: FileData): Promise<{width: number, height: number}> => {
     return new Promise((resolve) => {
         const img = new Image();
@@ -60,9 +51,126 @@ const getImageDimensions = (fileData: FileData): Promise<{width: number, height:
     });
 };
 
+// --- QUAN TRỌNG: Hàm cắt ảnh PIXEL-PERFECT (Fix lỗi mờ ảnh & Xử lý 4K) ---
+const cropImageToRatio = async (imageUrl: string, targetRatio: '4:3' | '3:4' | string): Promise<string> => {
+    // Chỉ xử lý 4:3 và 3:4 theo yêu cầu
+    if (targetRatio !== '4:3' && targetRatio !== '3:4') return imageUrl;
+
+    return new Promise(async (resolve, reject) => {
+        let sourceUrl = imageUrl;
+        let isLocalBlob = false;
+        let isRemote = false;
+
+        if (imageUrl.startsWith('http')) {
+            try {
+                const blob = await proxyDownload(imageUrl);
+                sourceUrl = URL.createObjectURL(blob);
+                isLocalBlob = true;
+                isRemote = true; // Was downloaded via proxy, so strictly local blob now, but originated remote
+            } catch (e) {
+                console.warn("Proxy download for crop failed, trying direct...", e);
+                // Fallback: Thử dùng trực tiếp
+                isRemote = true; // Direct remote
+            }
+        }
+
+        const img = new Image();
+        // Chỉ thêm crossOrigin nếu là ảnh remote, blob local không cần và có thể gây lỗi
+        if (isRemote && !isLocalBlob) img.crossOrigin = "Anonymous"; 
+        
+        img.src = sourceUrl;
+
+        img.onload = () => {
+            // Đợi thêm 1 tick để đảm bảo dimensions sẵn sàng trên mọi trình duyệt
+            requestAnimationFrame(() => {
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+
+                if (!ctx) {
+                    if (isLocalBlob) URL.revokeObjectURL(sourceUrl);
+                    resolve(imageUrl); 
+                    return;
+                }
+
+                // --- THUẬT TOÁN CROP CHẤT LƯỢNG CAO ---
+                // 1. Sử dụng naturalWidth/Height để lấy độ phân giải thực tế của ảnh gốc (Ví dụ 4K: 3840x2160)
+                const naturalWidth = img.naturalWidth;
+                const naturalHeight = img.naturalHeight;
+
+                if (naturalWidth === 0 || naturalHeight === 0) {
+                    if (isLocalBlob) URL.revokeObjectURL(sourceUrl);
+                    resolve(imageUrl);
+                    return;
+                }
+
+                let cropWidth = naturalWidth;
+                let cropHeight = naturalHeight;
+
+                // 2. Tính toán vùng cắt (giữ nguyên chiều lớn nhất có thể)
+                if (targetRatio === '4:3') {
+                    // Cắt 4:3 từ ảnh gốc (thường là 1:1 hoặc 16:9)
+                    // Logic: Lấy chiều rộng tối đa, tính chiều cao tương ứng.
+                    // Nếu cropHeight vượt quá ảnh gốc, thì tính lại theo chiều cao.
+                    // Với ảnh gốc 1:1 (vuông), 4:3 là hình chữ nhật ngang -> Chiều rộng = 100%, Chiều cao = Rộng / 1.33
+                    cropWidth = naturalWidth;
+                    cropHeight = Math.round(cropWidth * (3/4));
+
+                    if (cropHeight > naturalHeight) {
+                        cropHeight = naturalHeight;
+                        cropWidth = Math.round(cropHeight * (4/3));
+                    }
+                } else if (targetRatio === '3:4') {
+                    // Cắt 3:4 từ ảnh gốc (thường là 1:1 hoặc 9:16)
+                    // Với ảnh gốc 1:1 (vuông), 3:4 là hình chữ nhật đứng -> Chiều cao = 100%, Chiều rộng = Cao * 0.75
+                    cropHeight = naturalHeight;
+                    cropWidth = Math.round(cropHeight * 0.75);
+
+                    if (cropWidth > naturalWidth) {
+                        cropWidth = naturalWidth;
+                        cropHeight = Math.round(cropWidth / 0.75);
+                    }
+                }
+
+                // 3. Đặt kích thước Canvas đúng bằng kích thước vùng cắt (Không scale lại)
+                canvas.width = cropWidth;
+                canvas.height = cropHeight;
+
+                // 4. Tính tọa độ để lấy phần trung tâm ảnh (Center Crop)
+                // Dùng floor để tránh sub-pixel rendering gây mờ
+                const sx = Math.floor((naturalWidth - cropWidth) / 2);
+                const sy = Math.floor((naturalHeight - cropHeight) / 2);
+
+                // 5. Cấu hình vẽ chất lượng cao
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+
+                // 6. Vẽ: Lấy vùng [sx, sy, cropWidth, cropHeight] từ ảnh gốc, vẽ vào toàn bộ canvas [0, 0, cropWidth, cropHeight]
+                ctx.drawImage(img, sx, sy, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+                
+                // 7. Xuất ra PNG để tránh nén ảnh lần 2 (Generation Loss)
+                canvas.toBlob((blob) => {
+                    if (isLocalBlob) URL.revokeObjectURL(sourceUrl); // Dọn dẹp bộ nhớ
+                    
+                    if (blob) {
+                        resolve(URL.createObjectURL(blob));
+                    } else {
+                        resolve(imageUrl); // Fallback nếu lỗi
+                    }
+                }, 'image/png'); 
+            });
+        };
+
+        img.onerror = (err) => {
+            console.error("Crop image load failed:", err);
+            if (isLocalBlob) URL.revokeObjectURL(sourceUrl);
+            resolve(imageUrl);
+        };
+    });
+};
+
 export const resizeAndCropImage = async (
     fileData: FileData, 
-    aspectRatio: '16:9' | '9:16' | '1:1' | 'default' = '16:9',
+    aspectRatio: '16:9' | '9:16' | '1:1' | '4:3' | '3:4' | 'default' = '16:9',
     tier: 'standard' | 'pro' = 'pro',
     fitMode: 'cover' | 'contain' = 'cover'
 ): Promise<string> => {
@@ -81,18 +189,20 @@ export const resizeAndCropImage = async (
 
             const isStandard = tier === 'standard';
 
+            // Cập nhật logic: 16:9 và 9:16 dùng kích thước chuẩn
             if (effectiveRatio === '16:9') {
                 targetWidth = isStandard ? 1280 : 2048;
                 targetHeight = isStandard ? 720 : 1152;
             } else if (effectiveRatio === '9:16') { 
                 targetWidth = isStandard ? 720 : 1152;
                 targetHeight = isStandard ? 1280 : 2048;
-            } else if (effectiveRatio === '1:1') {
-                targetWidth = 1024;
-                targetHeight = 1024;
-            } else {
-                targetWidth = isStandard ? 1280 : 2048;
-                targetHeight = isStandard ? 720 : 1152;
+            } 
+            // Các tỷ lệ 1:1, 4:3, 3:4 sẽ dùng container Vuông (Square)
+            // Điều này giúp tận dụng tối đa độ phân giải của model Square (đặc biệt là Pro 2048x2048)
+            else {
+                // 1:1, 4:3, 3:4
+                targetWidth = isStandard ? 1024 : 2048;
+                targetHeight = isStandard ? 1024 : 2048;
             }
 
             const canvas = document.createElement('canvas');
@@ -107,12 +217,19 @@ export const resizeAndCropImage = async (
 
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
+            // Tô màu đen cho viền (nếu dùng contain)
             ctx.fillStyle = '#000000';
             ctx.fillRect(0, 0, targetWidth, targetHeight);
 
-            let scale = fitMode === 'contain' 
-                ? Math.min(targetWidth / img.width, targetHeight / img.height)
-                : Math.max(targetWidth / img.width, targetHeight / img.height);
+            // Scale logic
+            let scale;
+            if (fitMode === 'contain') {
+                // Contain: Giữ nguyên toàn bộ ảnh trong khung
+                scale = Math.min(targetWidth / img.width, targetHeight / img.height);
+            } else {
+                // Cover: Lấp đầy khung
+                scale = Math.max(targetWidth / img.width, targetHeight / img.height);
+            }
             
             const renderWidth = img.width * scale;
             const renderHeight = img.height * scale;
@@ -152,6 +269,8 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
     
     // Updated Logic: Handle "queue" or "waiting" messages as processing state, not error.
     if (data.status === 'failed' || data.code === 'failed' || data.success === false) {
+         // Special handling for 503 inside result.error which isn't 'failed' status but success=true
+         // This block handles cases where status is explicitly failed.
          const msg = (data.message || "").toLowerCase();
          // If explicit processing code OR message indicates queuing
          if (data.code === 'processing' || data.code === 'queue' || msg.includes('queue') || msg.includes('waiting')) {
@@ -164,44 +283,115 @@ const fetchJson = async (endpoint: string, options?: RequestInit) => {
 
 export const proxyDownload = async (targetUrl: string): Promise<Blob> => {
     const baseUrl = BACKEND_URL.replace(/\/$/, "");
-    const url = `${baseUrl}/proxy-download?url=${encodeURIComponent(targetUrl)}`;
+    const url = `${baseUrl}/proxy-download?url=${encodeURIComponent(targetUrl)}&t=${Date.now()}`;
     const res = await fetch(url);
-    if (!res.ok) throw new Error("Proxy download failed");
+    if (!res.ok) throw new Error(`Proxy error: ${res.status}`);
     return await res.blob();
 }
 
-export const forceDownload = async (url: string, filename: string) => {
-    try {
-        let downloadUrl = url;
-        let shouldRevoke = false;
+const downloadViaCanvas = (url: string, filename: string): Promise<void> => {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.crossOrigin = "Anonymous"; // Try anonymous first
+        img.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+            const ctx = canvas.getContext('2d');
+            if (!ctx) { reject(new Error('Canvas context error')); return; }
+            try {
+                ctx.drawImage(img, 0, 0);
+                canvas.toBlob((blob) => {
+                    if (blob) {
+                        const blobUrl = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.href = blobUrl;
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+                        resolve();
+                    } else {
+                        reject(new Error('Canvas blob error'));
+                    }
+                });
+            } catch (e) {
+                reject(e); // Tainted canvas
+            }
+        };
+        img.onerror = (e) => reject(e);
+        img.src = url;
+    });
+};
 
-        // Nếu là URL blob, dùng trực tiếp, KHÔNG fetch lại (gây tốn bộ nhớ và lỗi tiềm ẩn)
-        if (url.startsWith('blob:')) {
-            downloadUrl = url;
-        } 
-        // Nếu là Data URI, có thể dùng trực tiếp hoặc chuyển sang Blob nếu cần (ở đây dùng trực tiếp cho nhanh)
-        else if (url.startsWith('data:')) {
-            downloadUrl = url;
+export const forceDownload = async (url: string, filename: string) => {
+    if (!url) return;
+
+    try {
+        // --- STRATEGY 1: Local Blobs (Fastest) ---
+        if (url.startsWith('blob:') || url.startsWith('data:')) {
+             const res = await fetch(url);
+             const blob = await res.blob();
+             const blobUrl = URL.createObjectURL(blob);
+             const link = document.createElement('a');
+             link.href = blobUrl;
+             link.download = filename;
+             document.body.appendChild(link);
+             link.click();
+             document.body.removeChild(link);
+             setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+             return;
         }
-        // Nếu là URL remote (http/https), dùng proxy để tải về blob
-        else {
+
+        // --- STRATEGY 2: Proxy Download (Most Reliable for Remote) ---
+        try {
             const blob = await proxyDownload(url);
-            downloadUrl = URL.createObjectURL(blob);
-            shouldRevoke = true;
+            const blobUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+            return;
+        } catch (proxyError) {
+            console.warn("Proxy download failed, trying Canvas fallback...", proxyError);
         }
-        
-        const link = document.createElement('a');
-        link.href = downloadUrl;
-        link.download = filename;
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
-        
-        if (shouldRevoke) {
-            setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+
+        // --- STRATEGY 3: Canvas Download (Fallback for Images) ---
+        if (filename.match(/\.(png|jpg|jpeg|webp)$/i) || !filename.includes('.')) {
+             try {
+                 await downloadViaCanvas(url, filename);
+                 return;
+             } catch (canvasError) {
+                 console.warn("Canvas download failed...", canvasError);
+             }
         }
+
+        // --- STRATEGY 4: Direct Fetch (Last attempt before new tab) ---
+        try {
+             const res = await fetch(url, { mode: 'cors' });
+             if (!res.ok) throw new Error("Direct fetch failed");
+             const blob = await res.blob();
+             const blobUrl = URL.createObjectURL(blob);
+             const link = document.createElement('a');
+             link.href = blobUrl;
+             link.download = filename;
+             document.body.appendChild(link);
+             link.click();
+             document.body.removeChild(link);
+             setTimeout(() => URL.revokeObjectURL(blobUrl), 1000);
+             return;
+        } catch(e) {}
+
+        // --- STRATEGY 5: Open in New Tab (Last Resort) ---
+        console.warn("All download methods failed, opening in new tab.");
+        window.open(url, '_blank');
+
     } catch (e) {
-        console.error("Force download failed, falling back to new tab", e);
+        console.error("Critical download error:", e);
         window.open(url, '_blank');
     }
 };
@@ -218,14 +408,27 @@ export const generateFlowImage = async (
     const processedImages: string[] = [];
     if (onProgress) onProgress("Đang chuẩn bị dữ liệu ảnh...");
 
-    let ratioType: '16:9' | '9:16' | '1:1' = '16:9';
-    if (aspectRatio.includes("PORTRAIT")) ratioType = "9:16";
-    else if (aspectRatio.includes("SQUARE")) ratioType = "1:1";
+    // Determine backend enum based on requested ratio
+    let ratioEnum = "IMAGE_ASPECT_RATIO_LANDSCAPE";
+    let ratioType: '16:9' | '9:16' | '1:1' | '4:3' | '3:4' = '16:9';
+
+    if (aspectRatio === "9:16" || aspectRatio === "IMAGE_ASPECT_RATIO_PORTRAIT") {
+        ratioType = "9:16";
+        ratioEnum = "IMAGE_ASPECT_RATIO_PORTRAIT";
+    } else if (aspectRatio === "16:9" || aspectRatio === "IMAGE_ASPECT_RATIO_LANDSCAPE") {
+        ratioType = "16:9";
+        ratioEnum = "IMAGE_ASPECT_RATIO_LANDSCAPE";
+    } else {
+        // 1:1, 4:3, 3:4 -> Map tất cả vào Square để tối ưu độ phân giải
+        ratioType = (aspectRatio === "4:3") ? "4:3" : (aspectRatio === "3:4" ? "3:4" : "1:1");
+        ratioEnum = "IMAGE_ASPECT_RATIO_SQUARE";
+    }
 
     const tier = (imageModelName === 'GEM_PIX') ? 'standard' : 'pro';
 
     for (const img of imagesToProcess) {
-        const imageData = await resizeAndCropImage(img, ratioType, tier, 'cover');
+        // Changed to 'contain' to ensure full image visibility with padding if needed (e.g., 4:3 input in 16:9)
+        const imageData = await resizeAndCropImage(img, ratioType, tier, 'contain');
         processedImages.push(imageData);
     }
 
@@ -237,7 +440,7 @@ export const generateFlowImage = async (
             prompt,
             images: processedImages,
             image: processedImages[0] || null, 
-            imageAspectRatio: aspectRatio,
+            imageAspectRatio: ratioEnum, // Send standard enum to API
             numberOfImages,
             imageModelName
         })
@@ -264,6 +467,19 @@ export const generateFlowImage = async (
                 body: JSON.stringify({ action: 'flow_check', taskId })
             });
             
+            // --- HANDLE 503 SERVICE UNAVAILABLE IN RESULT ---
+            if (statusRes.result?.error) {
+                const err = statusRes.result.error;
+                if (err.code === 503 || err.status === 'UNAVAILABLE') {
+                    console.warn(`[FlowGen] Service Unavailable (503). Retrying polling...`);
+                    await wait(2000); // Wait a bit more before retrying
+                    continue; // Treat as transient, continue polling
+                }
+                // Only throw if it's not a 503/Unavailable
+                throw new Error(`Lỗi xử lý từ máy chủ AI: ${err.message || "Unknown error"}`);
+            }
+            // ------------------------------------------------
+
             if (statusRes.code === 'processing') {
                 if (onProgress) {
                     onProgress("Đang xử lý. Vui lòng đợi...");
@@ -296,6 +512,17 @@ export const generateFlowImage = async (
                 if (statusRes.result.mediaGenerationId) mediaIds.push(statusRes.result.mediaGenerationId);
             }
 
+            // POST-PROCESS: Crop result if requested ratio was 4:3 or 3:4
+            if (urls.length > 0 && (ratioType === '4:3' || ratioType === '3:4')) {
+                if (onProgress) onProgress("Đang xử lý kích thước ảnh...");
+                const croppedUrls: string[] = [];
+                for (const url of urls) {
+                    const cropped = await cropImageToRatio(url, ratioType);
+                    croppedUrls.push(cropped);
+                }
+                if (croppedUrls.length > 0) return { imageUrls: [...new Set(croppedUrls)], mediaIds, projectId };
+            }
+
             if (urls.length > 0) return { imageUrls: [...new Set(urls)], mediaIds, projectId };
             if (statusRes.status === 'FAILED') throw new Error("AI từ chối tạo ảnh.");
 
@@ -314,43 +541,108 @@ export const generateFlowImage = async (
     throw new Error("Hết thời gian chờ xử lý (Timeout).");
 };
 
-export const upscaleFlowImage = async (mediaId: string, projectId: string | undefined, targetResolution: string = 'UPSAMPLE_IMAGE_RESOLUTION_2K'): Promise<{ imageUrl: string }> => {
-    const createRes = await fetchJson('/flow-upscale', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'flow_upscale', mediaId, projectId, targetResolution })
-    });
-    
-    const taskId = createRes.taskId;
-    const MAX_RETRIES = 60;
-    
-    // --- GRACE PERIOD CONFIGURATION FOR UPSCALE ---
-    const startTime = Date.now();
-    const GRACE_PERIOD = 120000; // 2 minutes
+export const upscaleFlowImage = async (
+    mediaId: string, 
+    projectId: string | undefined, 
+    targetResolution: string = 'UPSAMPLE_IMAGE_RESOLUTION_2K',
+    aspectRatio?: string // Add aspect ratio parameter
+): Promise<{ imageUrl: string }> => {
+    const MAX_RETRIES = 3; // Try up to 3 times (1 initial + 2 retries)
+    let lastError: any;
 
-    for (let i = 0; i < MAX_RETRIES; i++) {
-        await wait(6000);
-        
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-            const statusRes = await fetchJson('/flow-check', {
+            if (attempt > 1) {
+                console.log(`[Upscale] Attempt ${attempt}/${MAX_RETRIES} starting...`);
+                await wait(2000); // Wait 2s before retry
+            }
+
+            const createRes = await fetchJson('/flow-upscale', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'flow_check', taskId })
+                body: JSON.stringify({ action: 'flow_upscale', mediaId, projectId, targetResolution })
             });
-            if (statusRes.code === 'processing') continue;
-            if (statusRes.result?.encodedImage) {
-                return { imageUrl: await base64ToBlobUrl(statusRes.result.encodedImage, 'image/jpeg') };
+            
+            // --- HANDLE 503 SERVICE UNAVAILABLE IN CREATE RESULT ---
+            if (createRes.result?.error) {
+                const err = createRes.result.error;
+                if (err.code === 503 || err.status === 'UNAVAILABLE') {
+                    throw new Error("Service Unavailable (503)"); // Throw to trigger outer loop retry
+                }
+                throw new Error(`Upscale creation failed: ${err.message}`);
             }
-        } catch (error: any) {
-             // --- GRACE PERIOD CHECK ---
-             if (Date.now() - startTime < GRACE_PERIOD) {
-                 console.warn(`[Upscale Grace Period] Lỗi tạm thời: ${error.message}. Đang thử lại...`);
-                 continue;
-             }
-             throw error;
+            // -------------------------------------------------------
+
+            const taskId = createRes.taskId;
+            if (!taskId) throw new Error("No Task ID returned for Upscale.");
+
+            const MAX_POLLING_RETRIES = 60;
+            
+            // --- GRACE PERIOD CONFIGURATION FOR UPSCALE ---
+            const startTime = Date.now();
+            const GRACE_PERIOD = 120000; // 2 minutes
+
+            for (let i = 0; i < MAX_POLLING_RETRIES; i++) {
+                await wait(6000);
+                
+                try {
+                    const statusRes = await fetchJson('/flow-check', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'flow_check', taskId })
+                    });
+
+                    // --- HANDLE 503 SERVICE UNAVAILABLE IN POLLING RESULT ---
+                    if (statusRes.result?.error) {
+                        const err = statusRes.result.error;
+                        if (err.code === 503 || err.status === 'UNAVAILABLE') {
+                            console.warn(`[Upscale Check] 503 Service Unavailable. Retrying polling...`);
+                            await wait(2000);
+                            continue; // Continue polling
+                        }
+                        throw new Error(`Upscale processing error: ${err.message}`);
+                    }
+                    // --------------------------------------------------------
+
+                    if (statusRes.code === 'processing') continue;
+                    
+                    if (statusRes.status === 'FAILED') {
+                        throw new Error("Upscale Task Failed from Server");
+                    }
+
+                    if (statusRes.result?.encodedImage) {
+                        let finalUrl = await base64ToBlobUrl(statusRes.result.encodedImage, 'image/jpeg');
+                        
+                        // Apply crop if needed for upscaled image (since upscale returns 16:9/9:16)
+                        if (aspectRatio === '4:3' || aspectRatio === '3:4') {
+                            console.log(`[Upscale] Final High-Res Crop to ${aspectRatio}`);
+                            // Force wait for crop
+                            const croppedUrl = await cropImageToRatio(finalUrl, aspectRatio);
+                            if(croppedUrl) finalUrl = croppedUrl;
+                        }
+                        
+                        return { imageUrl: finalUrl };
+                    }
+                } catch (error: any) {
+                     // --- GRACE PERIOD CHECK ---
+                     if (Date.now() - startTime < GRACE_PERIOD) {
+                         console.warn(`[Upscale Grace Period] Lỗi tạm thời: ${error.message}. Đang thử lại...`);
+                         continue;
+                     }
+                     throw error;
+                }
+            }
+            throw new Error("Upscale Polling Timeout.");
+
+        } catch (e: any) {
+            console.warn(`[Upscale] Attempt ${attempt} failed:`, e.message);
+            lastError = e;
+            // Loop continues if attempt < MAX_RETRIES
         }
     }
-    throw new Error("Upscale thất bại.");
+
+    // If all attempts fail
+    throw lastError || new Error("Upscale thất bại sau nhiều lần thử.");
 };
 
 async function _executeVideoGeneration(

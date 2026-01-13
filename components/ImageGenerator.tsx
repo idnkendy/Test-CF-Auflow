@@ -74,9 +74,10 @@ interface ImageGeneratorProps {
   onSendToViewSync: (image: FileData) => void;
   userCredits?: number;
   onDeductCredits?: (amount: number, description: string) => Promise<string>;
+  onInsufficientCredits?: () => void;
 }
 
-const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits }) => {
+const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { 
         style, context, lighting, weather, buildingType, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
@@ -136,10 +137,16 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const cost = numberOfImages * (resolution === '4K' ? 30 : resolution === '2K' ? 20 : resolution === '1K' ? 10 : 5);
 
     const handleGenerate = async () => {
+        // --- MODAL TRIGGER: Check credits ---
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+             }
              return;
         }
+        
         if (!customPrompt.trim()) { onStateChange({ error: 'Lời nhắc không được để trống.' }); return; }
         
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
@@ -159,7 +166,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            const ratioEnum = aspectRatio === '16:9' ? 'IMAGE_ASPECT_RATIO_LANDSCAPE' : aspectRatio === '9:16' ? 'IMAGE_ASPECT_RATIO_PORTRAIT' : 'IMAGE_ASPECT_RATIO_SQUARE';
+            // Pass raw aspectRatio string (e.g. '4:3', '16:9') to service. Service handles mapping and cropping.
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const collectedUrls: string[] = [];
             
@@ -169,7 +176,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 const result = await externalVideoService.generateFlowImage(
                     promptForService,
                     [sourceImage, ...referenceImages].filter(Boolean) as FileData[], 
-                    ratioEnum,
+                    aspectRatio, // Pass raw ratio
                     1,
                     modelName,
                     (msg) => setStatusMessage(msg)
@@ -182,7 +189,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     if (shouldUpscale) {
                         // Vẫn giữ message chung chung
                         const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                        const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes);
+                        // IMPORTANT: Pass aspectRatio here to ensure crop is re-applied after upscale for 4:3 or 3:4
+                        const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
                         if (upscaleRes.imageUrl) finalUrl = upscaleRes.imageUrl;
                     }
                     
@@ -307,9 +315,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         </div>
                         <div className="text-xs">{userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span> : <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>}</div>
                     </div>
-                    <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim() || userCredits < cost} className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg">
+                    <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim()} className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg">
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : `Bắt đầu Render`}
                     </button>
+                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                 </div>
             </div>
 

@@ -74,9 +74,10 @@ interface RenovationProps {
     onStateChange: (newState: Partial<RenovationState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
-const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
+const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { prompt, sourceImage, referenceImages, maskImage, isLoading, error, renovatedImages, numberOfImages, aspectRatio, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
@@ -114,7 +115,11 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             }
              return;
         }
 
@@ -470,13 +475,18 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                     <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                                 </div>
                                 <div className="text-xs">
-                                    {userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
+                                    {userCredits < cost ? (
+                                        <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                    ) : (
+                                        <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                    )}
                                 </div>
                             </div>
 
                             <button 
                                 onClick={handleGenerate}
-                                disabled={isLoading || !prompt || !sourceImage || userCredits < cost}
+                                // Removed credit check from disabled
+                                disabled={isLoading || !prompt || !sourceImage}
                                 className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                             >
                                 {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Tạo Phương Án Cải Tạo'}

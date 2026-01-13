@@ -23,6 +23,7 @@ interface AITechnicalDrawingsProps {
     onStateChange: (newState: Partial<AITechnicalDrawingsState>) => void;
     userCredits?: number;
     onDeductCredits?: (amount: number, description: string) => Promise<string>;
+    onInsufficientCredits?: () => void;
 }
 
 const drawingTypeOptions = [
@@ -31,18 +32,12 @@ const drawingTypeOptions = [
     { value: 'section', label: 'Mặt cắt (Section)' },
 ];
 
-const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits }) => {
-    const { sourceImage, isLoading, error, resultImage, drawingType, detailLevel, resolution, aspectRatio } = state;
+const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { sourceImage, isLoading, error, resultImage, resultImages = [], numberOfImages = 1, drawingType, detailLevel, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    
-    // Support multiple images for AITechnicalDrawings in the future, for now treating resultImage as single but we can use ResultGrid if needed.
-    // For now the state uses `resultImage` (string) but Flow returns array. Let's fix state later or adapt.
-    // Actually state `resultImage` is string | null. Let's stick to single image for now to avoid breaking changes, or update state if needed.
-    // But result grid handles array.
-    // Let's use a local resultImages array for grid support if needed, or just use the single resultImage.
     
     const getCostPerImage = () => {
         switch (resolution) {
@@ -53,15 +48,23 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             default: return 5;
         }
     };
-    const cost = getCostPerImage();
+    const cost = numberOfImages * getCostPerImage();
 
     const handleFileSelect = (fileData: FileData | null) => {
-        onStateChange({ sourceImage: fileData, resultImage: null });
+        onStateChange({ sourceImage: fileData, resultImage: null, resultImages: [] });
+    };
+
+    const handleResolutionChange = (val: ImageResolution) => {
+        onStateChange({ resolution: val });
     };
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             }
              return;
         }
 
@@ -69,7 +72,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             onStateChange({ error: 'Vui lòng tải lên một ảnh Render để bắt đầu.' });
             return;
         }
-        onStateChange({ isLoading: true, error: null, resultImage: null });
+        onStateChange({ isLoading: true, error: null, resultImage: null, resultImages: [] });
         setStatusMessage('Đang phân tích...');
         setUpscaleWarning(null);
 
@@ -98,7 +101,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
             
-            let resultUrl = '';
+            let imageUrls: string[] = [];
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
@@ -107,50 +110,78 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                 else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                const result = await externalVideoService.generateFlowImage(
-                    fullPrompt,
-                    [sourceImage],
-                    aspectEnum,
-                    1,
-                    modelName,
-                    (msg) => setStatusMessage(msg)
-                );
+                const collectedUrls: string[] = [];
+                let lastError: any = null;
 
-                if (result.imageUrls && result.imageUrls.length > 0) {
-                    resultUrl = result.imageUrls[0];
-                    
-                    // Check for 2K/4K Upscale
-                    const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-                    
-                    if (shouldUpscale) {
-                        setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                        try {
-                            const mediaId = result.mediaIds[0];
-                            if (mediaId) {
-                                const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
-                                if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
+                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                    try {
+                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        const result = await externalVideoService.generateFlowImage(
+                            fullPrompt,
+                            [sourceImage],
+                            aspectEnum,
+                            1,
+                            modelName,
+                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                        );
+
+                        if (result.imageUrls && result.imageUrls.length > 0) {
+                            let finalUrl = result.imageUrls[0];
+                            
+                            // Upscale Check (2K or 4K)
+                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                            
+                            if (shouldUpscale) {
+                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
+                                try {
+                                    const mediaId = result.mediaIds[0];
+                                    if (mediaId) {
+                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                        if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                                    }
+                                } catch (e: any) {
+                                    throw new Error(`Lỗi Upscale: ${e.message}`);
+                                }
                             }
-                        } catch (e: any) {
-                            // STRICT FAILURE
-                            throw new Error(`Lỗi Upscale: ${e.message}`);
+                            
+                            collectedUrls.push(finalUrl);
+                            // Update both single result for backward compat and array for grid
+                            onStateChange({ resultImage: finalUrl, resultImages: [...collectedUrls] });
+                            
+                            historyService.addToHistory({ 
+                                tool: Tool.AITechnicalDrawings, 
+                                prompt: `Flow: ${fullPrompt}`, 
+                                sourceImageURL: sourceImage.objectURL, 
+                                resultImageURL: finalUrl 
+                            });
                         }
+                    } catch (e: any) {
+                        console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
                     }
-                    historyService.addToHistory({ tool: Tool.AITechnicalDrawings, prompt: `Flow: ${fullPrompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
-                } else throw new Error("Lỗi không có ảnh.");
+                });
+
+                await Promise.all(promises);
+                if (collectedUrls.length === 0) {
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
+                }
+                imageUrls = collectedUrls;
 
             } else {
                 // Fallback (Not reached with useFlow=true)
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
-                const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
-                resultUrl = images[0];
-                historyService.addToHistory({ tool: Tool.AITechnicalDrawings, prompt: fullPrompt, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
+                const promises = Array.from({ length: numberOfImages }).map(async () => {
+                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
+                    return images[0];
+                });
+                imageUrls = await Promise.all(promises);
+                onStateChange({ resultImage: imageUrls[0], resultImages: imageUrls });
+                imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.AITechnicalDrawings, prompt: fullPrompt, sourceImageURL: sourceImage.objectURL, resultImageURL: url }));
             }
 
-            onStateChange({ resultImage: resultUrl });
-            if (jobId && resultUrl) await jobService.updateJobStatus(jobId, 'completed', resultUrl);
+            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
 
         } catch (err: any) {
             const rawMsg = err.message || "";
@@ -171,9 +202,10 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
     };
 
     const handleDownload = async () => {
-        if (!resultImage) return;
+        const target = resultImage || (resultImages.length > 0 ? resultImages[0] : null);
+        if (!target) return;
         setIsDownloading(true);
-        await externalVideoService.forceDownload(resultImage, `technical-drawing-${Date.now()}.png`);
+        await externalVideoService.forceDownload(target, `technical-drawing-${Date.now()}.png`);
         setIsDownloading(false);
     };
 
@@ -192,16 +224,29 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                     <OptionSelector id="type" label="Loại bản vẽ" options={drawingTypeOptions} value={drawingType} onChange={(v) => onStateChange({ drawingType: v as any })} variant="grid" />
                     
                     <div className="grid grid-cols-2 gap-4">
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
                         <AspectRatioSelector value={aspectRatio} onChange={(v) => onStateChange({ aspectRatio: v })} disabled={isLoading} />
-                        {/* Number selector unused in state but good to keep layout consistent if needed */}
-                        <div className="hidden"><NumberOfImagesSelector value={1} onChange={()=>{}} disabled={true} /></div>
                     </div>
                     
                     <ResolutionSelector value={resolution} onChange={(v) => onStateChange({ resolution: v })} disabled={isLoading} />
 
+                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+                            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
+                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                        </div>
+                        <div className="text-xs">
+                            {userCredits < cost ? (
+                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                            ) : (
+                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                            )}
+                        </div>
+                    </div>
+
                     <button
                         onClick={handleGenerate}
-                        disabled={isLoading || userCredits < cost || !sourceImage}
+                        disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
                         {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Tạo Bản Vẽ'}
@@ -213,10 +258,10 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                 <div>
                     <div className="flex justify-between items-center mb-4">
                         <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Bản vẽ</h3>
-                        {resultImage && (
+                        {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
-                                    onClick={() => setPreviewImage(resultImage)}
+                                    onClick={() => setPreviewImage(resultImages[0])}
                                     className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
                                     title="Phóng to"
                                 >
@@ -245,10 +290,10 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                                 <Spinner />
                                 <p className="mt-2 text-gray-400">{statusMessage}</p>
                             </div>
-                        ) : resultImage && sourceImage ? (
-                            <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImage} />
-                        ) : resultImage ? (
-                             <img src={resultImage} alt="Result" className="w-full h-full object-contain" />
+                        ) : resultImages.length === 1 && sourceImage ? (
+                            <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
+                        ) : resultImages.length > 0 ? (
+                             <ResultGrid images={resultImages} toolName="drawing-generator" />
                         ) : (
                              <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
                         )}
