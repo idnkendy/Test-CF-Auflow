@@ -18,6 +18,7 @@ import OptionSelector from './common/OptionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 const viewTypeOptions = [
     { value: 'none', label: 'Tự động' },
@@ -64,6 +65,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
 
     const escapeRegExp = (string: string) => {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -322,13 +324,20 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                onStateChange({ error: friendlyMsg });
+            }
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${rawMsg})`, logId);
                 friendlyMsg += " (Credits đã được hoàn trả)";
             }
             
-            onStateChange({ error: friendlyMsg });
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
@@ -370,6 +379,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <div>
                 <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Quy Hoạch Đô Thị</h2>

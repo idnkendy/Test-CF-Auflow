@@ -18,6 +18,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 const buildingTypeOptions = [
     { value: 'none', label: 'Tự động' },
@@ -89,6 +90,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
 
     const escapeRegExp = (string: string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -212,8 +214,14 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             const rawMsg = err.message || "";
             const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // UI shows friendly message
-            onStateChange({ error: friendlyMsg });
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                // UI shows friendly message
+                onStateChange({ error: friendlyMsg });
+            }
             
             // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
@@ -253,6 +261,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <div className="flex flex-col gap-2">
                 <h2 className="text-2xl md:text-3xl font-bold text-text-primary dark:text-white">AI Render Kiến trúc</h2>

@@ -20,9 +20,16 @@ export const mapFriendlyErrorMessage = (errorMsg: string): string => {
     if (msg.includes("KHÔNG ĐỦ CREDITS")) {
         return "Bạn không đủ credits để thực hiện tác vụ này.";
     }
-    // Lỗi Safety đôi khi cũng cần báo rõ
-    if (msg.includes("SAFETY_ERROR") || msg.includes("SAFETY") || msg.includes("BLOCK") || msg.includes("PROHIBITED")) {
-        return "Nội dung vi phạm chính sách an toàn của Google.";
+    
+    // Safety / Upload Failed specific mapping
+    if (
+        msg.includes("SAFETY_ERROR") || 
+        msg.includes("SAFETY") || 
+        msg.includes("BLOCK") || 
+        msg.includes("PROHIBITED") ||
+        (msg.includes("UPLOAD FAILED") && (msg.includes("400") || msg.includes("INVALID_ARGUMENT")))
+    ) {
+        return "SAFETY_POLICY_VIOLATION"; // Return a specific code for UI to catch
     }
     
     // 2. Nhóm lỗi kỹ thuật (Server, Network, Timeout, Queue, 503, v.v...) -> Trả về thông báo mặc định

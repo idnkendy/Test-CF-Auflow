@@ -19,6 +19,7 @@ import SingleVideoInput from './video/SingleVideoInput';
 import SingleVideoResult from './video/SingleVideoResult';
 import TimelineEditor from './video/TimelineEditor';
 import MaintenanceView from './video/MaintenanceView';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 const DUMMY_FILE: FileData = {
     base64: '',
@@ -35,26 +36,6 @@ const loadingMessages = [
     "Quá trình có thể mất 3-6 phút...",
     "Nếu quá lâu, hệ thống sẽ tự động thử lại...",
 ];
-
-const mapFriendlyErrorMessage = (errorMsg: string): string => {
-    // Log lỗi chi tiết ra console để developer debug
-    console.error("Technical Error Detail:", errorMsg);
-
-    if (!errorMsg) return "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.";
-
-    const msg = errorMsg.toUpperCase();
-
-    // 1. Nhóm lỗi do người dùng (Giữ nguyên thông báo cụ thể)
-    if (msg.includes("KHÔNG ĐỦ CREDITS")) {
-        return "Bạn không đủ credits để thực hiện tác vụ này.";
-    }
-    if (msg.includes("SAFETY_ERROR") || msg.includes("SAFETY") || msg.includes("BLOCK") || msg.includes("PROHIBITED")) {
-        return "Nội dung vi phạm chính sách an toàn của Google.";
-    }
-
-    // 2. Nhóm lỗi kỹ thuật (Server, Network, Timeout...) -> Trả về thông báo chung chung theo yêu cầu
-    return "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.";
-};
 
 interface ConfirmationModalProps {
     isOpen: boolean;
@@ -131,6 +112,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [singlePrompt, setSinglePrompt] = useState('');
     const [isSingleGenerating, setIsSingleGenerating] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
 
     // Timeline & Player States
     const [currentPlayingIndex, setCurrentPlayingIndex] = useState<number>(0);
@@ -436,7 +418,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
              if (props.onInsufficientCredits) {
                  props.onInsufficientCredits();
              } else {
-                 setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
+                 setVideoState(prev => ({ ...prev, error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
              }
              return;
         }
@@ -484,12 +466,21 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             await historyService.addToHistory({ tool: Tool.VideoGeneration, prompt: item.prompt, sourceImageURL: item.file.objectURL, resultVideoURL: result.videoUrl });
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = mapFriendlyErrorMessage(rawMsg);
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+            }
+
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
                 await props.onRefreshCredits(); 
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") {
+                     friendlyMsg += " (Credits đã được hoàn trả)";
+                }
             }
             localStorage.removeItem('opzen_pending_tx');
             setVideoState(prev => ({ ...prev, error: friendlyMsg, contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, isGeneratingVideo: false } : i) }));
@@ -593,10 +584,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setIsDownloading(false);
     };
 
-    
-// ... existing code ...
-    
-// ... existing code ...
     const handleExtendClip = async (item: VideoContextItem) => {
         alert("Tính năng nối tiếp (Extend) đang được cập nhật.");
     };
@@ -819,7 +806,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
              if (props.onInsufficientCredits) {
                  props.onInsufficientCredits();
              } else {
-                 setVideoState(prev => ({ ...prev, error: mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
+                 setVideoState(prev => ({ ...prev, error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") }));
              }
              return;
         }
@@ -883,12 +870,21 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             await historyService.addToHistory({ tool: Tool.VideoGeneration, prompt: singlePrompt, sourceImageURL: startImageToUse?.objectURL, resultVideoURL: result.videoUrl });
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = mapFriendlyErrorMessage(rawMsg);
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+            }
+
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
                 await props.onRefreshCredits();
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") {
+                     friendlyMsg += " (Credits đã được hoàn trả)";
+                }
             }
             localStorage.removeItem('opzen_pending_tx');
             setVideoState(prev => ({ ...prev, error: friendlyMsg }));
@@ -906,6 +902,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
     return (
         <div className="h-[100dvh] bg-main-bg dark:bg-dark-bg font-sans flex flex-col overflow-hidden text-text-primary dark:text-white transition-colors duration-300">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             <Header 
                 onGoHome={props.onGoHome} onThemeToggle={props.onThemeToggle} theme={props.theme} 
                 onSignOut={props.onSignOut} onOpenGallery={props.onOpenGallery} onUpgrade={props.onUpgrade} 

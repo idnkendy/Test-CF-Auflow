@@ -11,6 +11,7 @@ import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
 import ImagePreviewModal from './common/ImagePreviewModal';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 // --- CONFIGURATION ---
 const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
@@ -53,6 +54,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
     
     // Internal state for RunningHub tracking
     const [runningHubTaskId, setRunningHubTaskId] = useState<string | null>(null);
@@ -175,7 +177,15 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         setRunningHubTaskId(null);
         
         const friendlyMsg = jobService.mapFriendlyErrorMessage(msg);
-        onStateChange({ isLoading: false, error: friendlyMsg });
+        
+        // --- SAFETY MODAL TRIGGER (Async/Polling) ---
+        if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+            setShowSafetyModal(true);
+            onStateChange({ isLoading: false, error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+        } else {
+            onStateChange({ isLoading: false, error: friendlyMsg });
+        }
+        
         setStatusMessage(null);
 
         if (currentJobId) {
@@ -268,10 +278,18 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             let msg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(msg);
             
+            // --- SAFETY MODAL TRIGGER (Sync/Initial) ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+            }
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Upscale (${msg})`, logId);
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") {
+                    friendlyMsg += " (Credits đã được hoàn trả)";
+                }
             }
             
             onStateChange({ error: friendlyMsg, isLoading: false });
@@ -294,6 +312,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tăng Độ Chi Tiết (Upscale)</h2>

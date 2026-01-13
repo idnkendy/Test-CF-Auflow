@@ -1,15 +1,18 @@
-import React from 'react';
+
+import React, { useState } from 'react';
 import { FengShuiState } from '../state/toolState';
 import { FileData, Tool, ImageResolution } from '../types';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
-import { refundCredits } from '../services/paymentService'; // Import refundCredits
-import { supabase } from '../services/supabaseClient'; // Import supabase
+import * as jobService from '../services/jobService'; // Import jobService
+import { refundCredits } from '../services/paymentService'; 
+import { supabase } from '../services/supabaseClient'; 
 import ImageUpload from './common/ImageUpload';
 import Spinner from './Spinner';
 import ImageComparator from './ImageComparator';
 import OptionSelector from './common/OptionSelector';
 import ResolutionSelector from './common/ResolutionSelector';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 interface FengShuiProps {
     state: FengShuiState;
@@ -68,6 +71,8 @@ const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits =
         graveDirection, terrainDescription, latitude, longitude,
         kitchenDirection, bedroomDirection, eventType, vanKhanType, resolution
     } = state;
+    
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
 
     // Calculate cost based on resolution if image generation is involved
     const getCost = () => {
@@ -290,18 +295,25 @@ const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits =
 
         } catch (err: any) {
             let errorMessage = err.message || "Đã xảy ra lỗi khi phân tích.";
-            
-            // Logic hoàn tiền nếu có lỗi và đã trừ tiền
-            if (logId) {
-                errorMessage += " (Credits đã được hoàn lại)";
-                // Refund logic
-                const { data: { user } } = await supabase.auth.getUser();
-                if (user && onDeductCredits) {
-                    await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Phong Thủy (${err.message})`);
+            const friendlyMsg = jobService.mapFriendlyErrorMessage(errorMessage);
+
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                errorMessage = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+            } else {
+                // Logic hoàn tiền nếu có lỗi và đã trừ tiền
+                if (logId) {
+                    errorMessage += " (Credits đã được hoàn lại)";
+                    // Refund logic
+                    const { data: { user } } = await supabase.auth.getUser();
+                    if (user && onDeductCredits) {
+                        await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Phong Thủy (${err.message})`);
+                    }
                 }
+                onStateChange({ error: errorMessage });
             }
-            
-            onStateChange({ error: errorMessage });
         } finally {
             onStateChange({ isLoading: false });
         }
@@ -323,6 +335,7 @@ const FengShui: React.FC<FengShuiProps> = ({ state, onStateChange, userCredits =
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">Chuyên gia Phong Thủy AI</h2>
             
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">

@@ -17,6 +17,7 @@ import ResultGrid from './common/ResultGrid';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 interface StagingProps {
     state: StagingState;
@@ -32,6 +33,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
 
     // Calculate cost based on resolution
     const getCostPerImage = () => {
@@ -216,13 +218,20 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                onStateChange({ error: friendlyMsg });
+            }
+            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Staging (${rawMsg})`, logId);
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
             }
             
-            onStateChange({ error: friendlyMsg });
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
@@ -247,6 +256,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
 
     return (
         <div>
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <h2 className="text-2xl font-bold mb-4">AI Staging (Dàn dựng nội thất)</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

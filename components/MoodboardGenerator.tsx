@@ -15,6 +15,7 @@ import ResultGrid from './common/ResultGrid';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 interface MoodboardGeneratorProps {
     state: MoodboardGeneratorState;
@@ -30,6 +31,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
     
     const getCostPerImage = () => {
         switch (resolution) {
@@ -176,15 +178,23 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
             
         } catch (err: any) {
-            let errorMsg = err.message || "Lỗi không xác định";
-            if (logId) errorMsg += " (Credits đã được hoàn lại)";
-            onStateChange({ error: errorMsg });
+            const rawMsg = err.message || "";
+            let errorMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            // --- SAFETY MODAL TRIGGER ---
+            if (errorMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                if (logId) errorMsg += " (Credits đã được hoàn lại)";
+                onStateChange({ error: errorMsg });
+            }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi moodboard (${err.message})`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi moodboard (${rawMsg})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
@@ -201,6 +211,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <h2 className="text-2xl font-bold">AI Moodboard</h2>
             <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border space-y-6">

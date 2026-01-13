@@ -18,6 +18,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 const styleOptions = [
     { value: 'none', label: 'Tự động' },
@@ -83,6 +84,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
     
     // Set default prompt on mount if empty
     useEffect(() => {
@@ -260,8 +262,13 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
             const rawMsg = err.message || "";
             const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // UI shows friendly message
-            onStateChange({ error: friendlyMsg });
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                onStateChange({ error: friendlyMsg });
+            }
             
             // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
@@ -311,6 +318,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <div>
                 <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Nội thất</h2>

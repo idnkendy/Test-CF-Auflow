@@ -403,7 +403,7 @@ export const generateFlowImage = async (
     numberOfImages: number = 1,
     imageModelName: string = "GEM_PIX_2",
     onProgress?: (message: string) => void 
-): Promise<{ imageUrls: string[], mediaIds: string[], projectId?: string }> => {
+): Promise<{ imageUrls: string[], mediaIds: string[], projectId?: string, accountId?: string }> => {
     const imagesToProcess = Array.isArray(inputImages) ? inputImages : [inputImages].filter(Boolean);
     const processedImages: string[] = [];
     if (onProgress) onProgress("Đang chuẩn bị dữ liệu ảnh...");
@@ -418,127 +418,181 @@ export const generateFlowImage = async (
     } else if (aspectRatio === "16:9" || aspectRatio === "IMAGE_ASPECT_RATIO_LANDSCAPE") {
         ratioType = "16:9";
         ratioEnum = "IMAGE_ASPECT_RATIO_LANDSCAPE";
+    } else if (aspectRatio === "4:3") {
+        ratioType = "4:3";
+        ratioEnum = "IMAGE_ASPECT_RATIO_LANDSCAPE_FOUR_THREE";
+    } else if (aspectRatio === "3:4") {
+        ratioType = "3:4";
+        ratioEnum = "IMAGE_ASPECT_RATIO_PORTRAIT_THREE_FOUR";
     } else {
-        // 1:1, 4:3, 3:4 -> Map tất cả vào Square để tối ưu độ phân giải
-        ratioType = (aspectRatio === "4:3") ? "4:3" : (aspectRatio === "3:4" ? "3:4" : "1:1");
+        // 1:1, or unknown -> Map to Square
+        ratioType = (aspectRatio === "1:1") ? "1:1" : "1:1"; 
         ratioEnum = "IMAGE_ASPECT_RATIO_SQUARE";
     }
 
     const tier = (imageModelName === 'GEM_PIX') ? 'standard' : 'pro';
 
+    // Resize images ONCE before the loop
     for (const img of imagesToProcess) {
-        // Changed to 'contain' to ensure full image visibility with padding if needed (e.g., 4:3 input in 16:9)
         const imageData = await resizeAndCropImage(img, ratioType, tier, 'contain');
         processedImages.push(imageData);
     }
 
-    const createRes = await fetchJson('/flow-create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            action: 'flow_media_create',
-            prompt,
-            images: processedImages,
-            image: processedImages[0] || null, 
-            imageAspectRatio: ratioEnum, // Send standard enum to API
-            numberOfImages,
-            imageModelName
-        })
-    });
+    // --- MAIN RETRY LOOP FOR OPERATION ---
+    const MAX_OPERATION_RETRIES = 3; 
+    let lastError: any = null;
 
-    if (!createRes.taskId) throw new Error("Không nhận được Task ID.");
-    const taskId = createRes.taskId;
-    const projectId = createRes.projectId;
-    
-    const POLLING_DELAY = 5000;
-    const MAX_RETRIES = 120; // Increased to 10 minutes for long queues
-    
-    // --- GRACE PERIOD CONFIGURATION ---
-    const startTime = Date.now();
-    const GRACE_PERIOD = 120000; // 2 minutes (120,000 ms)
-
-    for (let i = 0; i < MAX_RETRIES; i++) {
-        await wait(POLLING_DELAY);
-        
+    for (let attempt = 1; attempt <= MAX_OPERATION_RETRIES; attempt++) {
         try {
-            const statusRes = await fetchJson('/flow-check', {
+            if (attempt > 1) {
+                console.warn(`[FlowGen] Operation Attempt ${attempt}/${MAX_OPERATION_RETRIES} starting...`);
+                if (onProgress) onProgress(`Đang thử lại (Lần ${attempt})...`);
+                await wait(2000); 
+            }
+
+            const createRes = await fetchJson('/flow-create', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ action: 'flow_check', taskId })
+                body: JSON.stringify({
+                    action: 'flow_media_create',
+                    prompt,
+                    images: processedImages,
+                    image: processedImages[0] || null, 
+                    imageAspectRatio: ratioEnum, 
+                    numberOfImages,
+                    imageModelName
+                })
             });
+
+            if (!createRes.taskId) throw new Error("Không nhận được Task ID.");
+            const taskId = createRes.taskId;
+            const projectId = createRes.projectId;
+            const accountId = createRes.accountId;
             
-            // --- HANDLE 503 SERVICE UNAVAILABLE IN RESULT ---
-            if (statusRes.result?.error) {
-                const err = statusRes.result.error;
-                if (err.code === 503 || err.status === 'UNAVAILABLE') {
-                    console.warn(`[FlowGen] Service Unavailable (503). Retrying polling...`);
-                    await wait(2000); // Wait a bit more before retrying
-                    continue; // Treat as transient, continue polling
-                }
-                // Only throw if it's not a 503/Unavailable
-                throw new Error(`Lỗi xử lý từ máy chủ AI: ${err.message || "Unknown error"}`);
-            }
-            // ------------------------------------------------
+            const POLLING_DELAY = 5000;
+            const MAX_RETRIES = 120; // 10 minutes polling limit
+            const startTime = Date.now();
+            const GRACE_PERIOD = 120000; // 2 minutes
 
-            if (statusRes.code === 'processing') {
-                if (onProgress) {
-                    onProgress("Đang xử lý. Vui lòng đợi...");
-                }
-                continue;
-            }
+            // --- POLLING LOOP ---
+            for (let i = 0; i < MAX_RETRIES; i++) {
+                await wait(POLLING_DELAY);
+                
+                try {
+                    const statusRes = await fetchJson('/flow-check', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'flow_check', taskId })
+                    });
+                    
+                    // --- CHECK FOR CRITICAL ERRORS THAT REQUIRE RESTART ---
+                    if (statusRes.result && statusRes.result.error) {
+                        const err = statusRes.result.error;
+                        const code = err.code;
+                        const status = err.status;
 
-            const urls: string[] = [];
-            const mediaIds: string[] = [];
+                        // 503 is Service Unavailable - often retryable via polling, but sometimes better to restart
+                        if (code === 503 || status === 'UNAVAILABLE') {
+                            console.warn(`[FlowGen] Service Unavailable (503). Retrying polling...`);
+                            await wait(2000); 
+                            continue; // Continue polling for 503
+                        }
 
-            // Kiểm tra MediaId từ mảng media (cần cho Upscale)
-            if (statusRes.result?.media && Array.isArray(statusRes.result.media)) {
-                for (const item of statusRes.result.media) {
-                    const mId = item.mediaGenerationId || item.id || item.image?.generatedImage?.mediaGenerationId;
-                    if (mId) mediaIds.push(mId);
+                        // ERROR 400 / 429 -> BREAK POLLING AND RESTART OPERATION
+                        if ((code === 400 || code === 429 || status === 'RESOURCE_EXHAUSTED' || status === 'INVALID_ARGUMENT')) {
+                            console.warn(`[FlowGen] Critical Error ${code} in JSON. Triggering Operation Restart...`);
+                            throw new Error("RETRY_OPERATION_TRIGGER"); // Throw to catch block of outer loop
+                        }
 
-                    const base64 = item.encodedImage || item.image?.generatedImage?.encodedImage;
-                    if (base64) {
-                        urls.push(await base64ToBlobUrl(base64, 'image/jpeg'));
-                    } else if (item.fifeUrl || item.image?.generatedImage?.fifeUrl) {
-                        urls.push(item.fifeUrl || item.image?.generatedImage?.fifeUrl);
+                        throw new Error(`Lỗi xử lý từ máy chủ AI: ${err.message || "Unknown error"} (Code: ${code})`);
                     }
+                    // ------------------------------------------------
+
+                    if (statusRes.code === 'processing') {
+                        if (onProgress) onProgress("Đang xử lý. Vui lòng đợi...");
+                        continue;
+                    }
+
+                    const urls: string[] = [];
+                    const mediaIds: string[] = [];
+
+                    // Collect Results
+                    if (statusRes.result?.media && Array.isArray(statusRes.result.media)) {
+                        for (const item of statusRes.result.media) {
+                            const mId = item.mediaGenerationId || item.id || item.image?.generatedImage?.mediaGenerationId;
+                            if (mId) mediaIds.push(mId);
+
+                            const base64 = item.encodedImage || item.image?.generatedImage?.encodedImage;
+                            if (base64) {
+                                urls.push(await base64ToBlobUrl(base64, 'image/jpeg'));
+                            } else if (item.fifeUrl || item.image?.generatedImage?.fifeUrl) {
+                                urls.push(item.fifeUrl || item.image?.generatedImage?.fifeUrl);
+                            }
+                        }
+                    }
+
+                    if (statusRes.result?.encodedImage && urls.length === 0) {
+                        urls.push(await base64ToBlobUrl(statusRes.result.encodedImage, 'image/jpeg'));
+                        if (statusRes.result.mediaGenerationId) mediaIds.push(statusRes.result.mediaGenerationId);
+                    }
+
+                    // POST-PROCESS: Crop result if needed
+                    if (urls.length > 0 && (ratioType === '4:3' || ratioType === '3:4')) {
+                        if (onProgress) onProgress("Đang xử lý kích thước ảnh...");
+                        const croppedUrls: string[] = [];
+                        for (const url of urls) {
+                            const cropped = await cropImageToRatio(url, ratioType);
+                            croppedUrls.push(cropped);
+                        }
+                        if (croppedUrls.length > 0) return { imageUrls: [...new Set(croppedUrls)], mediaIds, projectId, accountId };
+                    }
+
+                    if (urls.length > 0) return { imageUrls: [...new Set(urls)], mediaIds, projectId, accountId };
+                    if (statusRes.status === 'FAILED') throw new Error("AI từ chối tạo ảnh.");
+
+                } catch (error: any) {
+                    // If it's the trigger, re-throw to outer loop
+                    if (error.message === "RETRY_OPERATION_TRIGGER") throw error;
+
+                    // Check if it's the specific JSON error we handled earlier (redundant safety check)
+                    if (error.message && error.message.includes('Lỗi xử lý từ máy chủ AI')) throw error;
+
+                    // Grace Period for network glitches
+                    if (Date.now() - startTime < GRACE_PERIOD) {
+                        console.warn(`[Grace Period] Lỗi tạm thời: ${error.message}. Đang thử lại...`);
+                        if (onProgress) onProgress("Đang kết nối lại...");
+                        continue; 
+                    }
+                    throw error;
                 }
             }
+            throw new Error("Hết thời gian chờ xử lý (Timeout).");
 
-            // Kiểm tra encodedImage ở root (dành cho các mẫu mới nhất)
-            if (statusRes.result?.encodedImage && urls.length === 0) {
-                urls.push(await base64ToBlobUrl(statusRes.result.encodedImage, 'image/jpeg'));
-                // Nếu root có mediaGenerationId thì thêm vào mảng mediaIds
-                if (statusRes.result.mediaGenerationId) mediaIds.push(statusRes.result.mediaGenerationId);
-            }
-
-            // POST-PROCESS: Crop result if requested ratio was 4:3 or 3:4
-            if (urls.length > 0 && (ratioType === '4:3' || ratioType === '3:4')) {
-                if (onProgress) onProgress("Đang xử lý kích thước ảnh...");
-                const croppedUrls: string[] = [];
-                for (const url of urls) {
-                    const cropped = await cropImageToRatio(url, ratioType);
-                    croppedUrls.push(cropped);
+        } catch (opError: any) {
+            // Handle the restart trigger
+            if (opError.message === "RETRY_OPERATION_TRIGGER") {
+                if (attempt < MAX_OPERATION_RETRIES) {
+                    continue; // Loop again (Restart Create)
+                } else {
+                    lastError = new Error("Hệ thống quá tải, vui lòng thử lại sau vài phút.");
                 }
-                if (croppedUrls.length > 0) return { imageUrls: [...new Set(croppedUrls)], mediaIds, projectId };
+            } else {
+                lastError = opError;
+                // If it's not a retry trigger, we usually stop, unless we want to retry on ALL errors?
+                // The requirement specified retry on 400/429 JSON errors. 
+                // For other errors (like network fail on create), we could arguably retry too, 
+                // but let's stick to the prompt's focus.
+                // However, the `fetchJson` might throw 429/400 as standard Error if status code matches.
+                // Let's check error message for "400" or "429" to be safe and retry those too.
+                const msg = (opError.message || "").toLowerCase();
+                if (msg.includes("429") || msg.includes("400") || msg.includes("exhausted")) {
+                     if (attempt < MAX_OPERATION_RETRIES) continue;
+                }
             }
-
-            if (urls.length > 0) return { imageUrls: [...new Set(urls)], mediaIds, projectId };
-            if (statusRes.status === 'FAILED') throw new Error("AI từ chối tạo ảnh.");
-
-        } catch (error: any) {
-            // --- GRACE PERIOD CHECK ---
-            // Nếu lỗi xảy ra trong vòng 2 phút đầu tiên, bỏ qua lỗi và tiếp tục vòng lặp
-            if (Date.now() - startTime < GRACE_PERIOD) {
-                console.warn(`[Grace Period] Lỗi tạm thời: ${error.message}. Đang thử lại...`);
-                if (onProgress) onProgress("Đang kết nối lại...");
-                continue; 
-            }
-            // Nếu quá 2 phút, ném lỗi ra ngoài
-            throw error;
         }
     }
-    throw new Error("Hết thời gian chờ xử lý (Timeout).");
+
+    throw lastError || new Error("Không thể tạo ảnh sau nhiều lần thử.");
 };
 
 export const upscaleFlowImage = async (
@@ -547,14 +601,14 @@ export const upscaleFlowImage = async (
     targetResolution: string = 'UPSAMPLE_IMAGE_RESOLUTION_2K',
     aspectRatio?: string // Add aspect ratio parameter
 ): Promise<{ imageUrl: string }> => {
-    const MAX_RETRIES = 3; // Try up to 3 times (1 initial + 2 retries)
+    const MAX_OPERATION_RETRIES = 3; 
     let lastError: any;
 
-    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    for (let attempt = 1; attempt <= MAX_OPERATION_RETRIES; attempt++) {
         try {
             if (attempt > 1) {
-                console.log(`[Upscale] Attempt ${attempt}/${MAX_RETRIES} starting...`);
-                await wait(2000); // Wait 2s before retry
+                console.log(`[Upscale] Attempt ${attempt}/${MAX_OPERATION_RETRIES} starting...`);
+                await wait(2000); 
             }
 
             const createRes = await fetchJson('/flow-upscale', {
@@ -569,6 +623,10 @@ export const upscaleFlowImage = async (
                 if (err.code === 503 || err.status === 'UNAVAILABLE') {
                     throw new Error("Service Unavailable (503)"); // Throw to trigger outer loop retry
                 }
+                // If 400/429 happens on CREATE, throw to trigger retry
+                if (err.code === 400 || err.code === 429) {
+                     throw new Error("RETRY_OPERATION_TRIGGER");
+                }
                 throw new Error(`Upscale creation failed: ${err.message}`);
             }
             // -------------------------------------------------------
@@ -577,8 +635,6 @@ export const upscaleFlowImage = async (
             if (!taskId) throw new Error("No Task ID returned for Upscale.");
 
             const MAX_POLLING_RETRIES = 60;
-            
-            // --- GRACE PERIOD CONFIGURATION FOR UPSCALE ---
             const startTime = Date.now();
             const GRACE_PERIOD = 120000; // 2 minutes
 
@@ -592,14 +648,25 @@ export const upscaleFlowImage = async (
                         body: JSON.stringify({ action: 'flow_check', taskId })
                     });
 
-                    // --- HANDLE 503 SERVICE UNAVAILABLE IN POLLING RESULT ---
-                    if (statusRes.result?.error) {
+                    // --- HANDLE ERRORS IN POLLING RESULT (JSON Based) ---
+                    if (statusRes.result && statusRes.result.error) {
                         const err = statusRes.result.error;
-                        if (err.code === 503 || err.status === 'UNAVAILABLE') {
+                        const code = err.code;
+                        const status = err.status;
+
+                        // 503 - Retry Polling
+                        if (code === 503 || status === 'UNAVAILABLE') {
                             console.warn(`[Upscale Check] 503 Service Unavailable. Retrying polling...`);
                             await wait(2000);
-                            continue; // Continue polling
+                            continue; 
                         }
+
+                        // 400/429 - RESTART OPERATION
+                        if ((code === 400 || code === 429 || status === 'RESOURCE_EXHAUSTED' || status === 'INVALID_ARGUMENT')) {
+                            console.warn(`[Upscale Check] Error ${code} in JSON. Restarting Operation...`);
+                            throw new Error("RETRY_OPERATION_TRIGGER");
+                        }
+
                         throw new Error(`Upscale processing error: ${err.message}`);
                     }
                     // --------------------------------------------------------
@@ -624,6 +691,9 @@ export const upscaleFlowImage = async (
                         return { imageUrl: finalUrl };
                     }
                 } catch (error: any) {
+                     if (error.message === "RETRY_OPERATION_TRIGGER") throw error;
+                     if (error.message && error.message.includes('Upscale processing error')) throw error;
+
                      // --- GRACE PERIOD CHECK ---
                      if (Date.now() - startTime < GRACE_PERIOD) {
                          console.warn(`[Upscale Grace Period] Lỗi tạm thời: ${error.message}. Đang thử lại...`);
@@ -635,13 +705,18 @@ export const upscaleFlowImage = async (
             throw new Error("Upscale Polling Timeout.");
 
         } catch (e: any) {
+            // Check trigger or error codes in message
+            const msg = (e.message || "").toLowerCase();
+            if (msg === "retry_operation_trigger" || msg.includes("429") || msg.includes("400") || msg.includes("service unavailable")) {
+                 if (attempt < MAX_OPERATION_RETRIES) {
+                     continue;
+                 }
+            }
             console.warn(`[Upscale] Attempt ${attempt} failed:`, e.message);
             lastError = e;
-            // Loop continues if attempt < MAX_RETRIES
         }
     }
 
-    // If all attempts fail
     throw lastError || new Error("Upscale thất bại sau nhiều lần thử.");
 };
 
@@ -650,7 +725,7 @@ async function _executeVideoGeneration(
     startImage?: FileData, 
     aspectRatio: '16:9' | '9:16' | 'default' = '16:9',
     endImage?: FileData
-): Promise<{ videoUrl: string, mediaId?: string }> {
+): Promise<{ videoUrl: string, mediaId?: string, accountId?: string }> {
     let effectiveRatio: '16:9' | '9:16' = '16:9'; 
     let startImageBase64 = null;
     let endImageBase64 = null;
@@ -709,7 +784,7 @@ async function _executeVideoGeneration(
              continue; // Just wait
         }
 
-        if (checkData.status === 'completed' && checkData.video_url) return { videoUrl: checkData.video_url, mediaId: checkData.mediaId };
+        if (checkData.status === 'completed' && checkData.video_url) return { videoUrl: checkData.video_url, mediaId: checkData.mediaId, accountId: account_id };
         if (checkData.status === 'failed') throw new Error(`GENERATION_FAILED: ${checkData.message}`);
     }
     throw new Error("TIMEOUT_ERROR");
@@ -752,7 +827,7 @@ export const generateVideoWithReferences = async (prompt: string, sceneImage: Fi
              continue; // Just wait
         }
 
-        if (checkData.status === 'completed' && checkData.video_url) return { videoUrl: checkData.video_url, mediaId: checkData.mediaId };
+        if (checkData.status === 'completed' && checkData.video_url) return { videoUrl: checkData.video_url, mediaId: checkData.mediaId, accountId: account_id };
         if (checkData.status === 'failed') throw new Error(`GENERATION_FAILED: ${checkData.message}`);
     }
     throw new Error("TIMEOUT_ERROR");

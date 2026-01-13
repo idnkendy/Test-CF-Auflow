@@ -16,6 +16,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 interface DiagramGeneratorProps {
     state: DiagramGeneratorState;
@@ -50,6 +51,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
     
     const getCostPerImage = () => {
         switch (resolution) {
@@ -202,16 +204,24 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
 
         } catch (err: any) {
             const rawMsg = err.message || "";
-            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // UI shows friendly message
-            onStateChange({ error: friendlyMsg });
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                onStateChange({ error: friendlyMsg });
+            }
             
             // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             
             const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) await refundCredits(user.id, cost, `Hoàn tiền: Lỗi diagram (${rawMsg})`, logId);
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi diagram (${rawMsg})`, logId);
+                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
+            }
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
@@ -227,6 +237,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Diagram Kiến Trúc</h2>

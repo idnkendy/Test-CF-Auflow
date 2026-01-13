@@ -18,6 +18,7 @@ import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import MultiImageUpload from './common/MultiImageUpload';
 import OptionSelector from './common/OptionSelector';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 interface FloorPlanProps {
     state: FloorPlanState;
@@ -94,6 +95,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
 
     // Set default prompt on mount or mode change
     useEffect(() => {
@@ -349,15 +351,24 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
 
         } catch (err: any) {
             const rawMsg = err.message || "";
-            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${rawMsg})`, logId);
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                onStateChange({ error: friendlyMsg });
             }
             
-            onStateChange({ error: friendlyMsg });
+            // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId && onDeductCredits) {
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống (${rawMsg})`, logId);
+                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
+            }
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
@@ -381,6 +392,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Mặt Bằng</h2>

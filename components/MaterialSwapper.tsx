@@ -16,6 +16,7 @@ import ResultGrid from './common/ResultGrid';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 interface MaterialSwapperProps {
     state: MaterialSwapperState;
@@ -31,6 +32,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -181,10 +183,14 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            if (logId) friendlyMsg += " (Credits đã hoàn lại)";
-            
-            // UI shows friendly message
-            onStateChange({ error: friendlyMsg });
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                if (logId) friendlyMsg += " (Credits đã hoàn lại)";
+                onStateChange({ error: friendlyMsg });
+            }
             
             // DB records specific raw message
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
@@ -208,6 +214,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
 
     return (
         <div>
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <h2 className="text-2xl font-bold mb-4">AI Thay Vật Liệu / Staging</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">

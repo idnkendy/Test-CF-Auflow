@@ -1,5 +1,5 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { VideoGeneratorState } from '../state/toolState';
 import { FileData, Tool } from '../types';
 import * as externalVideoService from '../services/externalVideoService';
@@ -10,6 +10,7 @@ import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import { supabase } from '../services/supabaseClient';
 import AspectRatioSelector from './common/AspectRatioSelector';
+import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 
 interface VideoGeneratorProps {
     state: VideoGeneratorState;
@@ -21,6 +22,7 @@ interface VideoGeneratorProps {
 
 const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { prompt, startImage, isLoading, error, generatedVideoUrl, aspectRatio } = state;
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ startImage: fileData, generatedVideoUrl: null });
@@ -89,11 +91,19 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
         } catch (err: any) {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+            }
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, 5, `Hoàn tiền: Lỗi tạo video (${rawMsg})`, logId);
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") {
+                     friendlyMsg += " (Credits đã được hoàn trả)";
+                }
             }
             
             onStateChange({ error: friendlyMsg });
@@ -105,6 +115,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             <div className="flex justify-between items-center">
                 <h2 className="text-2xl font-bold text-text-primary dark:text-white">Tạo Video AI</h2>
                 <a href="/video" className="text-sm text-[#7f13ec] hover:underline font-medium">Chuyển sang Studio Video đầy đủ &rarr;</a>
