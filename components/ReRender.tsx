@@ -235,7 +235,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">Re-Render (Làm mới ảnh)</h2>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">Re-Render (Làm chân thực thiết kế)</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
