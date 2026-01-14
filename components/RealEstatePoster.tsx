@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { RealEstatePosterState } from '../state/toolState';
@@ -124,10 +125,6 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 let lastError: any = null;
@@ -138,7 +135,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt, 
                             [sourceImage], 
-                            aspectEnum, 
+                            aspectRatio, // Pass actual ratio string directly
                             1, 
                             modelName, 
                             (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')

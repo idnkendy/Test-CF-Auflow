@@ -94,10 +94,8 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
+                // Standard -> GEM_PIX (Flash)
+                // 1K / 2K -> GEM_PIX_2 (Pro)
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 let completedCount = 0;
@@ -110,7 +108,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt,
                             [sourceImage], // Moodboard needs source
-                            aspectEnum,
+                            aspectRatio, // Pass raw ratio
                             1,
                             modelName,
                             (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
@@ -128,7 +126,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
                                         const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes, aspectRatio);
                                         if (upscaleResult && upscaleResult.imageUrl) {
                                             finalUrl = upscaleResult.imageUrl;
                                         }

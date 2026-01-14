@@ -187,10 +187,6 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-            if (effectiveAspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-            else if (effectiveAspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
@@ -222,7 +218,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     const result = await externalVideoService.generateFlowImage(
                         flowPrompt,
                         inputImages, 
-                        aspectEnum,
+                        effectiveAspectRatio, // Pass raw ratio
                         1,
                         modelName,
                         (msg) => setStatusMessage(msg)
@@ -234,7 +230,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         
                         if (shouldUpscale) {
                             const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                            const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes);
+                            const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, effectiveAspectRatio);
                             if (upscaleResult && upscaleResult.imageUrl) {
                                 finalUrl = upscaleResult.imageUrl;
                             }

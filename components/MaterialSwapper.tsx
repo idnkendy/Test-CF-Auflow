@@ -88,9 +88,6 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             const fullPrompt = `${prompt}. Maintain ${aspectRatio} ratio. Photorealistic quality.`;
-            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-            if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-            else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
 
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const inputImages = [sceneImage, materialImage];
@@ -100,7 +97,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                     const result = await externalVideoService.generateFlowImage(
                         fullPrompt,
                         inputImages,
-                        aspectEnum,
+                        aspectRatio, // Pass actual ratio string directly
                         1,
                         modelName,
                         (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')

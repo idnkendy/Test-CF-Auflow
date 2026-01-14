@@ -16,7 +16,7 @@ import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 interface SketchConverterProps {
     state: SketchConverterState;
@@ -114,17 +114,13 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
                 setStatusMessage('Đang xử lý. Vui lòng đợi...');
                 const result = await externalVideoService.generateFlowImage(
                     fullPrompt,
                     [sourceImage],
-                    aspectEnum,
+                    aspectRatio, // Pass raw ratio directly
                     1,
                     modelName,
                     (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
@@ -142,7 +138,8 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                             const mediaId = result.mediaIds[0];
                             if (mediaId) {
                                 const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                // Pass aspectRatio to upscale function for final crop if needed
+                                const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes, aspectRatio);
                                 if (upscaleRes?.imageUrl) resultUrl = upscaleRes.imageUrl;
                             }
                         } catch (e: any) {

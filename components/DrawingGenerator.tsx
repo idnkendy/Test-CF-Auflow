@@ -105,10 +105,6 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 let lastError: any = null;
@@ -119,7 +115,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt,
                             [sourceImage],
-                            aspectEnum,
+                            aspectRatio, // Pass actual ratio string directly
                             1,
                             modelName,
                             (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
@@ -137,7 +133,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
                                         const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes, aspectRatio);
                                         if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
                                     }
                                 } catch (e: any) {

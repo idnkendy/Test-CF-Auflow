@@ -602,10 +602,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             // --- FLOW LOGIC WITH BATCH PROCESSING ---
-            let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-            if (aspectRatio === '16:9' ) aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-            else if (aspectRatio === '9:16' ) aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
@@ -613,7 +609,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     const result = await externalVideoService.generateFlowImage(
                         fullPrompt,
                         [compositeImage], 
-                        aspectEnum,
+                        aspectRatio, // Pass actual ratio string directly
                         1,
                         modelName,
                         (msg) => setStatusMessage(msg)

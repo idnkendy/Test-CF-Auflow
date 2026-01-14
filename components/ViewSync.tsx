@@ -15,6 +15,7 @@ import ResultGrid from './common/ResultGrid';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import OptionSelector from './common/OptionSelector';
 import ResolutionSelector from './common/ResolutionSelector';
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 const perspectiveAngles = [
     { id: 'default', label: 'Mặc định', promptClause: "the same general perspective as the source image" },
@@ -74,6 +75,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -177,16 +179,11 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
-                let aspectEnum = 'IMAGE_ASPECT_RATIO_SQUARE';
-                if (aspectRatio === '16:9') aspectEnum = 'IMAGE_ASPECT_RATIO_LANDSCAPE';
-                else if (aspectRatio === '9:16') aspectEnum = 'IMAGE_ASPECT_RATIO_PORTRAIT';
-
+                // Use aspect ratio string directly (e.g. '3:4') instead of mapping to enum
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 const inputImages: FileData[] = [sourceImage];
                 if (directionImage) inputImages.push(directionImage);
-
-                let lastError: any = null;
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
@@ -194,7 +191,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                         const result = await externalVideoService.generateFlowImage(
                             finalPrompt,
                             inputImages,
-                            aspectEnum,
+                            aspectRatio, // Pass raw string
                             1,
                             modelName,
                             (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
@@ -211,7 +208,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
                                         const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes);
+                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes, aspectRatio);
                                         if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
                                     }
                                 } catch (e: any) {
@@ -231,14 +228,12 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                         }
                     } catch (e: any) {
                         console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
                     }
                 });
 
                 await Promise.all(promises);
                 if (collectedUrls.length === 0) {
-                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
-                    throw new Error(errorMsg);
+                    throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại sau.");
                 }
                 imageUrls = collectedUrls;
 
@@ -273,10 +268,15 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+            }
+
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi đồng bộ view (${rawMsg})`, logId);
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") friendlyMsg += " (Credits đã được hoàn trả)";
             }
             
             onStateChange({ error: friendlyMsg });
@@ -291,6 +291,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
     return (
         <div>
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             <h2 className="text-2xl font-bold mb-4">Đồng Bộ View</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-4">
