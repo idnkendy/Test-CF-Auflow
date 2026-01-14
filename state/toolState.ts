@@ -1,3 +1,4 @@
+
 import { FileData, AspectRatio, Tool, ImageResolution } from '../types';
 
 export interface LuBanRulerState {
@@ -61,6 +62,17 @@ export interface EditByNoteState {
     numberOfImages: number;
     resolution: ImageResolution;
     aspectRatio: AspectRatio; // Added
+}
+
+export interface ReRenderState {
+    prompt: string;
+    sourceImage: FileData | null;
+    isLoading: boolean;
+    error: string | null;
+    resultImages: string[];
+    numberOfImages: number;
+    resolution: ImageResolution;
+    aspectRatio: AspectRatio;
 }
 
 export interface PricingState {
@@ -682,6 +694,16 @@ export const initialToolStates = {
         resolution: 'Standard',
         aspectRatio: '16:9', // Added default
     } as EditByNoteState,
+    [Tool.ReRender]: {
+        prompt: 'Biến ảnh thành ảnh thực tế',
+        sourceImage: null,
+        isLoading: false,
+        error: null,
+        resultImages: [],
+        numberOfImages: 1,
+        resolution: 'Standard',
+        aspectRatio: '16:9',
+    } as ReRenderState,
     [Tool.Pricing]: {} as PricingState,
     [Tool.Profile]: { activeTab: 'profile' } as ProfileState,
     [Tool.History]: {},

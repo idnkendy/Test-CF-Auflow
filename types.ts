@@ -30,6 +30,7 @@ export enum Tool {
   DiagramGenerator = 'DiagramGenerator',
   RealEstatePoster = 'RealEstatePoster',
   EditByNote = 'EditByNote',
+  ReRender = 'ReRender',
 }
 
 export type AspectRatio = "1:1" | "9:16" | "16:9" | "4:3" | "3:4";

@@ -93,6 +93,13 @@ const PencilIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.5L15.232 5.232z" /></svg>
 );
 
+// Re-Render (Brush)
+const BrushIcon = (props: React.SVGProps<SVGSVGElement>) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
+        <path strokeLinecap="round" strokeLinejoin="round" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+    </svg>
+);
+
 // Feng Shui (Compass)
 const FengShuiIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
@@ -132,6 +139,14 @@ export const utilityToolsGroup = {
     label: 'Tính năng mở rộng',
     icon: <PlusCircleIcon />,
     tools: [
+        { 
+            tool: Tool.ReRender, 
+            label: 'Re-Render', 
+            icon: <BrushIcon />, 
+            desc: 'Làm mới hình ảnh với quy trình Sketch -> Realistic 2 bước.',
+            gradient: 'from-pink-500/20 to-red-500/20 hover:border-pink-500/50',
+            image: 'https://images.unsplash.com/photo-1579783902614-a3fb39279c23?q=80&w=600&auto=format&fit=crop'
+        },
         { 
             tool: Tool.FloorPlan, 
             label: 'Render Mặt Bằng', 
