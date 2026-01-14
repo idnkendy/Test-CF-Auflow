@@ -684,9 +684,20 @@ export default {
                 const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId, body.targetResolution);
                 return sendJson(result);
             } else if (action === 'flow_check') {
-                const accounts = await getAllAccounts(env);
-                const result = await checkFlowStatus(env, accounts, body.taskId);
-                return sendJson(result);
+                // OPTIMIZATION: Removed getAllAccounts to prevent DB throttling during polling.
+                // It is not used inside checkFlowStatus.
+                try {
+                    const result = await checkFlowStatus(env, [], body.taskId);
+                    return sendJson(result);
+                } catch (e) {
+                    // Return 200 with error status so frontend can retry/handle gracefully instead of 500
+                    return sendJson({ 
+                        success: false, 
+                        status: 'error', 
+                        code: 'UPSTREAM_ERROR',
+                        message: e.message || "Status check failed" 
+                    });
+                }
             } else if (action === 'upscale') {
                 const accounts = await getAllAccounts(env);
                 const result = await triggerUpscale(env, accounts, body.mediaId);

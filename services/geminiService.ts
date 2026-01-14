@@ -7,6 +7,8 @@ import { AspectRatio, FileData, ImageResolution } from "../types";
 
 // KHÓA BÍ MẬT (Phải khớp với v_secret trong SQL function)
 const XOR_SECRET = 'OPZEN_SUPER_SECRET_2025';
+// Proxy URL to bypass CORS for images
+const PROXY_BASE_URL = "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
 
 // Hàm xóa API Key khỏi chuỗi văn bản để bảo mật
 const scrubErrorText = (text: string): string => {
@@ -126,27 +128,41 @@ export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
         };
     }
 
+    let blob: Blob;
+
     try {
+        // Attempt 1: Direct Fetch
         const response = await fetch(url);
-        const blob = await response.blob();
-        return new Promise((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onloadend = () => {
-                const base64data = reader.result as string;
-                const arr = base64data.split(',');
-                resolve({
-                    base64: arr[1],
-                    mimeType: blob.type,
-                    objectURL: url
-                });
-            };
-            reader.onerror = reject;
-            reader.readAsDataURL(blob);
-        });
+        if (!response.ok) throw new Error("Direct fetch failed");
+        blob = await response.blob();
     } catch (e) {
-        console.error("getFileDataFromUrl failed:", e);
-        throw new Error("Không thể xử lý ảnh này. Vui lòng thử lại.");
+        // Attempt 2: Proxy Fetch
+        console.warn("Direct fetch failed, trying proxy...", e);
+        try {
+            const proxyUrl = `${PROXY_BASE_URL}/proxy-download?url=${encodeURIComponent(url)}`;
+            const proxyResponse = await fetch(proxyUrl);
+            if (!proxyResponse.ok) throw new Error("Proxy fetch failed");
+            blob = await proxyResponse.blob();
+        } catch (proxyError) {
+            console.error("getFileDataFromUrl failed:", proxyError);
+            throw new Error("Không thể xử lý ảnh này. Vui lòng thử lại.");
+        }
     }
+
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+            const base64data = reader.result as string;
+            const arr = base64data.split(',');
+            resolve({
+                base64: arr[1],
+                mimeType: blob.type,
+                objectURL: url
+            });
+        };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+    });
 };
 
 /**
