@@ -102,12 +102,18 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                 setTransactionData(null);
                 setInitError(null);
                 try {
+                    // Only send voucher code if we have successfully applied a discount locally.
+                    // This prevents discrepancies where user typed a code but didn't apply it (or applied invalid one),
+                    // but the service receives it and potentially fails or calculates differently.
+                    const codeToSend = appliedDiscount > 0 ? voucherCode.trim().toUpperCase() : undefined;
+
                     // Pass current user info AND EMAIL to save snapshot in transaction record
                     const result = await paymentService.createPendingTransaction(
                         user.id, 
                         plan, 
-                        finalPrice,
-                        { name: fullName, phone: phoneNumber, email: user.email || '' }
+                        finalPrice, // Frontend calculated price (for UI sync)
+                        { name: fullName, phone: phoneNumber, email: user.email || '' },
+                        codeToSend // IMPORTANT: Pass filtered voucher code
                     );
                     
                     setTransactionData({
@@ -116,15 +122,18 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                         amount: result.amount
                     });
                     setStep('ready');
-                } catch (error) {
+                } catch (error: any) {
                     console.error("Failed to create pending transaction", error);
-                    setInitError("Không thể khởi tạo giao dịch. Vui lòng thử lại sau.");
-                    // Keep step as creating_tx so retry might be possible or show error
+                    setInitError(error.message || "Không thể khởi tạo giao dịch. Vui lòng thử lại sau.");
+                    // If error is price mismatch (security check), we might want to reload page or clear voucher
+                    if (error.message.includes("Giá dịch vụ không đồng bộ")) {
+                        setTimeout(() => window.location.reload(), 2000);
+                    }
                 }
             };
             createTx();
         }
-    }, [step, plan, finalPrice, user.id, fullName, phoneNumber, user.email]);
+    }, [step, plan, finalPrice, user.id, fullName, phoneNumber, user.email, voucherCode, appliedDiscount]);
 
     // 3. Listen for Payment Success
     useEffect(() => {
@@ -295,9 +304,13 @@ const PaymentPage: React.FC<PaymentPageProps> = ({ plan, user, onBack, onSuccess
                             {step === 'checking_profile' || step === 'creating_tx' ? (
                                 <div className="flex-grow flex flex-col items-center justify-center text-gray-400">
                                     <Spinner />
-                                    <p className="mt-4 text-sm animate-pulse">
-                                        {step === 'checking_profile' ? 'Đang kiểm tra thông tin...' : 'Đang tạo giao dịch...'}
-                                    </p>
+                                    {initError ? (
+                                        <p className="mt-4 text-sm text-red-500 text-center px-4">{initError}</p>
+                                    ) : (
+                                        <p className="mt-4 text-sm animate-pulse">
+                                            {step === 'checking_profile' ? 'Đang kiểm tra thông tin...' : 'Đang tạo giao dịch...'}
+                                        </p>
+                                    )}
                                 </div>
                             ) : step === 'input_info' ? (
                                 // --- INFO UPDATE FORM ---

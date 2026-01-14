@@ -1,6 +1,7 @@
 
 import { supabase } from './supabaseClient';
 import { PricingPlan, UserStatus, Transaction } from '../types';
+import { plans } from '../constants/plans'; // Source of Truth for pricing
 
 export const getUserStatus = async (userId: string, email?: string): Promise<UserStatus> => {
     try {
@@ -70,9 +71,6 @@ export const updateUserProfile = async (userId: string, fullName: string, phone:
     }
 };
 
-/**
- * TRỪ TIỀN (Deduct)
- */
 export const deductCredits = async (userId: string, amount: number, description: string): Promise<string> => {
     const { data: logId, error } = await supabase.rpc('deduct_credits', {
         p_user_id: userId,
@@ -88,9 +86,6 @@ export const deductCredits = async (userId: string, amount: number, description:
     return logId;
 };
 
-/**
- * HOÀN TIỀN (Refund)
- */
 export const refundCredits = async (userId: string, amount: number, description: string, originalLogId?: string): Promise<void> => {
     if (amount <= 0) return;
 
@@ -128,26 +123,109 @@ export const redeemGiftCode = async (userId: string, code: string): Promise<numb
     return data;
 };
 
-export const createPendingTransaction = async (userId: string, plan: PricingPlan, amount: number, customerInfo?: { name: string, phone: string, email: string }) => {
-    const intAmount = Math.round(amount);
-    const { data: existingTx } = await supabase.from('transactions').select('id, transaction_code, amount, created_at').eq('user_id', userId).eq('plan_id', plan.id).eq('status', 'pending').order('created_at', { ascending: false }).limit(1).maybeSingle();
+export const checkVoucher = async (code: string): Promise<number> => {
+    try {
+        const { data, error } = await supabase.from('vouchers').select('discount_percent, is_active').eq('code', code).single();
+        if (error) throw new Error(error.message);
+        if (!data.is_active) throw new Error("Mã giảm giá đã hết hạn.");
+        return data.discount_percent;
+    } catch (e: any) {
+        throw new Error("Mã giảm giá không hợp lệ.");
+    }
+};
+
+// --- SECURE TRANSACTION CREATION ---
+export const createPendingTransaction = async (
+    userId: string, 
+    plan: PricingPlan, 
+    clientAmount: number, 
+    customerInfo?: { name: string, phone: string, email: string },
+    voucherCode?: string
+) => {
+    // 1. VALIDATION: Get Official Price from Source of Truth (Prevent Client Tampering)
+    const officialPlan = plans.find(p => p.id === plan.id);
+    if (!officialPlan) {
+        throw new Error("Gói dịch vụ không hợp lệ (ID không tồn tại).");
+    }
+
+    let calculatedPrice = officialPlan.price;
+
+    // 2. VALIDATION: Re-verify Voucher on Server Side
+    if (voucherCode && voucherCode.trim() !== '') {
+        try {
+            // Ensure uppercase for DB check consistency
+            const normalizedCode = voucherCode.trim().toUpperCase();
+            const discountPercent = await checkVoucher(normalizedCode);
+            // Apply discount
+            calculatedPrice = Math.round(calculatedPrice * (1 - discountPercent / 100));
+        } catch (e) {
+            console.warn("Invalid voucher sent during transaction creation, ignoring discount.");
+            // Fallback to original price if voucher check fails to prevent 0-price exploits
+            calculatedPrice = officialPlan.price; 
+        }
+    }
+
+    // 3. SECURITY CHECK: Compare Client Price vs Calculated Price
+    // Allow small margin (<= 1000 VND) for potential rounding differences
+    if (Math.abs(calculatedPrice - clientAmount) > 1000) {
+        console.error(`Price Mismatch: Server calculated ${calculatedPrice} vs Client sent ${clientAmount}. Voucher Used: ${voucherCode}`);
+        throw new Error("Giá dịch vụ không đồng bộ. Vui lòng tải lại trang để cập nhật giá mới nhất.");
+    }
+
+    // 4. SAFETY NET: Prevent 0 or Negative Amounts
+    if (calculatedPrice <= 1000) {
+        throw new Error("Lỗi hệ thống: Số tiền thanh toán không hợp lệ (Quá thấp). Vui lòng liên hệ hỗ trợ.");
+    }
+
+    // 5. Use the SECURE calculated price for DB insertion
+    const finalSafeAmount = calculatedPrice;
+
+    // Check for existing pending transaction to reuse
+    const { data: existingTx } = await supabase.from('transactions')
+        .select('id, transaction_code, amount, created_at')
+        .eq('user_id', userId)
+        .eq('plan_id', plan.id)
+        .eq('status', 'pending')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
     if (existingTx) {
         const isCorrectPrefix = existingTx.transaction_code.startsWith('OPZ');
-        if (Math.round(existingTx.amount) === intAmount && isCorrectPrefix) {
+        // Reuse ONLY if the amount matches our secure calculation
+        if (Math.round(existingTx.amount) === finalSafeAmount && isCorrectPrefix) {
             if (customerInfo) {
-                await supabase.from('transactions').update({ customer_name: customerInfo.name, customer_phone: customerInfo.phone, customer_email: customerInfo.email }).eq('id', existingTx.id);
+                await supabase.from('transactions').update({ 
+                    customer_name: customerInfo.name, 
+                    customer_phone: customerInfo.phone, 
+                    customer_email: customerInfo.email 
+                }).eq('id', existingTx.id);
             }
             return { transactionId: existingTx.id, transactionCode: existingTx.transaction_code, amount: existingTx.amount };
         }
+        // If amount mismatch (user changed voucher or plan?), cancel old one
         await supabase.from('transactions').update({ status: 'cancelled' }).eq('id', existingTx.id);
     }
 
+    // Clean up other pending transactions
     await supabase.from('transactions').update({ status: 'cancelled' }).eq('user_id', userId).eq('status', 'pending');
+    
     const transactionCode = `OPZ${Math.floor(100000 + Math.random() * 900000)}`;
+    
     const { data, error } = await supabase.from('transactions').insert({
-        user_id: userId, plan_id: plan.id, plan_name: plan.name, amount: intAmount, currency: plan.currency, type: plan.type, credits_added: plan.credits || 0,
-        status: 'pending', payment_method: 'bank_transfer', transaction_code: transactionCode, customer_name: customerInfo?.name, customer_phone: customerInfo?.phone, customer_email: customerInfo?.email
+        user_id: userId, 
+        plan_id: plan.id, 
+        plan_name: plan.name, 
+        amount: finalSafeAmount, // ALWAYS USE SECURE AMOUNT
+        currency: plan.currency, 
+        type: plan.type, 
+        credits_added: plan.credits || 0,
+        status: 'pending', 
+        payment_method: 'bank_transfer', 
+        transaction_code: transactionCode, 
+        customer_name: customerInfo?.name, 
+        customer_phone: customerInfo?.phone, 
+        customer_email: customerInfo?.email
     }).select('id, transaction_code, amount').single();
 
     if (error) throw new Error(error.message);
@@ -159,17 +237,4 @@ export const subscribeToTransaction = (transactionId: string, onPaid: () => void
         if (payload.new.status === 'completed') onPaid();
     }).subscribe();
     return () => { supabase.removeChannel(channel); };
-};
-
-export const checkVoucher = async (code: string): Promise<number> => {
-    try {
-        const { data, error } = await supabase.from('vouchers').select('discount_percent, is_active').eq('code', code).single();
-        if (error) throw new Error(error.message);
-        if (!data.is_active) throw new Error("Mã giảm giá đã hết hạn.");
-        return data.discount_percent;
-    } catch (e: any) {
-        const hardcoded: Record<string, number> = { 'OPZEN20': 20, 'FREE100': 100 };
-        if (hardcoded[code.toUpperCase()]) return hardcoded[code.toUpperCase()];
-        throw e;
-    }
 };
