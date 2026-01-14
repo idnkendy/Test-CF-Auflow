@@ -145,7 +145,7 @@ export const utilityToolsGroup = {
             icon: <BrushIcon />, 
             desc: 'Làm mới hình ảnh với quy trình Sketch -> Realistic 2 bước.',
             gradient: 'from-pink-500/20 to-red-500/20 hover:border-pink-500/50',
-            image: 'https://images.unsplash.com/photo-1579783902614-a3fb39279c23?q=80&w=600&auto=format&fit=crop'
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/RERENDER%20THUMB.jpeg'
         },
         { 
             tool: Tool.FloorPlan, 
