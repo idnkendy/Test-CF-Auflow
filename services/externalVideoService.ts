@@ -578,13 +578,14 @@ export const generateFlowImage = async (
                 }
             } else {
                 lastError = opError;
-                // If it's not a retry trigger, we usually stop, unless we want to retry on ALL errors?
-                // The requirement specified retry on 400/429 JSON errors. 
-                // For other errors (like network fail on create), we could arguably retry too, 
-                // but let's stick to the prompt's focus.
-                // However, the `fetchJson` might throw 429/400 as standard Error if status code matches.
-                // Let's check error message for "400" or "429" to be safe and retry those too.
+                
                 const msg = (opError.message || "").toLowerCase();
+
+                // IMMEDIATE FAIL CHECK FOR SAFETY VIOLATION (Upload Failed 400)
+                if (msg.includes("upload failed") && msg.includes("400")) {
+                    throw opError; // Stop retrying immediately
+                }
+
                 if (msg.includes("429") || msg.includes("400") || msg.includes("exhausted")) {
                      if (attempt < MAX_OPERATION_RETRIES) continue;
                 }

@@ -1,4 +1,3 @@
-
 import React, { useState, useRef, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -197,7 +196,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Use Flow for all resolutions (Standard, 1K, 2K, 4K).
+        // Use Flow for all resolutions
         const useFlow = true;
 
         try {
@@ -259,11 +258,12 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
             if (useFlow) {
                 // --- FLOW LOGIC ---
-                // Use aspect ratio string directly (e.g. '3:4') instead of mapping to enum
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 const collectedUrls: string[] = [];
                 const inputImages: FileData[] = [sourceImage];
                 if (directionImage) inputImages.push(directionImage);
+
+                let lastError: any = null;
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
@@ -305,20 +305,39 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                                 sourceImageURL: sourceImage.objectURL, 
                                 resultImageURL: finalUrl 
                             });
+                            
+                            return finalUrl;
                         }
+                        return null;
                     } catch (e: any) {
                         console.error(`Image ${index+1} failed`, e);
+                        lastError = e;
+                        return null;
                     }
                 });
 
-                await Promise.all(promises);
-                if (collectedUrls.length === 0) {
-                    throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại sau.");
+                const results = await Promise.all(promises);
+                imageUrls = results.filter((url): url is string => url !== null);
+                
+                const failedCount = numberOfImages - imageUrls.length;
+
+                if (imageUrls.length > 0) {
+                    // Success (at least partial)
+                    if (failedCount > 0 && logId && user) {
+                        const refundAmount = failedCount * unitCost;
+                        await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                        onStateChange({ 
+                            error: `Đã tạo thành công ${imageUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                        });
+                    }
+                } else {
+                    // Total failure
+                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
+                    throw new Error(errorMsg);
                 }
-                imageUrls = collectedUrls;
 
             } else {
-                // Fallback (Code removed for brevity as Flow covers all)
+                // Fallback logic if any
             }
 
             if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
@@ -334,6 +353,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
+                // Refund full amount on total failure caught here
                 await refundCredits(user.id, totalCost, `Hoàn tiền: Lỗi đồng bộ view (${rawMsg})`, logId);
                 if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") friendlyMsg += " (Credits đã được hoàn trả)";
             }
@@ -391,6 +411,8 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const inputImages = [sourceImage];
             if (characterImage) inputImages.push(characterImage);
+
+            let lastError: any = null;
 
             // Execute in parallel
             const promises = slots.map(async (slot) => {
@@ -479,9 +501,13 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                             sourceImageURL: sourceImage.objectURL, 
                             resultImageURL: finalUrl 
                         });
+                        return true; // Success
                     }
+                    return false; // Failed
                 } catch (err) {
                     console.error(`Error generating view ${slot.name}:`, err);
+                    lastError = err;
+                    return false; // Failed
                 } finally {
                     setGeneratingViews(prev => {
                         const next = new Set(prev);
@@ -491,8 +517,25 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                 }
             });
 
-            await Promise.all(promises);
-            if (jobId) await jobService.updateJobStatus(jobId, 'completed');
+            const results = await Promise.all(promises);
+            const successfulCount = results.filter(r => r).length;
+            const failedCount = slots.length - successfulCount;
+
+            if (successfulCount > 0) {
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed');
+                
+                // Partial refund for Creative Batch
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} view lỗi (Creative Batch)`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${successfulCount}/${slots.length} view. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} view bị lỗi.` 
+                    });
+                }
+            } else {
+                const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào sau nhiều lần thử.";
+                throw new Error(errorMsg);
+            }
 
         } catch (err: any) {
             const rawMsg = err.message || "";
