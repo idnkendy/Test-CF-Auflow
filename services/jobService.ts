@@ -215,3 +215,41 @@ export const getQueuePosition = async (jobId: string): Promise<number> => {
         return (count || 0) + 1;
     } catch (e) { return 0; }
 };
+
+/**
+ * Tự động tìm các job bị treo quá 15 phút và hoàn tiền
+ */
+export const cleanupStuckJobs = async (userId: string) => {
+    try {
+        // Tìm các job đang processing nhưng tạo cách đây hơn 15 phút
+        const timeoutThreshold = new Date(Date.now() - 15 * 60 * 1000).toISOString(); 
+        
+        const { data: stuckJobs, error } = await supabase
+            .from('generation_jobs')
+            .select('*')
+            .eq('user_id', userId)
+            .eq('status', 'processing')
+            .lt('created_at', timeoutThreshold);
+
+        if (error) {
+            console.error("[JobService] Error fetching stuck jobs:", error);
+            return;
+        }
+
+        if (stuckJobs && stuckJobs.length > 0) {
+            console.log(`[JobService] Found ${stuckJobs.length} stuck jobs. Attempting refund...`);
+            
+            for (const job of stuckJobs) {
+                // 1. Hoàn tiền nếu có usage_log_id
+                if (job.usage_log_id && job.cost > 0) {
+                    await refundCredits(userId, job.cost, 'Hoàn tiền tự động: Quá thời gian xử lý (Timeout)', job.usage_log_id);
+                }
+                
+                // 2. Cập nhật trạng thái job thành failed
+                await updateJobStatus(job.id, 'failed', undefined, 'System Timeout: Auto-refunded due to inactivity');
+            }
+        }
+    } catch (e) {
+        console.error("[JobService] Critical error in cleanupStuckJobs:", e);
+    }
+};

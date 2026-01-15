@@ -41,6 +41,7 @@ import TermsOfServicePage from './components/TermsOfServicePage';
 import VideoPage from './components/VideoPage';
 import MaintenancePage from './components/MaintenancePage'; // Import Maintenance Page
 import { getUserStatus, deductCredits } from './services/paymentService';
+import { cleanupStuckJobs } from './services/jobService'; // Import cleanup function
 import { plans } from './constants/plans';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import InsufficientCreditsModal from './components/common/InsufficientCreditsModal';
@@ -151,6 +152,10 @@ const App: React.FC = () => {
           else if (view === 'auth') { if (window.location.pathname === '/video') setView('video'); else { setView('app'); safeHistoryReplace('/feature'); } }
           else if (window.location.pathname === '/feature') setView('app');
           else if (window.location.pathname === '/video') setView('video');
+          
+          // --- AUTO CLEANUP STUCK JOBS ON LOGIN/LOAD ---
+          cleanupStuckJobs(newSession.user.id).catch(console.error);
+          
       } else { if (view === 'app' || view === 'payment' || view === 'video') { setView('homepage'); safeHistoryPush('/'); } }
       setLoadingSession(false);
     });
@@ -161,6 +166,9 @@ const App: React.FC = () => {
             if (mounted) {
                 if (initialSession) {
                     setSession(initialSession);
+                    // --- AUTO CLEANUP STUCK JOBS ON INIT ---
+                    cleanupStuckJobs(initialSession.user.id).catch(console.error);
+
                     if (window.location.pathname === '/pricing') setView('pricing');
                     else if (window.location.pathname === '/feature') setView('app');
                     else if (window.location.pathname === '/video') setView('video');

@@ -1,5 +1,6 @@
 
 import React, { useState } from 'react';
+import { createPortal } from 'react-dom';
 import * as externalVideoService from '../../services/externalVideoService';
 
 interface ImagePreviewModalProps {
@@ -36,9 +37,10 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({ imageUrl, onClose
     }
   };
 
-  return (
+  // Sử dụng Portal để render modal trực tiếp vào body, tránh bị ảnh hưởng bởi overflow của các thẻ cha
+  return createPortal(
     <div
-      className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 animate-fade-in"
+      className="fixed inset-0 bg-black/90 flex items-center justify-center z-[9999] p-4 animate-fade-in backdrop-blur-sm"
       onClick={handleBackdropClick}
     >
         <style>{`
@@ -48,16 +50,16 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({ imageUrl, onClose
             }
             .animate-fade-in { animation: fade-in 0.2s ease-out forwards; }
         `}</style>
-      <div className="relative max-w-screen-lg max-h-[90vh] w-full h-full flex items-center justify-center">
+      <div className="relative max-w-screen-xl max-h-[95vh] w-full h-full flex items-center justify-center pointer-events-none">
         <img
           src={imageUrl}
           alt="Preview"
-          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+          className="max-w-full max-h-full object-contain rounded-lg shadow-2xl pointer-events-auto"
         />
-        <div className="absolute top-0 right-0 p-2 flex gap-2">
+        <div className="absolute top-4 right-4 flex gap-3 pointer-events-auto">
             <button
                 onClick={handleDownload}
-                className="p-2 bg-black/50 rounded-full text-white hover:bg-blue-600 transition-colors"
+                className="p-3 bg-black/50 hover:bg-blue-600 rounded-full text-white transition-all transform hover:scale-110 backdrop-blur-md border border-white/10"
                 title="Tải xuống ảnh"
                 disabled={isDownloading}
             >
@@ -69,14 +71,15 @@ const ImagePreviewModal: React.FC<ImagePreviewModalProps> = ({ imageUrl, onClose
             </button>
             <button
                 onClick={onClose}
-                className="p-2 bg-black/50 rounded-full text-white hover:bg-red-600 transition-colors"
+                className="p-3 bg-black/50 hover:bg-red-600 rounded-full text-white transition-all transform hover:scale-110 backdrop-blur-md border border-white/10"
                 title="Đóng"
             >
                 <CloseIcon />
             </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 };
 

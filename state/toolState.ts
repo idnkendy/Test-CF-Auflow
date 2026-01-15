@@ -189,6 +189,7 @@ export interface RenovationState {
 export interface ViewSyncState {
     sourceImage: FileData | null;
     directionImage: FileData | null;
+    characterImage: FileData | null; // New for Creative View
     isLoading: boolean;
     error: string | null;
     resultImages: string[];
@@ -201,6 +202,11 @@ export interface ViewSyncState {
     selectedFraming: string;
     selectedInteriorAngle: string;
     resolution: ImageResolution;
+    // New Creative View State
+    activeTab: 'sync' | 'creative';
+    creativeOption: 'interior' | 'architecture' | 'interior-from-arch';
+    creativeResults: Record<string, string>; // Map View Name -> URL
+    generatingViewId: string | null;
 }
 
 export interface VirtualTourState {
@@ -477,6 +483,7 @@ export const initialToolStates = {
     [Tool.ViewSync]: {
         sourceImage: null,
         directionImage: null,
+        characterImage: null,
         isLoading: false,
         error: null,
         resultImages: [],
@@ -489,6 +496,10 @@ export const initialToolStates = {
         selectedFraming: 'none',
         selectedInteriorAngle: 'default',
         resolution: 'Standard',
+        activeTab: 'sync',
+        creativeOption: 'interior',
+        creativeResults: {},
+        generatingViewId: null
     } as ViewSyncState,
     [Tool.VirtualTour]: {
         sourceImage: null,
