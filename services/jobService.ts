@@ -190,6 +190,12 @@ export const updateJobStatus = async (jobId: string, status: 'pending' | 'proces
     try {
         const updates: any = { status, updated_at: new Date().toISOString() };
         
+        if (status === 'completed') {
+            // Explicitly clear error message if successful to avoid confusing "Completed + Error" state
+            // This handles cases where a job was previously marked failed/refunded by cleanup race condition but then completed successfully
+            updates.error_message = null;
+        }
+
         if (resultUrl) {
             const { data: jobData } = await supabase.from('generation_jobs').select('user_id').eq('id', jobId).single();
             if (jobData?.user_id) {
@@ -221,19 +227,19 @@ export const getQueuePosition = async (jobId: string): Promise<number> => {
 };
 
 /**
- * Tự động tìm các job bị treo quá 15 phút và hoàn tiền
+ * Tự động tìm các job bị treo quá 15 phút (hoặc 60 phút cho video) và hoàn tiền
  */
 export const cleanupStuckJobs = async (userId: string) => {
     try {
-        // Tìm các job đang processing nhưng tạo cách đây hơn 15 phút
-        const timeoutThreshold = new Date(Date.now() - 15 * 60 * 1000).toISOString(); 
+        // Tìm các job đang processing nhưng tạo cách đây hơn 15 phút (Base threshold)
+        const baseThreshold = new Date(Date.now() - 15 * 60 * 1000).toISOString(); 
         
         const { data: stuckJobs, error } = await supabase
             .from('generation_jobs')
             .select('*')
             .eq('user_id', userId)
             .eq('status', 'processing')
-            .lt('created_at', timeoutThreshold);
+            .lt('created_at', baseThreshold);
 
         if (error) {
             console.error("[JobService] Error fetching stuck jobs:", error);
@@ -241,9 +247,23 @@ export const cleanupStuckJobs = async (userId: string) => {
         }
 
         if (stuckJobs && stuckJobs.length > 0) {
-            console.log(`[JobService] Found ${stuckJobs.length} stuck jobs. Attempting refund...`);
+            console.log(`[JobService] Found ${stuckJobs.length} potentially stuck jobs...`);
+            const now = Date.now();
             
             for (const job of stuckJobs) {
+                // Special handling for Video Generation which takes longer
+                // Assuming tool_id for video is 'VideoGeneration'
+                const isVideo = job.tool_id === 'VideoGeneration';
+                const jobTime = new Date(job.created_at).getTime();
+                const minutesElapsed = (now - jobTime) / (1000 * 60);
+
+                // If Video, allow up to 60 minutes before killing
+                if (isVideo && minutesElapsed < 60) {
+                    continue; 
+                }
+
+                console.log(`[JobService] Refunding stuck job ${job.id} (Elapsed: ${Math.round(minutesElapsed)}m)`);
+
                 // 1. Hoàn tiền nếu có usage_log_id
                 if (job.usage_log_id && job.cost > 0) {
                     await refundCredits(userId, job.cost, 'Hoàn tiền tự động: Quá thời gian xử lý (Timeout)', job.usage_log_id);
