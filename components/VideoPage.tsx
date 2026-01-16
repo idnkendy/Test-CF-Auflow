@@ -111,6 +111,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [singleEndImage, setSingleEndImage] = useState<FileData | null>(null);
     const [singlePrompt, setSinglePrompt] = useState('');
     const [isSingleGenerating, setIsSingleGenerating] = useState(false);
+    const [singleResultUrl, setSingleResultUrl] = useState<string | null>(null); // NEW: Separate result state
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
 
@@ -327,6 +328,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setSingleSourceImage(null);
         setSingleEndImage(null);
         setIsSingleGenerating(false);
+        // Note: We intentionally don't clear generatedVideoUrl here to allow persisting Arch Film state, 
+        // but we separate Single Video Result state to avoid crossover.
     };
 
     const handleAspectRatioChange = async (newRatio: '16:9' | '9:16' | 'default') => {
@@ -543,7 +546,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
     // New Force Download Handler for Single Video
     const handleForceDownload = async (url?: string) => {
-        const targetUrl = url || videoState.generatedVideoUrl;
+        const targetUrl = url || (activeItem === 'img-to-video' ? singleResultUrl : videoState.generatedVideoUrl);
         if (!targetUrl) return;
 
         setIsDownloading(true);
@@ -819,7 +822,10 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             return;
         }
         setIsSingleGenerating(true);
+        // Clear both main and single result URLs at start to avoid stale state
         setVideoState(prev => ({ ...prev, error: null, generatedVideoUrl: null, loadingMessage: loadingMessages[0] }));
+        setSingleResultUrl(null);
+        
         let jobId: string | null = null;
         let logId: string | null = null;
         try {
@@ -864,7 +870,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 endImageToUse || undefined 
             );
             
-            setVideoState(prev => ({ ...prev, generatedVideoUrl: result.videoUrl }));
+            // Use local state for single result
+            setSingleResultUrl(result.videoUrl);
+            
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', result.videoUrl);
             await historyService.addToHistory({ tool: Tool.VideoGeneration, prompt: singlePrompt, sourceImageURL: startImageToUse?.objectURL, resultVideoURL: result.videoUrl });
         } catch (err: any) {
@@ -895,6 +903,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
     const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
     // Explicitly fallback to null to ensure strict typing
+    // UPDATED: Now activeMainVideoUrl ONLY looks at timeline items or the general generatedVideoUrl (used by Arch Film context items on click)
+    // It DOES NOT look at singleResultUrl
     const activeMainVideoUrl = ((timelineItems.length > 0 || isPlayingAll) 
         ? timelineItems[currentPlayingIndex]?.videoUrl 
         : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl)) || null;
@@ -1007,10 +1017,10 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 </div>
                                 <div className="lg:col-span-8 h-full flex flex-col">
                                     <SingleVideoResult
-                                        videoUrl={videoState.generatedVideoUrl}
+                                        videoUrl={singleResultUrl} // Use local state here
                                         isLoading={isSingleGenerating}
                                         loadingMessage={videoState.loadingMessage}
-                                        onDownload={() => handleForceDownload()}
+                                        onDownload={() => handleForceDownload(singleResultUrl || undefined)}
                                         isDownloading={isDownloading}
                                     />
                                 </div>
