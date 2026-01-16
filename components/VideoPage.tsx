@@ -19,7 +19,7 @@ import SingleVideoInput from './video/SingleVideoInput';
 import SingleVideoResult from './video/SingleVideoResult';
 import TimelineEditor from './video/TimelineEditor';
 import MaintenanceView from './video/MaintenanceView';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 const DUMMY_FILE: FileData = {
     base64: '',
@@ -112,7 +112,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [singlePrompt, setSinglePrompt] = useState('');
     const [isSingleGenerating, setIsSingleGenerating] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     // Timeline & Player States
     const [currentPlayingIndex, setCurrentPlayingIndex] = useState<number>(0);
@@ -456,7 +456,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             if (item.useCharacter && videoState.characterImage) {
                 result = await externalVideoService.generateVideoWithReferences(item.prompt, item.file, videoState.characterImage, videoState.aspectRatio);
             } else {
-                result = await externalVideoService.generateVideoExternal(item.prompt, "", item.file, videoState.aspectRatio);
+                result = await externalVideoService.generateVideoExternal(item.prompt, item.file, videoState.aspectRatio);
             }
             setVideoState(prev => ({
                 ...prev,
@@ -859,7 +859,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             // Note: externalVideoService needs update to accept endImage
             const result = await externalVideoService.generateVideoExternal(
                 singlePrompt, 
-                "", 
                 startImageToUse || undefined, 
                 videoState.aspectRatio,
                 endImageToUse || undefined 

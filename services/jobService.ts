@@ -21,13 +21,17 @@ export const mapFriendlyErrorMessage = (errorMsg: string): string => {
         return "Bạn không đủ credits để thực hiện tác vụ này.";
     }
     
-    // Safety / Upload Failed specific mapping
+    // Safety / Upload Failed / Validation specific mapping
+    // UPDATED: Aggressively catch 400/Invalid errors as they are almost always safety rejections during upload
     if (
         msg.includes("SAFETY_ERROR") || 
         msg.includes("SAFETY") || 
         msg.includes("BLOCK") || 
         msg.includes("PROHIBITED") ||
-        (msg.includes("UPLOAD FAILED") && (msg.includes("400") || msg.includes("INVALID_ARGUMENT")))
+        msg.includes("UPLOAD FAILED") || 
+        msg.includes("INVALID_ARGUMENT") ||
+        msg.includes("400") || // Catch generic 400 Bad Request
+        msg.includes("IMAGE_ASPECT_RATIO") // Specific validation errors
     ) {
         return "SAFETY_POLICY_VIOLATION"; // Return a specific code for UI to catch
     }

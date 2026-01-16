@@ -189,6 +189,9 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             
+            // ERROR TRACKING VARIABLE
+            let lastError: any = null;
+
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                 try {
                     let flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described. Ensure aspect ratio is ${effectiveAspectRatio}.`;
@@ -240,6 +243,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     return null;
                 } catch (e) {
                     console.error(`Image ${index+1} failed`, e);
+                    lastError = e; // Capture specifically
                     return null;
                 }
             });
@@ -268,6 +272,8 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     });
                 }
             } else {
+                // If no images generated, throw the specific last error if available
+                if (lastError) throw lastError;
                 throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 

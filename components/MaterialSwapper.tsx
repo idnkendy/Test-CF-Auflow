@@ -91,6 +91,8 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
 
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const inputImages = [sceneImage, materialImage];
+            
+            let lastError: any = null;
 
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                 try {
@@ -119,6 +121,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                     return null;
                 } catch (e) {
                     console.error(`Image ${index+1} failed`, e);
+                    lastError = e;
                     return null;
                 }
             });
@@ -142,6 +145,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                     });
                 }
             } else {
+                if (lastError) throw lastError;
                 throw new Error("Không thể tạo ảnh nào.");
             }
 

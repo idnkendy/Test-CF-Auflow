@@ -17,7 +17,7 @@ import ResultGrid from './common/ResultGrid';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 interface StagingProps {
     state: StagingState;
@@ -33,7 +33,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     // Calculate cost based on resolution
     const getCostPerImage = () => {

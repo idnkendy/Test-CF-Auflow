@@ -213,6 +213,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            let lastError: any = null;
             
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                 try {
@@ -245,6 +246,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                     return null;
                 } catch (e) {
                     console.error(`Image ${index+1} failed`, e);
+                    lastError = e;
                     return null;
                 }
             });
@@ -273,6 +275,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                     });
                 }
             } else {
+                if (lastError) throw lastError;
                 throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 

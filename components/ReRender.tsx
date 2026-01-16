@@ -165,7 +165,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
 
                 } catch (e: any) {
                     console.error(`Image ${index+1} failed`, e);
-                    return null;
+                    throw e; // Re-throw to catch block
                 }
             });
 
@@ -203,6 +203,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
+            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });

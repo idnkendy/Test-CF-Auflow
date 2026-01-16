@@ -10,7 +10,7 @@ import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import { supabase } from '../services/supabaseClient';
 import AspectRatioSelector from './common/AspectRatioSelector';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 interface VideoGeneratorProps {
     state: VideoGeneratorState;
@@ -22,7 +22,7 @@ interface VideoGeneratorProps {
 
 const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { prompt, startImage, isLoading, error, generatedVideoUrl, aspectRatio } = state;
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ startImage: fileData, generatedVideoUrl: null });
@@ -72,7 +72,6 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
             const result = await externalVideoService.generateVideoExternal(
                 prompt, 
-                "", 
                 startImage || undefined, 
                 aspectRatio
             );

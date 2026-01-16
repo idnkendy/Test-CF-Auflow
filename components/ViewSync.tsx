@@ -1,3 +1,4 @@
+
 import React, { useState, useRef, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
@@ -332,8 +333,8 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                     }
                 } else {
                     // Total failure
-                    const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
-                    throw new Error(errorMsg);
+                    if (lastError) throw lastError;
+                    throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại sau.");
                 }
 
             } else {
@@ -363,6 +364,169 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
+        }
+    };
+
+    // --- HELPER: Construct Prompt for Single/Batch Creative ---
+    const getPromptForSlot = (slot: any) => {
+        let fullPrompt = "";
+        
+        if (creativeOption === 'architecture') {
+            const viewDescription = slot.promptDescription || slot.name;
+            const charPrompt = characterImage 
+                ? `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào bối cảnh kiến trúc một cách tự nhiên (ví dụ: đang đi bộ trước sảnh, đứng ở ban công, hoặc đi dạo trong sân vườn). Đảm bảo trang phục and ngoại hình thống nhất with ảnh nhân vật.` 
+                : "";
+
+            fullPrompt = `Bạn là một Kiến trúc sư chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu kiến trúc đại diện cho 100% hình khối và chi tiết thực tế. Nhiệm vụ của bạn là vẽ lại một view kiến trúc cụ thể (cận cảnh hoặc nghệ thuật) từ công trình này.
+YÊU CẦU BẮT BUỘC:
+- GIỮ NGUYÊN 100% mọi chi tiết kiến trúc, hình khối, vật liệu và cấu trúc từ ảnh mẫu.
+- TUYỆT ĐỐI KHÔNG vẽ thêm, không sáng tạo chi tiết mới, không thay đổi cấu kiện nếu không có trong ảnh gốc. Chỉ được phép lấy đúng những gì đang có trên công trình gốc để thể hiện.
+- Đối với các view CẬN CẢNH và NGHỆ THUẬT: Bạn chỉ được phép tập trung vào những thành phần hiện hữu của công trình, không được phép nội suy hay sử dụng chi tiết lạ.
+- Bạn chỉ được phép thay đổi góc máy, tiêu cự ống kính, và điều kiện ánh sáng để tạo ra bức ảnh nhiếp ảnh kiến trúc chuyên nghiệp.
+- VIEW CẦN TẠO: "${viewDescription}".
+${charPrompt}
+Kết quả phải là một ảnh chụp thực tế, 8k, sắc nét tuyệt đối.`;
+
+        } else if (creativeOption === 'interior-from-arch') {
+            const viewName = slot.name;
+            const charPrompt = characterImage ? "Có thêm nhân vật đang sinh hoạt trong không gian." : "";
+
+            fullPrompt = `Bạn là một Kiến trúc sư and Nhà thiết kế nội thất tài ba. Bạn được cung cấp một hình ảnh NGOẠI THẤT của một công trình kiến trúc. Nhiệm vụ của bạn là thiết kế and vẽ ra không gian NỘI THẤT bên trong công trình đó.
+YÊU CẦU BẮT BUỘC:
+- PHONG CÁCH: Nội thất phải hoàn toàn đồng nhất with phong cách kiến trúc ngoại thất (ví dụ: nếu kiến trúc hiện đại tối giản thì nội thất cũng phải hiện đại tối giản).
+- HỆ CỬA SỔ: Nếu không gian có cửa sổ, kiểu dáng khung cửa, vật liệu and tỷ lệ của cửa sổ PHẢI giống hệt with hệ cửa sổ thấy được ở mặt tiền kiến trúc trong ảnh gốc.
+- VẬT LIỆU: Sử dụng bảng vật liệu and màu sắc tương đồng with ngoại thất để tạo sự xuyên suốt.
+- KHÔNG GIAN CẦN TẠO: "${viewName}".
+${charPrompt}
+Kết quả là một bức ảnh chụp nhiếp ảnh nội thất chuyên nghiệp, 8k, ánh sáng ban ngày tự nhiên cực kỳ chân thực.`;
+
+        } else {
+            // Existing Interior Logic
+            const action = slot.action || "đang hoạt động trong không gian";
+            let charPrompt = "";
+            if (characterImage) {
+                charPrompt = `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào không gian một cách tự nhiên. Nhân vật nên ${action}. Đảm bảo trang phục and ngoại hình của nhân vật thống nhất with ảnh nhân vật được cung cấp.`;
+            }
+            fullPrompt = `Bạn là một Kiến trúc sư nội thất chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu đại diện cho style, màu sắc và vật liệu. Nhiệm vụ của bạn là tưởng tượng và vẽ ra một không gian khác trong cùng ngôi nhà đó.
+YÊU CẦU BẮT BUỘC:
+- GIỮ NGUYÊN Style thiết kế (ví dụ: Japandi, Industrial, Tân cổ điển...).
+- GIỮ NGUYÊN Bảng màu chủ đạo (ví dụ: Gỗ óc chó + Da bò + Xám bê tông).
+- GIỮ NGUYÊN Tính chất vật liệu (độ bóng, độ nhám, vân gỗ).
+- KHÔNG GIAN CẦN TẠO: "${slot.name}".
+${charPrompt}
+Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, thực tế, 8k, ánh sáng ban ngày tự nhiên dịu nhẹ.`;
+        }
+        
+        return fullPrompt;
+    };
+
+    // --- NEW: HANDLE SINGLE VIEW GENERATION ---
+    const handleGenerateSingleView = async (slot: any) => {
+        if (onDeductCredits && userCredits < unitCost) {
+             if (onInsufficientCredits) {
+                 onInsufficientCredits();
+             } else {
+                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+             }
+             return;
+        }
+
+        if (!sourceImage) {
+            onStateChange({ error: 'Vui lòng tải lên ảnh gốc.' });
+            return;
+        }
+
+        const uniqueKey = getResultKey(creativeOption, slot.name);
+        setGeneratingViews(prev => new Set(prev).add(uniqueKey));
+        onStateChange({ error: null });
+
+        let logId: string | null = null;
+        let jobId: string | null = null;
+
+        try {
+            if (onDeductCredits) {
+                logId = await onDeductCredits(unitCost, `Creative View: ${slot.name} (${resolution})`);
+            }
+
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                jobId = await jobService.createJob({
+                    user_id: user.id,
+                    tool_id: Tool.ViewSync,
+                    prompt: `Creative View: ${slot.name}`,
+                    cost: unitCost,
+                    usage_log_id: logId
+                });
+            }
+
+            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
+
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            const inputImages = [sourceImage];
+            if (characterImage) inputImages.push(characterImage);
+
+            const fullPrompt = getPromptForSlot(slot);
+
+            const result = await externalVideoService.generateFlowImage(
+                fullPrompt,
+                inputImages,
+                aspectRatio,
+                1,
+                modelName
+            );
+
+            if (result.imageUrls && result.imageUrls.length > 0) {
+                let finalUrl = result.imageUrls[0];
+                
+                // Upscale Check
+                const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
+                if (shouldUpscale) {
+                     try {
+                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                        const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
+                        if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
+                    } catch (e) { console.error("Upscale failed", e); }
+                }
+
+                // Update results
+                const currentResults = latestResultsRef.current || {};
+                const newResults = { ...currentResults, [uniqueKey]: finalUrl };
+                onStateChange({ creativeResults: newResults });
+                
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', finalUrl);
+
+                historyService.addToHistory({ 
+                    tool: Tool.ViewSync, 
+                    prompt: `Creative: ${slot.name}`, 
+                    sourceImageURL: sourceImage.objectURL, 
+                    resultImageURL: finalUrl 
+                });
+            } else {
+                throw new Error("Không thể tạo ảnh.");
+            }
+
+        } catch (err: any) {
+            const rawMsg = err.message || "";
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+            }
+
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user && logId) {
+                await refundCredits(user.id, unitCost, `Hoàn tiền: Lỗi view ${slot.name} (${rawMsg})`, logId);
+                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") friendlyMsg += " (Credits đã được hoàn trả)";
+            }
+            onStateChange({ error: friendlyMsg });
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+        } finally {
+            setGeneratingViews(prev => {
+                const next = new Set(prev);
+                next.delete(uniqueKey);
+                return next;
+            });
         }
     };
 
@@ -418,57 +582,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             const promises = slots.map(async (slot) => {
                 const uniqueKey = getResultKey(creativeOption, slot.name);
                 try {
-                    let fullPrompt = "";
-
-                    if (creativeOption === 'architecture') {
-                        // New Architecture Logic
-                        // @ts-ignore - architecture slots have promptDescription
-                        const viewDescription = slot.promptDescription || slot.name;
-                        const charPrompt = characterImage 
-                            ? `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào bối cảnh kiến trúc một cách tự nhiên (ví dụ: đang đi bộ trước sảnh, đứng ở ban công, hoặc đi dạo trong sân vườn). Đảm bảo trang phục and ngoại hình thống nhất with ảnh nhân vật.` 
-                            : "";
-
-                        fullPrompt = `Bạn là một Kiến trúc sư chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu kiến trúc đại diện cho 100% hình khối và chi tiết thực tế. Nhiệm vụ của bạn là vẽ lại một view kiến trúc cụ thể (cận cảnh hoặc nghệ thuật) từ công trình này.
-YÊU CẦU BẮT BUỘC:
-- GIỮ NGUYÊN 100% mọi chi tiết kiến trúc, hình khối, vật liệu và cấu trúc từ ảnh mẫu.
-- TUYỆT ĐỐI KHÔNG vẽ thêm, không sáng tạo chi tiết mới, không thay đổi cấu kiện nếu không có trong ảnh gốc. Chỉ được phép lấy đúng những gì đang có trên công trình gốc để thể hiện.
-- Đối với các view CẬN CẢNH và NGHỆ THUẬT: Bạn chỉ được phép tập trung vào những thành phần hiện hữu của công trình, không được phép nội suy hay sử dụng chi tiết lạ.
-- Bạn chỉ được phép thay đổi góc máy, tiêu cự ống kính, và điều kiện ánh sáng để tạo ra bức ảnh nhiếp ảnh kiến trúc chuyên nghiệp.
-- VIEW CẦN TẠO: "${viewDescription}".
-${charPrompt}
-Kết quả phải là một ảnh chụp thực tế, 8k, sắc nét tuyệt đối.`;
-
-                    } else if (creativeOption === 'interior-from-arch') {
-                        // Logic cho Nội thất từ Kiến trúc
-                        const viewName = slot.name;
-                        const charPrompt = characterImage ? "Có thêm nhân vật đang sinh hoạt trong không gian." : "";
-
-                        fullPrompt = `Bạn là một Kiến trúc sư and Nhà thiết kế nội thất tài ba. Bạn được cung cấp một hình ảnh NGOẠI THẤT của một công trình kiến trúc. Nhiệm vụ của bạn là thiết kế and vẽ ra không gian NỘI THẤT bên trong công trình đó.
-YÊU CẦU BẮT BUỘC:
-- PHONG CÁCH: Nội thất phải hoàn toàn đồng nhất with phong cách kiến trúc ngoại thất (ví dụ: nếu kiến trúc hiện đại tối giản thì nội thất cũng phải hiện đại tối giản).
-- HỆ CỬA SỔ: Nếu không gian có cửa sổ, kiểu dáng khung cửa, vật liệu and tỷ lệ của cửa sổ PHẢI giống hệt with hệ cửa sổ thấy được ở mặt tiền kiến trúc trong ảnh gốc.
-- VẬT LIỆU: Sử dụng bảng vật liệu and màu sắc tương đồng with ngoại thất để tạo sự xuyên suốt.
-- KHÔNG GIAN CẦN TẠO: "${viewName}".
-${charPrompt}
-Kết quả là một bức ảnh chụp nhiếp ảnh nội thất chuyên nghiệp, 8k, ánh sáng ban ngày tự nhiên cực kỳ chân thực.`;
-
-                    } else {
-                        // Existing Interior Logic (Creative Interior)
-                        // @ts-ignore - interior slots have action
-                        const action = slot.action || "đang hoạt động trong không gian";
-                        let charPrompt = "";
-                        if (characterImage) {
-                            charPrompt = `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào không gian một cách tự nhiên. Nhân vật nên ${action}. Đảm bảo trang phục and ngoại hình của nhân vật thống nhất with ảnh nhân vật được cung cấp.`;
-                        }
-                        fullPrompt = `Bạn là một Kiến trúc sư nội thất chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu đại diện cho style, màu sắc và vật liệu. Nhiệm vụ của bạn là tưởng tượng và vẽ ra một không gian khác trong cùng ngôi nhà đó.
-YÊU CẦU BẮT BUỘC:
-- GIỮ NGUYÊN Style thiết kế (ví dụ: Japandi, Industrial, Tân cổ điển...).
-- GIỮ NGUYÊN Bảng màu chủ đạo (ví dụ: Gỗ óc chó + Da bò + Xám bê tông).
-- GIỮ NGUYÊN Tính chất vật liệu (độ bóng, độ nhám, vân gỗ).
-- KHÔNG GIAN CẦN TẠO: "${slot.name}".
-${charPrompt}
-Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, thực tế, 8k, ánh sáng ban ngày tự nhiên dịu nhẹ.`;
-                    }
+                    const fullPrompt = getPromptForSlot(slot);
 
                     const result = await externalVideoService.generateFlowImage(
                         fullPrompt,
@@ -533,8 +647,8 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                     });
                 }
             } else {
-                const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào sau nhiều lần thử.";
-                throw new Error(errorMsg);
+                 if (lastError) throw lastError;
+                 throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 
         } catch (err: any) {
@@ -975,6 +1089,31 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                                     )}
                                                 </div>
                                             </div>
+                                        </div>
+
+                                        {/* Added Footer Section: Cost & Single Action */}
+                                        <div className="p-3 border-t border-[#302839] bg-[#252525] flex flex-col gap-2">
+                                            <div className="flex justify-between items-center text-[10px] font-medium text-gray-400">
+                                                <span>Chi phí</span>
+                                                <div className="flex items-center gap-1 text-yellow-500">
+                                                    <span className="material-symbols-outlined text-xs">monetization_on</span>
+                                                    {unitCost} Credits
+                                                </div>
+                                            </div>
+                                            <button 
+                                                onClick={() => handleGenerateSingleView(slot)}
+                                                disabled={isGenerating || !sourceImage}
+                                                className={`w-full py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 ${
+                                                    isGenerating || !sourceImage
+                                                        ? 'bg-[#333] text-gray-500 cursor-not-allowed'
+                                                        : resultUrl 
+                                                            ? 'bg-[#333] hover:bg-[#404040] text-gray-300 border border-[#404040]' 
+                                                            : 'bg-[#7f13ec] hover:bg-[#690fca] text-white hover:shadow-purple-500/20'
+                                                }`}
+                                            >
+                                                {isGenerating ? <Spinner /> : <span className="material-symbols-outlined text-sm">{resultUrl ? 'refresh' : 'auto_fix_high'}</span>}
+                                                <span>{isGenerating ? 'Đang tạo...' : (resultUrl ? 'Tạo lại' : 'Tạo ảnh')}</span>
+                                            </button>
                                         </div>
                                     </div>
                                 );

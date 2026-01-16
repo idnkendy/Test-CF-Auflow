@@ -42,7 +42,8 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
             default: return 5;
         }
     };
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
@@ -156,6 +157,17 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
                 await Promise.all(promises);
                 if (collectedUrls.length === 0) throw new Error(lastError ? lastError.message : "Không thể tạo ảnh.");
+                
+                // --- PARTIAL REFUND ---
+                const failedCount = numberOfImages - collectedUrls.length;
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${collectedUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+                
                 imageUrls = collectedUrls;
 
             } else {

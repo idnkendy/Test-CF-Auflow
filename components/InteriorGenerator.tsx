@@ -169,6 +169,9 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             
+            // ERROR TRACKING
+            let lastError: any = null;
+
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                 try {
                     const inputImages: FileData[] = [];
@@ -198,6 +201,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                     return null;
                 } catch (e) {
                     console.error(`Image ${index+1} failed`, e);
+                    lastError = e; // Capture specific error
                     return null;
                 }
             });
@@ -217,6 +221,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                     onStateChange({ error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` });
                 }
             } else {
+                if (lastError) throw lastError;
                 throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 

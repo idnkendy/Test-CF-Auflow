@@ -640,7 +640,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     return null;
                 } catch (e: any) {
                     console.error(`Image ${index+1} failed`, e);
-                    return null;
+                    throw e;
                 }
             });
             
@@ -679,6 +679,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
+            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
@@ -692,6 +693,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ghi chú (${rawMsg})`, logId);
+                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
             }
         } finally {
             onStateChange({ isLoading: false });

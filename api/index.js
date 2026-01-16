@@ -15,8 +15,8 @@ const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 // UPDATED PROXY CONFIGURATION
 const ONEWISE_PROXY_URL_CREATE = "https://flow-api.nanoai.pics/api/fix/create-video-veo3";
 const ONEWISE_PROXY_URL_CHECK = "https://flow-api.nanoai.pics/api/fix/task-status";
-// Updated Token from request
-const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2NjkwNzI2OH0.qd76QwKE8PCazfvyCmcgbyE0GV7VLQvJKCtxP4ADqcE";
+// Updated Token from request (New Token ending in IUjU)
+const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2ODU1NTAxNH0.cC0pkdy1S-0ZdCzpnW1jGON1jId70d7iI5lWsddIUjU";
 
 // --- RUNNINGHUB CONFIGURATION (Moved from Frontend) ---
 // UPDATED: Sử dụng mảng keys để chạy luân phiên
@@ -180,7 +180,7 @@ async function performUpload(authData, base64Data, imageAspectRatio) {
         "clientContext": { 
             "sessionId": ";" + Date.now(), 
             "tool": "PINHOLE", 
-            "projectId": projectId,
+            "projectId": projectId, 
             "userPaygateTier": "PAYGATE_TIER_TWO"
         }
     };
@@ -468,7 +468,7 @@ async function triggerUpscale(env, accounts, mediaId) {
 async function checkStatus(env, accounts, googleOperationName, account_id) {
     const targetAccount = accounts.find(a => String(a.id) === String(account_id));
     if (!targetAccount) {
-        return { status: 'failed', message: `Original account (ID: ${account_id}) not found or unavailable.` };
+        return { status: 'failed', message: `Original account (ID: ${account_id}) not found or unavailable.`, step: 'checking_status' };
     }
 
     return executeWithFailover(env, [targetAccount], "CheckStatus", async (authData) => {
@@ -517,9 +517,9 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
             let vidUrl = opResult.operation?.metadata?.video?.fifeUrl || opResult.result?.video?.url || opResult.result?.video?.fifeUrl || opResult.operation?.response?.video?.url || opResult.videoFiles?.[0]?.url || opResult.response?.videoUrl;
             let mediaId = opResult.mediaGenerationId || opResult.result?.id || opResult.response?.id || opResult.operation?.response?.id;
             if (!vidUrl && opResult.operation?.metadata?.video?.servingBaseUri) vidUrl = opResult.operation.metadata.video.fifeUrl;
-            if (vidUrl) return { status: 'completed', video_url: vidUrl, mediaId: mediaId };
+            if (vidUrl) return { status: 'completed', video_url: vidUrl, mediaId: mediaId, step: 'checking_status' };
             const debugKeys = JSON.stringify(opResult).substring(0, 200);
-            return { status: 'failed', message: `Video URL not found in successful response. Preview: ${debugKeys}...` };
+            return { status: 'failed', message: `Video URL not found in successful response. Preview: ${debugKeys}...`, step: 'checking_status' };
         }
         
         if (status === "MEDIA_GENERATION_STATUS_FAILED") {
@@ -528,9 +528,10 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
                  if (opResult.operation?.error?.message) errorMsg = opResult.operation.error.message;
                  else if (opResult.error?.message) errorMsg = opResult.error.message;
              } catch(e) {}
-             return { status: 'failed', message: errorMsg };
+             return { status: 'failed', message: errorMsg, step: 'checking_status' };
         }
-        return { status: 'processing' };
+        // Luôn trả về step: 'checking_status' để frontend biết đã qua bước lấy tên
+        return { status: 'processing', step: 'checking_status', message: 'Google is generating video...' };
     });
 }
 
@@ -638,7 +639,9 @@ export default {
                 else if (path.includes('/upscale-create')) action = 'upscale_create'; // New
                 else if (path.includes('/upscale-check')) action = 'upscale_check';   // New
                 else if (path.includes('/upscale')) action = 'upscale'; // Old Veo upscale
-                else if (path.includes('/check')) action = 'check';
+                else if (path.includes('/check-name')) action = 'check_name';
+                else if (path.includes('/check-status')) action = 'check_status';
+                // Note: removed '/check' path mapping
             }
 
             if (action === 'upscale_create' || action === 'upscale_check') {
@@ -684,56 +687,74 @@ export default {
                 const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId, body.targetResolution);
                 return sendJson(result);
             } else if (action === 'flow_check') {
-                // OPTIMIZATION: Removed getAllAccounts to prevent DB throttling during polling.
-                // It is not used inside checkFlowStatus.
-                try {
-                    const result = await checkFlowStatus(env, [], body.taskId);
-                    return sendJson(result);
-                } catch (e) {
-                    // Return 200 with error status so frontend can retry/handle gracefully instead of 500
-                    return sendJson({ 
-                        success: false, 
-                        status: 'error', 
-                        code: 'UPSTREAM_ERROR',
-                        message: e.message || "Status check failed" 
-                    });
-                }
+                const accounts = await getAllAccounts(env);
+                const result = await checkFlowStatus(env, accounts, body.taskId);
+                return sendJson(result);
             } else if (action === 'upscale') {
                 const accounts = await getAllAccounts(env);
                 const result = await triggerUpscale(env, accounts, body.mediaId);
                 return sendJson(result);
-            } else if (action === 'check') {
-                const { task_id, account_id } = body;
-                let googleOperationName = null;
-                if (task_id && task_id.length > 20 && task_id.includes('-')) {
-                     try {
-                         const proxyUrl = `${ONEWISE_PROXY_URL_CHECK}?taskId=${task_id}`;
-                         const proxyRes = await fetch(proxyUrl, {
-                             method: 'GET',
-                             headers: { 'Authorization': ONEWISE_PROXY_AUTH, 'Content-Type': 'application/json' }
-                         });
-                         const proxyData = await proxyRes.json();
-                         if (!proxyData.success) return sendJson({ status: 'processing', message: "Initializing task..." });
-                         const operations = proxyData.result?.operations;
-                         if (operations && operations.length > 0) {
-                             const opData = operations[0];
-                             googleOperationName = opData.operation?.name || opData.name;
-                         } else {
-                             return sendJson({ status: 'processing', message: "Waiting for operation allocation..." });
-                         }
-                     } catch (e) {
-                         console.error("Proxy Resolution Error:", e);
-                         return sendJson({ status: 'processing', message: "Connecting to task registry..." });
-                     }
-                } else {
-                    googleOperationName = task_id;
+            } else if (action === 'check_name') {
+                // --- GIAI ĐOẠN 1: RESOLVE NAME (Xác định Google Name từ Proxy/KV) ---
+                const { task_id } = body;
+                
+                // 1.1 Tìm trong KV Cache trước
+                if (env.VIDEO_KV) {
+                    try {
+                        const cachedName = await env.VIDEO_KV.get(`proxy_map:${task_id}`);
+                        if (cachedName) {
+                            return sendJson({ status: 'success', name: cachedName, message: "Resolved from Cache" });
+                        }
+                    } catch (e) { console.error("KV Read Error", e); }
                 }
-                if (googleOperationName) {
-                    const accounts = await getAllAccounts(env, true);
-                    const result = await checkStatus(env, accounts, googleOperationName, account_id);
-                    return sendJson(result);
+
+                // 1.2 Nếu chưa có trong KV, hỏi Proxy
+                try {
+                    const proxyUrl = `${ONEWISE_PROXY_URL_CHECK}?taskId=${task_id}`;
+                    const proxyRes = await fetch(proxyUrl, {
+                        method: 'GET',
+                        headers: { 'Authorization': ONEWISE_PROXY_AUTH, 'Content-Type': 'application/json' }
+                    });
+                    
+                    if (proxyRes.ok) {
+                        const proxyData = await proxyRes.json();
+                        // Logic lấy tên operation từ response của Proxy
+                        if (proxyData.success && proxyData.result?.operations?.length > 0) {
+                            const opData = proxyData.result.operations[0];
+                            const resolvedName = opData.operation?.name || opData.name;
+                            
+                            if (resolvedName) {
+                                // Lưu vào Cache để lần sau không cần hỏi Proxy (TTL 10 phút)
+                                if (env.VIDEO_KV) {
+                                    await env.VIDEO_KV.put(`proxy_map:${task_id}`, resolvedName, { expirationTtl: 600 });
+                                }
+                                return sendJson({ status: 'success', name: resolvedName });
+                            }
+                        } else if (proxyData.success === false && proxyData.error) {
+                             // Proxy trả về lỗi
+                             return sendJson({ status: 'failed', message: proxyData.error.message || "Proxy Error" });
+                        }
+                    }
+                } catch (e) {
+                    console.error("[Check] Proxy Resolution Failed:", e);
+                    return sendJson({ status: 'failed', message: e.message });
                 }
-                return sendJson({ status: 'processing', message: "Waiting for operation name..." });
+
+                // Chưa có tên, vẫn đang pending
+                return sendJson({ status: 'pending', message: "Resolving name..." });
+
+            } else if (action === 'check_status') {
+                // --- GIAI ĐOẠN 2: CHECK STATUS (Gọi trực tiếp Google) ---
+                const { name, account_id } = body;
+                
+                if (!name) {
+                    return sendJson({ status: 'failed', message: "Missing operation name" });
+                }
+
+                const accounts = await getAllAccounts(env, true); // true = ignore quota check for status polling
+                const result = await checkStatus(env, accounts, name, account_id);
+                return sendJson(result);
+
             } else {
                 return sendJson({ status: "ok", message: "Cloudflare Worker is running", request_path: path });
             }

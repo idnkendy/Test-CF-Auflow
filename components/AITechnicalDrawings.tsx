@@ -17,6 +17,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 interface AITechnicalDrawingsProps {
     state: AITechnicalDrawingsState;
@@ -38,6 +39,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
     
     const getCostPerImage = () => {
         switch (resolution) {
@@ -48,7 +50,8 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             default: return 5;
         }
     };
-    const cost = numberOfImages * getCostPerImage();
+    const unitCost = getCostPerImage();
+    const cost = numberOfImages * unitCost;
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImage: null, resultImages: [] });
@@ -164,6 +167,17 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                     const errorMsg = lastError ? (lastError.message || lastError.toString()) : "Không thể tạo ảnh nào. Vui lòng thử lại sau.";
                     throw new Error(errorMsg);
                 }
+                
+                // --- PARTIAL REFUND ---
+                const failedCount = numberOfImages - collectedUrls.length;
+                if (failedCount > 0 && logId && user) {
+                    const refundAmount = failedCount * unitCost;
+                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
+                    onStateChange({ 
+                        error: `Đã tạo thành công ${collectedUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
+                    });
+                }
+                
                 imageUrls = collectedUrls;
 
             } else {
@@ -184,14 +198,23 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
+            // --- SAFETY MODAL TRIGGER ---
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            } else {
+                onStateChange({ error: friendlyMsg });
+            }
+            
+            // DB records specific raw message
+            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            
+            // Refund logic
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${rawMsg})`, logId);
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
             }
-            
-            onStateChange({ error: friendlyMsg });
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
             setStatusMessage(null);
@@ -208,6 +231,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
     return (
         <div className="flex flex-col gap-8">
+            <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
             <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Bản Vẽ Kỹ Thuật</h2>
@@ -289,8 +313,8 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                             </div>
                         ) : resultImages.length === 1 && sourceImage ? (
                             <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
-                        ) : resultImages.length > 0 ? (
-                             <ResultGrid images={resultImages} toolName="drawing-generator" />
+                        ) : resultImages.length > 1 ? (
+                            <ResultGrid images={resultImages} toolName="drawing-generator" />
                         ) : (
                              <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
                         )}

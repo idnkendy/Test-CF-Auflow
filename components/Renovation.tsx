@@ -162,6 +162,9 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             
+            // ERROR TRACKING
+            let lastError: any = null;
+
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                 try {
                     let inputImages: FileData[] = [sourceImage];
@@ -206,6 +209,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     return null;
                 } catch (e) {
                     console.error(`Image ${index+1} failed`, e);
+                    lastError = e; // Capture specific error
                     return null;
                 }
             });
@@ -234,6 +238,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     });
                 }
             } else {
+                if (lastError) throw lastError;
                 throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 

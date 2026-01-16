@@ -18,7 +18,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
 
 const buildingTypeOptions = [
     { value: 'none', label: 'Tự động' },
@@ -90,7 +90,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
 
     const escapeRegExp = (string: string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -143,7 +143,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const cost = numberOfImages * unitCost;
 
     const handleGenerate = async () => {
-        // --- MODAL TRIGGER: Check credits ---
         if (onDeductCredits && userCredits < cost) {
              if (onInsufficientCredits) {
                  onInsufficientCredits();
@@ -162,7 +161,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         let logId: string | null = null;
 
         try {
-            // 1. Trừ tiền toàn bộ trước
             if (onDeductCredits) {
                 logId = await onDeductCredits(cost, `Render kiến trúc (${numberOfImages} ảnh) - ${resolution}`);
             }
@@ -173,16 +171,17 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
-            // 2. Chạy tạo ảnh (Xử lý từng ảnh để bắt lỗi riêng lẻ)
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const promptForService = `You are a professional architectural renderer. ${sourceImage ? `Based on source image, generate ${aspectRatio} render.` : ''} ${customPrompt}, photorealistic, high detail.`;
+
+            let lastError: any = null;
 
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                 try {
                     const result = await externalVideoService.generateFlowImage(
                         promptForService,
                         [sourceImage, ...referenceImages].filter(Boolean) as FileData[], 
-                        aspectRatio, // Pass raw ratio
+                        aspectRatio, 
                         1,
                         modelName,
                         (msg) => setStatusMessage(msg)
@@ -198,11 +197,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                             if (upscaleRes.imageUrl) finalUrl = upscaleRes.imageUrl;
                         }
                         
-                        return finalUrl; // Thành công trả về URL
+                        return finalUrl;
                     }
-                    return null; // Thất bại trả về null
+                    return null;
                 } catch (e) {
                     console.error(`Image generation ${index + 1} failed:`, e);
+                    lastError = e;
                     return null;
                 }
             });
@@ -212,10 +212,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             const failedCount = numberOfImages - successfulUrls.length;
 
             if (successfulUrls.length > 0) {
-                // --- TRƯỜNG HỢP CÓ ẢNH THÀNH CÔNG (Toàn bộ hoặc một phần) ---
                 onStateChange({ resultImages: successfulUrls });
-                
-                // Lưu lịch sử các ảnh thành công
                 successfulUrls.forEach(url => {
                     historyService.addToHistory({
                         tool: Tool.ArchitecturalRendering,
@@ -227,27 +224,22 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
                 if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
 
-                // *** LOGIC HOÀN TIỀN CHO ẢNH LỖI ***
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    
-                    // Thông báo người dùng
                     onStateChange({ 
                         error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
                     });
                 }
 
             } else {
-                // --- TRƯỜNG HỢP LỖI TOÀN BỘ ---
-                // Ném lỗi để catch block bên dưới xử lý hoàn tiền toàn bộ
+                if (lastError) throw lastError;
                 throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
 
         } catch (err: any) {
-            // --- XỬ LÝ LỖI TOÀN BỘ (Hoàn tiền 100%) ---
             const rawMsg = err.message || "";
-            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
@@ -259,9 +251,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             
             const { data: { user } } = await supabase.auth.getUser();
-            // Chỉ hoàn tiền ở đây nếu chưa hoàn tiền từng phần (tức là lỗi toàn bộ)
             if (user && logId) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ`, logId);
+                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ (${rawMsg})`, logId);
             }
         } finally {
             onStateChange({ isLoading: false });
