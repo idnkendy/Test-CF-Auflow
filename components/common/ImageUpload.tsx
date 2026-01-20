@@ -1,6 +1,7 @@
 
 import React, { useCallback, useState, useMemo, useRef } from 'react';
 import { FileData } from '../../types';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface ImageUploadProps {
   onFileSelect: (fileData: FileData | null) => void;
@@ -101,6 +102,7 @@ const CloudUploadIcon = () => (
 );
 
 const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl, maskPreviewUrl, directionPreviewUrl, className }) => {
+    const { t } = useLanguage();
     const [error, setError] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const inputRef = useRef<HTMLInputElement>(null);
@@ -197,12 +199,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
                         onClick={handleContainerClick}
                         className="bg-white/20 hover:bg-white/30 text-white font-semibold py-2 px-4 rounded-lg backdrop-blur-sm transition-colors text-sm flex items-center gap-2"
                     >
-                        Thay đổi
+                        {t('upload.change')}
                     </button>
                     <button
                         onClick={handleRemove}
                         className="bg-red-500/80 hover:bg-red-600 text-white p-2 rounded-lg backdrop-blur-sm transition-colors"
-                        title="Xóa ảnh"
+                        title={t('upload.remove')}
                     >
                         <XIcon />
                     </button>
@@ -235,15 +237,15 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        <p className="text-sm text-gray-500">Đang xử lý ảnh...</p>
+                        <p className="text-sm text-gray-500">{t('upload.processing')}</p>
                     </div>
                 ) : (
                     <>
                         <div className="p-3 bg-white dark:bg-gray-700 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform duration-300">
                             <CloudUploadIcon />
                         </div>
-                        <p className="font-medium text-gray-700 dark:text-gray-200 text-sm group-hover:text-accent transition-colors">Nhấp để tải ảnh lên</p>
-                        <p className="text-xs text-gray-400 mt-1">hoặc kéo và thả vào đây</p>
+                        <p className="font-medium text-gray-700 dark:text-gray-200 text-sm group-hover:text-accent transition-colors">{t('upload.click')}</p>
+                        <p className="text-xs text-gray-400 mt-1">{t('upload.drag')}</p>
                         <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-wide">JPG, PNG, WEBP</p>
                     </>
                 )}

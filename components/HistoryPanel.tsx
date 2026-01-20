@@ -1,28 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import * as historyService from '../services/historyService';
 import * as externalVideoService from '../services/externalVideoService';
 import { HistoryItem, Tool } from '../types';
 import Spinner from './Spinner';
-
-const toolDisplayNames: Record<string, string> = {
-    [Tool.FloorPlan]: 'Render Mặt Bằng',
-    [Tool.Renovation]: 'Cải Tạo AI',
-    [Tool.ArchitecturalRendering]: 'Render Kiến trúc',
-    [Tool.InteriorRendering]: 'Render Nội thất',
-    [Tool.UrbanPlanning]: 'Render Quy hoạch',
-    [Tool.LandscapeRendering]: 'Render Sân vườn',
-    [Tool.AITechnicalDrawings]: 'Bản vẽ kỹ thuật AI',
-    [Tool.SketchConverter]: 'Biến ảnh thành Sketch',
-    [Tool.ViewSync]: 'Đồng Bộ View',
-    [Tool.MaterialSwap]: 'Thay Vật Liệu AI',
-    [Tool.VideoGeneration]: 'Tạo Video AI',
-    [Tool.ImageEditing]: 'Chỉnh Sửa Ảnh AI',
-    [Tool.Upscale]: 'Upscale AI',
-    [Tool.Moodboard]: 'Tạo ảnh Moodboard',
-    [Tool.History]: 'Lịch sử',
-    [Tool.FengShui]: 'Phân tích Phong thủy',
-};
+import { useLanguage } from '../hooks/useLanguage';
 
 const TrashIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -58,6 +40,7 @@ const getOptimizedUrl = (url: string) => {
 const ITEMS_PER_PAGE = 10;
 
 const HistoryPanel: React.FC = () => {
+    const { t, language } = useLanguage();
     const [history, setHistory] = useState<HistoryItem[]>([]);
     const [selectedItem, setSelectedItem] = useState<HistoryItem | null>(null);
     const [isLoading, setIsLoading] = useState(true);
@@ -68,6 +51,33 @@ const HistoryPanel: React.FC = () => {
     // Pagination State
     const [offset, setOffset] = useState(0);
     const [hasMore, setHasMore] = useState(true);
+
+    const toolDisplayNames: Record<string, string> = useMemo(() => ({
+        [Tool.FloorPlan]: t('tool.floorplan'),
+        [Tool.Renovation]: t('tool.renovation'),
+        [Tool.ArchitecturalRendering]: t('tool.arch'),
+        [Tool.InteriorRendering]: t('tool.interior'),
+        [Tool.UrbanPlanning]: t('tool.urban'),
+        [Tool.LandscapeRendering]: t('tool.landscape'),
+        [Tool.AITechnicalDrawings]: t('tool.technical'),
+        [Tool.SketchConverter]: t('tool.sketch'),
+        [Tool.ViewSync]: t('tool.viewsync'),
+        [Tool.MaterialSwap]: t('tool.material'),
+        [Tool.VideoGeneration]: t('tool.video'),
+        [Tool.ImageEditing]: t('tool.editor'),
+        [Tool.Upscale]: t('tool.upscale'),
+        [Tool.Moodboard]: t('tool.moodboard'),
+        [Tool.History]: t('nav.history'),
+        [Tool.FengShui]: t('tool.fengshui'),
+        [Tool.LayoutGenerator]: t('tool.layout'),
+        [Tool.DrawingGenerator]: t('tool.drawing'),
+        [Tool.DiagramGenerator]: t('tool.diagram'),
+        [Tool.RealEstatePoster]: t('tool.poster'),
+        [Tool.EditByNote]: t('tool.edit_note'),
+        [Tool.ReRender]: t('tool.rerender'),
+        [Tool.PromptSuggester]: t('tool.prompt'),
+        [Tool.Staging]: t('tool.staging'),
+    }), [t]);
 
     const loadHistory = async (isInitial = false) => {
         if (isInitial) {
@@ -116,7 +126,7 @@ const HistoryPanel: React.FC = () => {
     };
 
     const handleClearHistory = async () => {
-        if (window.confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử không? Hành động này không thể hoàn tác.')) {
+        if (window.confirm(t('history.delete_confirm_all'))) {
             setIsLoading(true);
             try {
                 await historyService.clearHistory();
@@ -124,7 +134,7 @@ const HistoryPanel: React.FC = () => {
                 setOffset(0);
                 setHasMore(false);
             } catch (error) {
-                alert("Có lỗi xảy ra khi xóa lịch sử.");
+                alert(t('history.delete_error'));
             } finally {
                 setIsLoading(false);
             }
@@ -136,14 +146,14 @@ const HistoryPanel: React.FC = () => {
         e.stopPropagation();
         e.preventDefault(); 
 
-        if (window.confirm('Bạn có chắc chắn muốn xóa mục này không?')) {
+        if (window.confirm(t('history.delete_confirm_item'))) {
             setIsDeletingId(id);
             try {
                 await historyService.deleteHistoryItem(id);
                 setHistory(prev => prev.filter(item => item.id !== id));
             } catch (error: any) {
                 console.error("Delete error:", error);
-                alert(`Không thể xóa mục này: ${error.message || "Lỗi không xác định"}`);
+                alert(`${t('history.delete_error')}: ${error.message || ""}`);
             } finally {
                 setIsDeletingId(null);
             }
@@ -152,7 +162,7 @@ const HistoryPanel: React.FC = () => {
     
     const handleModalDelete = async () => {
         if (!selectedItem) return;
-        if (window.confirm('Bạn có chắc chắn muốn xóa mục này không?')) {
+        if (window.confirm(t('history.delete_confirm_item'))) {
             setIsDeletingId(selectedItem.id);
             try {
                 await historyService.deleteHistoryItem(selectedItem.id);
@@ -160,7 +170,7 @@ const HistoryPanel: React.FC = () => {
                 setSelectedItem(null);
             } catch (error: any) {
                  console.error("Delete error:", error);
-                 alert(`Không thể xóa mục này: ${error.message || "Lỗi không xác định"}`);
+                 alert(`${t('history.delete_error')}: ${error.message || ""}`);
             } finally {
                 setIsDeletingId(null);
             }
@@ -190,8 +200,8 @@ const HistoryPanel: React.FC = () => {
         const sourceUrl = selectedItem.source_url || selectedItem.sourceImageURL;
         const isVideo = selectedItem.media_type === 'video' || !!selectedItem.resultVideoURL;
         const dateString = selectedItem.created_at 
-            ? new Date(selectedItem.created_at).toLocaleString('vi-VN') 
-            : (selectedItem.timestamp ? new Date(selectedItem.timestamp).toLocaleString('vi-VN') : '');
+            ? new Date(selectedItem.created_at).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US') 
+            : (selectedItem.timestamp ? new Date(selectedItem.timestamp).toLocaleString(language === 'vi' ? 'vi-VN' : 'en-US') : '');
 
         return (
             <div 
@@ -206,14 +216,14 @@ const HistoryPanel: React.FC = () => {
                     <button
                         onClick={() => setSelectedItem(null)}
                         className="absolute top-4 right-4 p-2 text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-colors z-10 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
-                        title="Đóng"
+                        title={t('common.close')}
                     >
                         <XMarkIcon />
                     </button>
 
                     <div className="flex-1 flex flex-col min-w-0">
                         <h3 className="text-xl font-bold text-text-primary dark:text-white mb-4 flex items-center gap-2">
-                            Kết Quả
+                            {t('history.modal.result')}
                             {isVideo && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded border border-purple-200">Video</span>}
                         </h3>
                         <div className="flex-grow bg-black/5 dark:bg-black/20 rounded-lg border border-border-color dark:border-gray-700 overflow-hidden flex items-center justify-center min-h-[300px] lg:min-h-[400px]">
@@ -221,7 +231,7 @@ const HistoryPanel: React.FC = () => {
                                 <video controls autoPlay src={displayUrl} className="w-full h-full max-h-[60vh] object-contain" />
                             ) : (
                                 // For the modal, we load the FULL quality image, not the optimized one
-                                displayUrl && <img src={displayUrl} alt="Kết quả đã tạo" className="w-full h-full max-h-[60vh] object-contain" />
+                                displayUrl && <img src={displayUrl} alt="Result" className="w-full h-full max-h-[60vh] object-contain" />
                             )}
                         </div>
                     </div>
@@ -229,24 +239,24 @@ const HistoryPanel: React.FC = () => {
                     <div className="flex-1 flex flex-col w-full lg:max-w-md space-y-5">
                          {sourceUrl && (
                              <div>
-                                <h3 className="text-sm font-bold text-text-secondary dark:text-gray-400 mb-2 uppercase tracking-wider">Ảnh Gốc</h3>
+                                <h3 className="text-sm font-bold text-text-secondary dark:text-gray-400 mb-2 uppercase tracking-wider">{t('history.modal.source')}</h3>
                                 <div className="w-full rounded-lg overflow-hidden border border-border-color dark:border-gray-700 bg-black/5 dark:bg-black/20 flex justify-center items-center">
-                                    <img src={sourceUrl} alt="Ảnh gốc" className="max-h-60 w-auto max-w-full object-contain" />
+                                    <img src={sourceUrl} alt="Original" className="max-h-60 w-auto max-w-full object-contain" />
                                 </div>
                             </div>
                          )}
                         
                         <div className="space-y-4 flex-grow overflow-y-auto pr-2">
                             <div>
-                                <h3 className="text-sm font-bold text-text-secondary dark:text-gray-400 mb-1 uppercase tracking-wider">Công cụ</h3>
+                                <h3 className="text-sm font-bold text-text-secondary dark:text-gray-400 mb-1 uppercase tracking-wider">{t('history.modal.tool')}</h3>
                                 <p className="text-text-primary dark:text-white font-medium">{toolDisplayNames[selectedItem.tool] || selectedItem.tool}</p>
                             </div>
                             <div>
-                                <h3 className="text-sm font-bold text-text-secondary dark:text-gray-400 mb-1 uppercase tracking-wider">Thời gian</h3>
+                                <h3 className="text-sm font-bold text-text-secondary dark:text-gray-400 mb-1 uppercase tracking-wider">{t('history.modal.time')}</h3>
                                 <p className="text-text-primary dark:text-white font-medium">{dateString}</p>
                             </div>
                             <div>
-                                <h3 className="text-sm font-bold text-text-secondary dark:text-gray-400 mb-1 uppercase tracking-wider">Prompt</h3>
+                                <h3 className="text-sm font-bold text-text-secondary dark:text-gray-400 mb-1 uppercase tracking-wider">{t('history.modal.prompt')}</h3>
                                 <div className="bg-main-bg dark:bg-gray-800/50 p-3 rounded-lg border border-border-color dark:border-gray-700">
                                     <p className="text-text-primary dark:text-gray-200 text-sm leading-relaxed break-words max-h-40 overflow-y-auto pr-1">
                                         {selectedItem.prompt}
@@ -262,7 +272,7 @@ const HistoryPanel: React.FC = () => {
                                 className="w-full sm:w-auto px-4 py-2.5 text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 font-medium text-sm transition-colors flex items-center justify-center gap-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
                             >
                                 {isDeletingId === selectedItem.id ? <Spinner /> : <TrashIcon />}
-                                <span>Xóa</span>
+                                <span>{t('common.delete')}</span>
                             </button>
                             
                             <div className="flex-grow hidden sm:block"></div>
@@ -271,7 +281,7 @@ const HistoryPanel: React.FC = () => {
                                 onClick={() => setSelectedItem(null)}
                                 className="w-full sm:w-auto px-5 py-2.5 text-text-secondary dark:text-gray-300 hover:text-text-primary dark:hover:text-white font-medium text-sm transition-colors hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"
                             >
-                                Đóng
+                                {t('common.close')}
                             </button>
                             <button
                                 onClick={handleDownload}
@@ -279,7 +289,7 @@ const HistoryPanel: React.FC = () => {
                                 className="w-full sm:w-auto bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-2.5 px-5 rounded-lg transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2"
                             >
                                 {isDownloading ? <Spinner /> : <DownloadIcon />}
-                                <span>{isDownloading ? 'Đang tải...' : 'Tải xuống'}</span>
+                                <span>{isDownloading ? t('common.loading') : t('common.download')}</span>
                             </button>
                         </div>
                     </div>
@@ -293,8 +303,8 @@ const HistoryPanel: React.FC = () => {
             {renderModal()}
             <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6">
                 <div>
-                    <h2 className="text-2xl font-bold text-text-primary dark:text-white">Lịch sử ảnh đã tạo</h2>
-                    <p className="text-text-secondary dark:text-gray-300 text-sm mt-1">Xem lại các tác phẩm bạn đã tạo. Dữ liệu được lưu trữ trên đám mây.</p>
+                    <h2 className="text-2xl font-bold text-text-primary dark:text-white">{t('history.title')}</h2>
+                    <p className="text-text-secondary dark:text-gray-300 text-sm mt-1">{t('history.desc')}</p>
                 </div>
                 {history.length > 0 && !isLoading && (
                     <button
@@ -302,7 +312,7 @@ const HistoryPanel: React.FC = () => {
                         className="group flex items-center gap-2 px-4 py-2 rounded-lg text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-all text-sm font-medium self-start sm:self-center border border-transparent hover:border-red-200 dark:hover:border-red-800/50"
                     >
                         <TrashIcon />
-                        <span>Xóa tất cả</span>
+                        <span>{t('history.clear_all')}</span>
                     </button>
                 )}
             </div>
@@ -312,7 +322,7 @@ const HistoryPanel: React.FC = () => {
                     <div className="flex justify-center items-center mb-4">
                         <Spinner />
                     </div>
-                    <p className="text-text-secondary dark:text-gray-400 animate-pulse">Đang tải dữ liệu...</p>
+                    <p className="text-text-secondary dark:text-gray-400 animate-pulse">{t('history.loading_data')}</p>
                 </div>
             ) : history.length === 0 ? (
                 <div className="text-center py-20 bg-surface dark:bg-gray-800/30 rounded-xl border-2 border-dashed border-border-color dark:border-gray-700">
@@ -321,8 +331,8 @@ const HistoryPanel: React.FC = () => {
                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                     </div>
-                    <h3 className="text-lg font-semibold text-text-primary dark:text-white mb-1">Chưa có lịch sử</h3>
-                    <p className="text-sm text-text-secondary dark:text-gray-400">Hãy bắt đầu sáng tạo để lưu lại các tác phẩm của bạn tại đây.</p>
+                    <h3 className="text-lg font-semibold text-text-primary dark:text-white mb-1">{t('history.empty_title')}</h3>
+                    <p className="text-sm text-text-secondary dark:text-gray-400">{t('history.empty_desc')}</p>
                 </div>
             ) : (
                 <div className="space-y-8">
@@ -331,8 +341,8 @@ const HistoryPanel: React.FC = () => {
                              const displayUrl = item.media_url || item.resultImageURL || item.resultVideoURL;
                              const isVideo = item.media_type === 'video' || !!item.resultVideoURL;
                              const dateString = item.created_at 
-                                ? new Date(item.created_at).toLocaleDateString('vi-VN')
-                                : (item.timestamp ? new Date(item.timestamp).toLocaleDateString('vi-VN') : '');
+                                ? new Date(item.created_at).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US')
+                                : (item.timestamp ? new Date(item.timestamp).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US') : '');
                              
                              const isDeleting = isDeletingId === item.id;
 
@@ -383,7 +393,7 @@ const HistoryPanel: React.FC = () => {
                                         <button
                                             onClick={(e) => handleDeleteItem(item.id, e)}
                                             className="absolute top-2 right-2 p-2 bg-black/50 hover:bg-red-600 text-white rounded-full opacity-0 group-hover:opacity-100 transition-all duration-200 z-10 backdrop-blur-md shadow-sm hover:scale-110"
-                                            title="Xóa mục này"
+                                            title={t('common.delete')}
                                         >
                                             <TrashIcon />
                                         </button>
@@ -402,7 +412,7 @@ const HistoryPanel: React.FC = () => {
                                 className="px-6 py-2.5 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full text-text-secondary dark:text-gray-300 font-medium text-sm hover:bg-gray-50 dark:hover:bg-gray-700 shadow-sm transition-all flex items-center gap-2"
                             >
                                 {isLoadingMore && <Spinner />}
-                                {isLoadingMore ? 'Đang tải...' : 'Xem thêm'}
+                                {isLoadingMore ? t('common.loading') : t('history.load_more')}
                             </button>
                         </div>
                     )}

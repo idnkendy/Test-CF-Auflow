@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { RenovationState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -20,52 +20,7 @@ import ResolutionSelector from './common/ResolutionSelector';
 import MultiImageUpload from './common/MultiImageUpload';
 import OptionSelector from './common/OptionSelector';
 import SafetyWarningModal from './common/SafetyWarningModal';
-
-const renovationSuggestions = [
-    { label: 'Nâng tầng', prompt: 'Nâng thêm 1 tầng cho công trình, giữ phong cách kiến trúc hiện có.' },
-    { label: 'Đổi màu sơn', prompt: 'Thay đổi màu sơn ngoại thất của công trình thành màu trắng kem, các chi tiết cửa sổ màu đen.' },
-    { label: 'Giữ lại khối', prompt: 'Cải tạo lại mặt tiền nhưng giữ nguyên hình khối và cấu trúc chính.' },
-    { label: 'Thay đổi khối', prompt: 'Cải tạo toàn bộ, thay đổi hình khối của công trình để trở nên ấn tượng và hiện đại hơn.' },
-    { label: 'Đưa ảnh vẽ tay vào không gian', prompt: 'Thiết kế hoàn thiện công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' },
-    { label: 'Đưa mẫu công trình vào không gian', prompt: 'Đưa mẫu công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' },
-];
-
-const createCompositeImage = async (source: FileData, mask: FileData): Promise<FileData> => {
-    return new Promise((resolve, reject) => {
-        const imgSource = new Image();
-        const imgMask = new Image();
-        imgSource.crossOrigin = "Anonymous";
-        imgMask.crossOrigin = "Anonymous";
-
-        imgSource.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width = imgSource.width;
-            canvas.height = imgSource.height;
-            const ctx = canvas.getContext('2d');
-            if (!ctx) {
-                reject(new Error("Canvas context error"));
-                return;
-            }
-            
-            ctx.drawImage(imgSource, 0, 0);
-
-            imgMask.onload = () => {
-                ctx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
-                
-                const dataUrl = canvas.toDataURL('image/png');
-                resolve({
-                    base64: dataUrl.split(',')[1],
-                    mimeType: 'image/png',
-                    objectURL: dataUrl
-                });
-            };
-            imgMask.onerror = (e) => reject(new Error("Failed to load mask image"));
-            imgMask.src = mask.objectURL;
-        };
-        imgSource.onerror = (e) => reject(new Error("Failed to load source image"));
-        imgSource.src = source.objectURL;
-    });
-};
+import { useLanguage } from '../hooks/useLanguage';
 
 interface RenovationProps {
     state: RenovationState;
@@ -76,6 +31,7 @@ interface RenovationProps {
 }
 
 const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { prompt, sourceImage, referenceImages, maskImage, isLoading, error, renovatedImages, numberOfImages, aspectRatio, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
@@ -83,6 +39,94 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+
+    // Dynamic Renovation Suggestions based on Language
+    const renovationSuggestions = useMemo(() => [
+        { 
+            label: t('reno.sugg.add_floor'), 
+            prompt: language === 'vi' 
+                ? 'Nâng thêm 1 tầng cho công trình, giữ phong cách kiến trúc hiện có.' 
+                : 'Add 1 more floor to the building, keeping the existing architectural style.' 
+        },
+        { 
+            label: t('reno.sugg.change_color'), 
+            prompt: language === 'vi' 
+                ? 'Thay đổi màu sơn ngoại thất của công trình thành màu trắng kem, các chi tiết cửa sổ màu đen.' 
+                : 'Change the exterior paint color to cream white, with black window details.' 
+        },
+        { 
+            label: t('reno.sugg.keep_struct'), 
+            prompt: language === 'vi' 
+                ? 'Cải tạo lại mặt tiền nhưng giữ nguyên hình khối và cấu trúc chính.' 
+                : 'Renovate the facade but keep the main massing and structure intact.' 
+        },
+        { 
+            label: t('reno.sugg.change_mass'), 
+            prompt: language === 'vi' 
+                ? 'Cải tạo toàn bộ, thay đổi hình khối của công trình để trở nên ấn tượng và hiện đại hơn.' 
+                : 'Renovate completely, changing the building massing to be more impressive and modern.' 
+        },
+        { 
+            label: t('reno.sugg.sketch_to_space'), 
+            prompt: language === 'vi' 
+                ? 'Thiết kế hoàn thiện công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' 
+                : 'Complete the design from the reference image and place it into the red masked area of the real photo.' 
+        },
+        { 
+            label: t('reno.sugg.model_to_space'), 
+            prompt: language === 'vi' 
+                ? 'Đưa mẫu công trình ở ảnh tham chiếu và đưa vào vùng tô đỏ của ảnh thực tế.' 
+                : 'Place the building model from the reference image into the red masked area of the real photo.' 
+        },
+    ], [t, language]);
+
+     // Handle Default Prompt Switching when language changes
+    useEffect(() => {
+        const viDefault = 'Cải tạo mặt tiền ngôi nhà này theo phong cách hiện đại, tối giản. Sử dụng vật liệu gỗ, kính và bê tông. Thêm nhiều cây xanh xung quanh.';
+        const enDefault = 'Renovate the facade of this house in a modern, minimalist style. Use wood, glass, and concrete materials. Add plenty of greenery around.';
+        
+        // If current prompt is empty or matches one of the defaults, update it
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
+
+    const createCompositeImage = async (source: FileData, mask: FileData): Promise<FileData> => {
+        return new Promise((resolve, reject) => {
+            const imgSource = new Image();
+            const imgMask = new Image();
+            imgSource.crossOrigin = "Anonymous";
+            imgMask.crossOrigin = "Anonymous";
+
+            imgSource.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = imgSource.width;
+                canvas.height = imgSource.height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) {
+                    reject(new Error("Canvas context error"));
+                    return;
+                }
+                
+                ctx.drawImage(imgSource, 0, 0);
+
+                imgMask.onload = () => {
+                    ctx.drawImage(imgMask, 0, 0, canvas.width, canvas.height);
+                    
+                    const dataUrl = canvas.toDataURL('image/png');
+                    resolve({
+                        base64: dataUrl.split(',')[1],
+                        mimeType: 'image/png',
+                        objectURL: dataUrl
+                    });
+                };
+                imgMask.onerror = (e) => reject(new Error("Failed to load mask image"));
+                imgMask.src = mask.objectURL;
+            };
+            imgSource.onerror = (e) => reject(new Error("Failed to load source image"));
+            imgSource.src = source.objectURL;
+        });
+    };
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -118,7 +162,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -133,7 +177,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
         }
 
         onStateChange({ isLoading: true, error: null, renovatedImages: [] });
-        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
 
         let logId: string | null = null;
@@ -191,7 +235,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                         aspectRatio,
                         1,
                         modelName,
-                        (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                        (msg) => setStatusMessage(msg)
                     );
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
@@ -233,9 +277,12 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                    });
+                    const errorMsg = t('msg.refund_success')
+                        .replace('{success}', successfulUrls.length.toString())
+                        .replace('{total}', numberOfImages.toString())
+                        .replace('{amount}', refundAmount.toString())
+                        .replace('{failed}', failedCount.toString());
+                    onStateChange({ error: errorMsg });
                 }
             } else {
                 if (lastError) throw lastError;
@@ -248,7 +295,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -322,12 +369,12 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 />
             )}
             <div>
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Cải Tạo Kiến Trúc</h2>
+                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('tool.renovation')}</h2>
                 <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 space-y-6">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                         <div className="space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Hiện Trạng</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('reno.step1')}</label>
                                 <ImageUpload 
                                     onFileSelect={handleFileSelect} 
                                     previewUrl={sourceImage?.objectURL} 
@@ -336,7 +383,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 
                                 {sourceImage && (
                                     <div className="mt-4">
-                                        <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">Tùy chọn vùng chọn:</p>
+                                        <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">{t('reno.mask_option')}</p>
                                         <div className="flex gap-2">
                                             <button
                                                 type="button"
@@ -346,10 +393,10 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                                     scrollToTop(); 
                                                 }}
                                                 className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
-                                                title="Vẽ vùng chọn"
+                                                title={t('reno.draw_mask')}
                                             >
                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
-                                                {maskImage ? 'Sửa vùng chọn' : 'Vẽ vùng chọn (Mask)'}
+                                                {maskImage ? t('reno.edit_mask') : t('reno.draw_mask')}
                                             </button>
                                             {maskImage && (
                                                 <button
@@ -362,24 +409,24 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                                 </button>
                                             )}
                                         </div>
-                                        {maskImage && <p className="text-xs text-green-500 dark:text-green-400 mt-2">Đã áp dụng vùng chọn. AI sẽ chỉ cải tạo trong vùng này.</p>}
+                                        {maskImage && <p className="text-xs text-green-500 dark:text-green-400 mt-2">{t('reno.mask_applied')}</p>}
                                     </div>
                                 )}
                             </div>
 
                             <div className="bg-main-bg dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Ảnh Tham Chiếu (Tùy chọn)</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('reno.step2')}</label>
                                 {resolution === 'Standard' && !maskImage ? (
                                     <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
                                         <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
                                         <p className="text-sm text-text-secondary dark:text-gray-400">
-                                            Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên) hoặc khi dùng Mask.
+                                            {t('img_gen.ref_lock')}
                                         </p>
                                         <button 
                                             onClick={() => handleResolutionChange('1K')}
                                             className="text-xs text-[#7f13ec] hover:underline font-semibold"
                                         >
-                                            Nâng cao chất lượng ảnh ngay
+                                            {t('img_gen.upgrade')}
                                         </button>
                                     </div>
                                 ) : (
@@ -397,7 +444,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 <div className="mb-4">
                                     <OptionSelector 
                                         id="renovation-suggestions"
-                                        label="3. Thêm gợi ý (nhấn để thêm)"
+                                        label={t('reno.step3')}
                                         options={renovationSuggestions.map(s => ({ value: s.prompt, label: s.label }))}
                                         value={""} 
                                         onChange={handleSuggestionChange}
@@ -406,12 +453,12 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                     />
                                 </div>
 
-                                <label htmlFor="prompt-renovation" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">4. Chi tiết yêu cầu</label>
+                                <label htmlFor="prompt-renovation" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('reno.step4')}</label>
                                 <textarea
                                     id="prompt-renovation"
                                     rows={6}
                                     className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none flex-grow resize-none"
-                                    placeholder="Mô tả chi tiết những thay đổi bạn muốn..."
+                                    placeholder={t('reno.prompt_placeholder')}
                                     value={prompt}
                                     onChange={(e) => onStateChange({ prompt: e.target.value })}
                                     disabled={isLoading}
@@ -432,13 +479,13 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                             <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-1 border border-gray-200 dark:border-gray-700">
                                 <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                    <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                                    <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                                 </div>
                                 <div className="text-xs">
                                     {userCredits < cost ? (
-                                        <span className="text-red-500 font-semibold">Không đủ</span>
+                                        <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                                     ) : (
-                                        <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                        <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                                     )}
                                 </div>
                             </div>
@@ -448,7 +495,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 disabled={isLoading || !prompt || !sourceImage}
                                 className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                             >
-                                {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Tạo Phương Án Cải Tạo'}
+                                {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('reno.btn_generate')}
                             </button>
                             {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                             {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
@@ -459,7 +506,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
 
             <div>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Cải tạo</h3>
+                    <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('reno.result_title')}</h3>
                     {renovatedImages.length > 0 && (
                         <div className="flex items-center gap-2">
                             <button
@@ -475,7 +522,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                                 className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
                             >
                                 {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-lg">download</span>}
-                                <span>{isDownloading ? 'Đang tải...' : 'Tải xuống'}</span>
+                                <span>{isDownloading ? 'Đang tải...' : t('common.download')}</span>
                             </button>
                         </div>
                     )}
@@ -484,7 +531,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                     {isLoading && (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
+                            <p className="mt-2 text-gray-400">{statusMessage || t('common.processing')}</p>
                         </div>
                     )}
                     {!isLoading && renovatedImages.length === 1 && sourceImage && (
@@ -494,7 +541,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                         <ResultGrid images={renovatedImages} toolName="renovation" />
                     )}
                     {!isLoading && renovatedImages.length === 0 && (
-                         <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                         <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
                     )}
                 </div>
             </div>

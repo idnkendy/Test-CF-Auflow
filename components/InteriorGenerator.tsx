@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
@@ -19,50 +19,7 @@ import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
 import SafetyWarningModal from './common/SafetyWarningModal';
-
-const styleOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'Hiện đại (Modern)', label: 'Hiện đại' },
-    { value: 'Cổ điển (Classic)', label: 'Cổ điển' },
-    { value: 'Tân Cổ điển (Neoclassical)', label: 'Tân Cổ điển' },
-    { value: 'Indochine (Đông Dương)', label: 'Indochine' },
-    { value: 'Vintage', label: 'Vintage' },
-    { value: 'Địa Trung Hải (Mediterranean)', label: 'Địa Trung Hải' },
-    { value: 'Tối giản (Minimalism)', label: 'Tối giản' },
-    { value: 'Scandinavian (Bắc Âu)', label: 'Scandinavian' },
-    { value: 'Công nghiệp (Industrial)', label: 'Industrial' },
-    { value: 'Luxury', label: 'Luxury' },
-];
-
-const projectTypeOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'Công trình nhà ở', label: 'Nhà ở' },
-    { value: 'Căn hộ chung cư', label: 'Chung cư' },
-    { value: 'Biệt thự', label: 'Biệt thự' },
-    { value: 'Công trình thương mại', label: 'Thương mại' },
-    { value: 'Văn phòng làm việc', label: 'Văn phòng' },
-    { value: 'Nhà hàng / Quán Cafe', label: 'Nhà hàng/Cafe' },
-    { value: 'Khách sạn / Resort', label: 'Khách sạn/Resort' },
-    { value: 'Showroom', label: 'Showroom' },
-];
-
-const interiorLightingOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'Ánh sáng tự nhiên ban ngày', label: 'Tự nhiên' },
-    { value: 'Ánh sáng vàng ấm cúng', label: 'Ấm áp' },
-    { value: 'Ánh sáng trắng sáng, rõ nét', label: 'Trắng sáng' },
-    { value: 'Ánh sáng nghệ thuật (Dramatic)', label: 'Nghệ thuật' },
-    { value: 'Ánh sáng đèn LED hiện đại', label: 'Đèn LED' },
-];
-
-const colorPaletteOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'Trung tính (Trắng, Be, Xám)', label: 'Trung tính' },
-    { value: 'Tông màu ấm (Nâu, Cam đất)', label: 'Tông ấm' },
-    { value: 'Tông màu lạnh (Xanh, Ghi)', label: 'Tông lạnh' },
-    { value: 'Pastel nhẹ nhàng', label: 'Pastel' },
-    { value: 'Tương phản mạnh (Đen - Trắng)', label: 'Tương phản' },
-];
+import { useLanguage } from '../hooks/useLanguage';
 
 interface InteriorGeneratorProps {
   state: InteriorGeneratorState;
@@ -74,6 +31,7 @@ interface InteriorGeneratorProps {
 }
 
 const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { 
         style, roomType, lighting, colorPalette, customPrompt, referenceImages, sourceImage, 
         isLoading, isUpscaling, error, resultImages, upscaledImage, numberOfImages, aspectRatio, resolution
@@ -86,33 +44,83 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
 
+    // --- Dynamic Options with localized values ---
+    const styleOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: t('opt.style.modern'), label: t('opt.style.modern') },
+        { value: t('opt.style.neoclassic'), label: t('opt.style.neoclassic') },
+        { value: 'Indochine', label: 'Indochine' },
+        { value: 'Vintage', label: 'Vintage' },
+        { value: 'Mediterranean', label: 'Mediterranean' },
+        { value: t('opt.style.minimalist'), label: t('opt.style.minimalist') },
+        { value: t('opt.style.scandinavian'), label: t('opt.style.scandinavian') },
+        { value: t('opt.style.industrial'), label: t('opt.style.industrial') },
+        { value: 'Luxury', label: 'Luxury' },
+    ], [t]);
+
+    const projectTypeOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: t('opt.building.townhouse'), label: t('opt.building.townhouse') },
+        { value: t('opt.building.apartment'), label: t('opt.building.apartment') },
+        { value: t('opt.building.villa'), label: t('opt.building.villa') },
+        { value: t('opt.building.office'), label: t('opt.building.office') },
+        { value: `${t('opt.building.restaurant')} / ${t('opt.building.cafe')}`, label: `${t('opt.building.restaurant')} / ${t('opt.building.cafe')}` },
+        { value: 'Showroom', label: 'Showroom' },
+    ], [t]);
+
+    const interiorLightingOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: t('opt.lighting.sunrise'), label: t('opt.lighting.sunrise') },
+        { value: t('opt.lighting.evening'), label: t('opt.lighting.evening') },
+        { value: t('opt.lighting.night_stars'), label: t('opt.lighting.night_stars') },
+    ], [t]);
+
+    const colorPaletteOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'Neutral', label: 'Neutral' },
+        { value: 'Warm', label: 'Warm' },
+        { value: 'Cool', label: 'Cool' },
+        { value: 'Pastel', label: 'Pastel' },
+        { value: 'High Contrast', label: 'High Contrast' },
+    ], [t]);
+
+    // Handle Default Prompt Switching
     useEffect(() => {
-        if (!customPrompt || customPrompt === 'Biến thành ảnh chụp thực tế không gian nội thất') {
-            onStateChange({ customPrompt: 'Biến thành ảnh chụp thực tế nội thất' });
+        const viDefault = 'Biến thành ảnh chụp thực tế không gian nội thất';
+        const enDefault = 'Transform into realistic interior space';
+        
+        if (customPrompt === viDefault || customPrompt === enDefault || !customPrompt) {
+            onStateChange({ customPrompt: t('int.default_prompt') });
         }
-    }, []);
+    }, [language, t]);
 
     const escapeRegExp = (string: string) => { return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); };
     
     const updatePrompt = useCallback((type: 'style' | 'projectType' | 'lighting' | 'colorPalette', newValue: string, oldValue: string) => {
-        const getPromptPart = (partType: string, value: string): string => {
+        const getPromptPart = (partType: string, value: string, lang: string): string => {
             if (value === 'none' || !value) return '';
+            const isVi = lang === 'vi';
             switch (partType) {
-                case 'style': return `phong cách ${value}`;
-                case 'projectType': return `cho ${value}`;
-                case 'lighting': return `với ${value}`;
-                case 'colorPalette': return `tông màu ${value}`;
+                case 'style': return isVi ? `phong cách ${value}` : `style ${value}`;
+                case 'projectType': return isVi ? `cho ${value}` : `for ${value}`;
+                case 'lighting': return isVi ? `với ${value}` : `with ${value}`;
+                case 'colorPalette': return isVi ? `tông màu ${value}` : `color tone ${value}`;
                 default: return '';
             }
         };
-        const oldPart = getPromptPart(type, oldValue); 
-        const newPart = getPromptPart(type, newValue); 
+
+        const oldPartVi = getPromptPart(type, oldValue, 'vi');
+        const oldPartEn = getPromptPart(type, oldValue, 'en');
+        const newPart = getPromptPart(type, newValue, language);
+
         let nextPrompt = customPrompt;
         
-        if (oldPart && nextPrompt.includes(oldPart)) { 
-            const escapedOldPart = escapeRegExp(oldPart); 
-            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), ''); 
+        if (oldPartVi && nextPrompt.includes(oldPartVi)) { 
+            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartVi)}`), '').replace(new RegExp(`${escapeRegExp(oldPartVi)},?\\s*`), ''); 
         } 
+        if (oldPartEn && nextPrompt.includes(oldPartEn)) { 
+            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartEn)}`), '').replace(new RegExp(`${escapeRegExp(oldPartEn)},?\\s*`), ''); 
+        }
         
         if (newPart) { 
             nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart; 
@@ -120,7 +128,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         
         const cleanedPrompt = nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ');
         onStateChange({ customPrompt: cleanedPrompt });
-    }, [customPrompt, onStateChange]);
+    }, [customPrompt, onStateChange, language]);
 
     const handleStyleChange = (newVal: string) => { updatePrompt('style', newVal, style); onStateChange({ style: newVal }); };
     const handleProjectTypeChange = (newVal: string) => { updatePrompt('projectType', newVal, roomType); onStateChange({ roomType: newVal }); };
@@ -146,7 +154,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits nhưng chỉ còn ${userCredits}. Vui lòng nạp thêm.` });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return; 
         }
@@ -154,7 +162,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         if (!customPrompt.trim()) { onStateChange({ error: 'Lời nhắc (prompt) không được để trống.' }); return; }
 
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
-        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
 
         const promptForService = constructInteriorPrompt();
@@ -218,7 +226,12 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` });
+                    const errorMsg = t('msg.refund_success')
+                        .replace('{success}', successfulUrls.length.toString())
+                        .replace('{total}', numberOfImages.toString())
+                        .replace('{amount}', refundAmount.toString())
+                        .replace('{failed}', failedCount.toString());
+                    onStateChange({ error: errorMsg });
                 }
             } else {
                 if (lastError) throw lastError;
@@ -231,7 +244,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -250,7 +263,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
         setIsAutoPromptLoading(true);
         onStateChange({ error: null });
         try {
-            const newPrompt = await geminiService.generateInteriorPrompt(sourceImage);
+            const newPrompt = await geminiService.generateInteriorPrompt(sourceImage, language);
             onStateChange({ customPrompt: newPrompt });
         } catch (err: any) {
             onStateChange({ error: err.message || "Không thể tạo prompt tự động." });
@@ -262,7 +275,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
     const handleUpscale = async () => {
         if (resultImages.length !== 1) return;
         onStateChange({ isUpscaling: true, error: null });
-        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+        setStatusMessage(t('common.processing'));
         try {
             const imageToUpscale = await geminiService.getFileDataFromUrl(resultImages[0]);
             const result = await geminiService.editImage("Upscale this interior design rendering to a high resolution.", imageToUpscale, 1);
@@ -285,29 +298,29 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <div>
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Nội thất</h2>
-                <p className="text-text-secondary dark:text-gray-300 mb-6">Tải lên ảnh phác thảo, mặt bằng hoặc ảnh thực tế của một không gian, AI sẽ giúp bạn hoàn thiện với đầy đủ vật liệu, ánh sáng và đồ đạc.</p>
+                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('int.title')}</h2>
+                <p className="text-text-secondary dark:text-gray-300 mb-6">{t('services.interior_desc')}</p>
                 
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                         <div className="space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Phác Thảo / Không Gian</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('int.step1')}</label>
                                 <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
                             </div>
                              <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tối đa 5 ảnh)</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.ref_images')}</label>
                                 {resolution === 'Standard' ? (
                                     <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
                                         <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
                                         <p className="text-sm text-text-secondary dark:text-gray-400">
-                                            Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
+                                            {t('img_gen.ref_lock')}
                                         </p>
                                         <button 
                                             onClick={() => handleResolutionChange('1K')}
                                             className="text-xs text-[#7f13ec] hover:underline font-semibold"
                                         >
-                                            Nâng cao chất lượng ảnh ngay
+                                            {t('img_gen.upgrade')}
                                         </button>
                                     </div>
                                 ) : (
@@ -318,13 +331,13 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
                          <div className="space-y-4 flex flex-col">
                              <div className="relative">
-                                <label htmlFor="custom-prompt-interior" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả yêu cầu chính</label>
+                                <label htmlFor="custom-prompt-interior" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('int.step2')}</label>
                                 <div className="relative">
                                     <textarea
                                         id="custom-prompt-interior"
                                         rows={4}
                                         className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                                        placeholder="Mô tả ý tưởng của bạn ở đây..."
+                                        placeholder={t('int.prompt_placeholder')}
                                         value={customPrompt}
                                         onChange={(e) => onStateChange({ customPrompt: e.target.value })}
                                         disabled={isLoading}
@@ -340,31 +353,31 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                             : 'bg-[#334155] hover:bg-[#475569] text-white shadow-sm hover:shadow'
                                         }
                                     `}
-                                    title="AI tự động phân tích ảnh và viết mô tả"
+                                    title={t('img_gen.auto_prompt')}
                                 >
                                     {isAutoPromptLoading ? (
                                         <>
                                             <Spinner />
-                                            <span>Đang phân tích...</span>
+                                            <span>{t('img_gen.analyzing')}</span>
                                         </>
                                     ) : (
                                         <>
                                             <span className="material-symbols-outlined text-lg">auto_awesome</span>
-                                            <span>Tạo tự động Prompt</span>
+                                            <span>{t('img_gen.auto_prompt')}</span>
                                         </>
                                     )}
                                 </button>
                              </div>
                             
                             <div className="pt-2">
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh tùy chọn</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('int.step3')}</label>
                                 <div className="space-y-4">
-                                    <OptionSelector id="project-type-selector" label="Thể loại công trình" options={projectTypeOptions} value={roomType} onChange={handleProjectTypeChange} disabled={isLoading} variant="grid" />
-                                    <OptionSelector id="style-selector-int" label="Phong cách thiết kế" options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
+                                    <OptionSelector id="project-type-selector" label={t('opt.int.project_type')} options={projectTypeOptions} value={roomType} onChange={handleProjectTypeChange} disabled={isLoading} variant="grid" />
+                                    <OptionSelector id="style-selector-int" label={t('opt.int.style')} options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
                                     
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <OptionSelector id="lighting-selector-int" label="Ánh sáng" options={interiorLightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
-                                        <OptionSelector id="color-palette-selector" label="Tone màu" options={colorPaletteOptions} value={colorPalette} onChange={handleColorPaletteChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="lighting-selector-int" label={t('opt.int.lighting')} options={interiorLightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="color-palette-selector" label={t('opt.int.color')} options={colorPaletteOptions} value={colorPalette} onChange={handleColorPaletteChange} disabled={isLoading} variant="select" />
                                     </div>
                                 </div>
                             </div>
@@ -389,13 +402,13 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                                 </svg>
-                                <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                                <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                             </div>
                             <div className="text-xs">
                                 {userCredits < cost ? (
-                                    <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                    <span className="text-red-500 font-semibold">{t('common.insufficient')} ({t('common.available')}: {userCredits})</span>
                                 ) : (
-                                    <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                    <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                                 )}
                             </div>
                         </div>
@@ -404,7 +417,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                             disabled={isLoading || !sourceImage || isUpscaling}
                             className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                         >
-                           {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}
+                           {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('int.btn_generate')}
                         </button>
                     </div>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
@@ -414,7 +427,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
              <div>
                 <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-lg font-semibold text-text-primary dark:text-white">So sánh Trước & Sau</h3>
+                    <h3 className="text-lg font-semibold text-text-primary dark:text-white">{t('int.result_title')}</h3>
                     <div className="flex items-center gap-2">
                         {resultImages.length === 1 && !upscaledImage && (
                             <button
@@ -427,7 +440,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                         <path strokeLinecap="round" strokeLinejoin="round" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
                                     </svg>
                                 )}
-                                <span>{isUpscaling ? 'Đang nâng cấp...' : 'Nâng cấp chi tiết'}</span>
+                                <span>{isUpscaling ? t('common.processing') : t('int.btn_upscale')}</span>
                             </button>
                         )}
                         {resultImages.length === 1 && (
@@ -438,9 +451,9 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                     title="Chuyển ảnh này tới Đồng Bộ View để xử lý tiếp"
                                 >
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 01-2 2H6a2 2 0 01-2-2v-2zM14 16a2 2 0 012-2h2a2 2 0 01-2 2H-2a2 2 0 01-2-2v-2z" />
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 6a2 2 0 012-2h2a2 2 0 012 2v2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM14 6a2 2 0 012-2h2a2 2 0 01-2 2H6a2 2 0 01-2-2V6zM4 16a2 2 0 012-2h2a2 2 0 01-2 2H-2a2 2 0 01-2-2v-2z" />
                                     </svg>
-                                    Đồng bộ
+                                    {t('int.btn_sync')}
                                 </button>
                                  <button
                                     onClick={() => setPreviewImage(upscaledImage || resultImages[0])}
@@ -449,10 +462,9 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                                     <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                                     </svg>
-                                    Phóng to
                                 </button>
                                  <button onClick={handleDownload} disabled={isDownloading} className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2">
-                                    {isDownloading ? <Spinner /> : null} Tải xuống
+                                    {isDownloading ? <Spinner /> : null} {t('common.download')}
                                 </button>
                             </>
                         )}
@@ -462,7 +474,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                     {isLoading && (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
                         </div>
                     )}
                     {!isLoading && upscaledImage && resultImages.length === 1 && (
@@ -475,7 +487,7 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
                         <ResultGrid images={resultImages} toolName="interior-render" onSendToViewSync={handleSendImageToSync} />
                     )}
                     {!isLoading && resultImages.length === 0 && (
-                        <p className="text-text-secondary dark:text-gray-400 p-4 text-center">{sourceImage ? 'Kết quả render sẽ hiển thị ở đây' : 'Tải lên một ảnh để bắt đầu'}</p>
+                        <p className="text-text-secondary dark:text-gray-400 p-4 text-center">{sourceImage ? t('msg.no_result_render') : t('common.upload_placeholder')}</p>
                     )}
                 </div>
               </div>

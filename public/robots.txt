@@ -1,0 +1,8 @@
+User-agent: *
+Allow: /
+Disallow: /feature
+Disallow: /payment
+Disallow: /auth
+
+# Sitemaps
+Sitemap: https://opzen.ai/sitemap.xml

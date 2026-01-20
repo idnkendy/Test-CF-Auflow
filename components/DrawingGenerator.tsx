@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { DrawingGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -16,7 +16,9 @@ import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import ResultGrid from './common/ResultGrid';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
+import OptionSelector from './common/OptionSelector';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface DrawingGeneratorProps {
     state: DrawingGeneratorState;
@@ -27,13 +29,34 @@ interface DrawingGeneratorProps {
 }
 
 const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
-    const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
+    const { t, language } = useLanguage();
+    const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio, drawingType } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
     
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Tạo một bản vẽ chiếu vuông góc mô tả công trình này theo mặt bằng, mặt cắt và 2 mặt đứng trái – phải, nền xanh blue, nét kỹ thuật màu trắng';
+        const enDefault = 'Create an orthogonal drawing describing this project with floor plan, section, and 2 left-right elevations, blue background, white technical lines';
+        
+        if (language === 'en' && prompt.includes(viDefault)) {
+             onStateChange({ prompt: prompt.replace(viDefault, enDefault) });
+        } else if (language === 'vi' && prompt.includes(enDefault)) {
+             onStateChange({ prompt: prompt.replace(enDefault, viDefault) });
+        } else if (!prompt) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language, prompt]);
+
+    const drawingTypeOptions = useMemo(() => [
+        { value: 'floor-plan', label: language === 'vi' ? 'Mặt bằng (Floor Plan)' : 'Floor Plan' },
+        { value: 'elevation', label: language === 'vi' ? 'Mặt đứng (Elevation)' : 'Elevation' },
+        { value: 'section', label: language === 'vi' ? 'Mặt cắt (Section)' : 'Section' },
+    ], [language]);
+
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -43,7 +66,6 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
             default: return 5;
         }
     };
-    
     const unitCost = getCostPerImage();
     const cost = numberOfImages * unitCost;
 
@@ -60,23 +82,26 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
 
         if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên ảnh phối cảnh (Render) để tạo bản vẽ.' });
+            onStateChange({ error: t('ext.tech.step1') });
             return;
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang phân tích...');
+        setStatusMessage(t('ext.floorplan.analyzing'));
         setUpscaleWarning(null);
 
-        const fullPrompt = `Architectural Technical Drawing Task: ${prompt || 'general elevation/section view'}.
-        Convert the source image into a technical drawing style as described. Maintain accurate proportions and details.
-        The final generated image must strictly have a ${aspectRatio} aspect ratio.`;
+        // Make the prompt request English output explicitly when language is English to help the AI
+        const promptSuffix = language === 'en' 
+            ? "Ensure technical precision. White lines on blue background." 
+            : "Đảm bảo độ chính xác kỹ thuật. Nét trắng trên nền xanh.";
+
+        const fullPrompt = `Architectural Technical Drawing Task: Convert this 3D render into a professional 2D ${drawingType} architectural drawing. ${prompt || ''}. ${promptSuffix}`;
 
         // Use Flow for ALL resolutions
         const useFlow = true;
@@ -100,7 +125,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
             }
 
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-
+            
             let imageUrls: string[] = [];
 
             if (useFlow) {
@@ -111,14 +136,14 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        setStatusMessage(t('common.processing'));
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt,
                             [sourceImage],
-                            aspectRatio, // Pass actual ratio string directly
+                            aspectRatio, // Pass raw ratio string
                             1,
                             modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(t('common.processing'))
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -133,6 +158,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                                     const mediaId = result.mediaIds[0];
                                     if (mediaId) {
                                         const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                        // Pass aspectRatio to upscale for cropping
                                         const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes, aspectRatio);
                                         if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
                                     }
@@ -142,6 +168,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                             }
                             
                             collectedUrls.push(finalUrl);
+                            // Update both single result for backward compat and array for grid
                             onStateChange({ resultImages: [...collectedUrls] });
                             
                             historyService.addToHistory({ 
@@ -177,7 +204,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
             } else {
                 // Fallback (Not reached with useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage);
                     return { imageUrl: images[0] };
@@ -204,7 +231,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -236,26 +263,29 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Bản Vẽ Kỹ Thuật</h2>
-            <p className="text-text-secondary dark:text-gray-300 -mt-8 mb-6">Biến ảnh phối cảnh 3D thành bản vẽ nét (Line drawing) phục vụ kỹ thuật.</p>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.tech.title')}</h2>
+            <p className="text-text-secondary dark:text-gray-300 -mt-8 mb-6">{t('ext.tech.subtitle')}</p>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Render</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.tech.step1')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
+                    
+                    <OptionSelector id="type" label={t('ext.tech.type')} options={drawingTypeOptions} value={drawingType} onChange={(v) => onStateChange({ drawingType: v as any })} variant="grid" />
+                    
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Chi tiết cần chú trọng</label>
-                        <textarea
+                         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.tech.step2')}</label>
+                         <textarea
                             rows={3}
                             className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                            placeholder="VD: Mặt đứng chính, chi tiết cửa sổ, tỷ lệ chuẩn..."
+                            placeholder={language === 'vi' ? "VD: Mặt đứng chính, chi tiết cửa sổ, tỷ lệ chuẩn..." : "Ex: Main elevation, window details, standard scale..."}
                             value={prompt}
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4">
                         <div>
                             <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
@@ -269,12 +299,26 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                         <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
                     </div>
 
+                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
+                            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                        </div>
+                        <div className="text-xs">
+                            {userCredits < cost ? (
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
+                            ) : (
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
+                            )}
+                        </div>
+                    </div>
+
                     <button
                         onClick={handleGenerate}
                         disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Tạo Bản Vẽ'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.tech.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
@@ -282,7 +326,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
 
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Bản vẽ</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                         {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -304,7 +348,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -320,7 +364,7 @@ const DrawingGenerator: React.FC<DrawingGeneratorProps> = ({ state, onStateChang
                         ) : resultImages.length > 1 ? (
                             <ResultGrid images={resultImages} toolName="drawing-generator" />
                         ) : (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

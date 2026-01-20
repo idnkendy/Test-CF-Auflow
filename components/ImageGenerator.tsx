@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
@@ -19,55 +19,7 @@ import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import { supabase } from '../services/supabaseClient';
 import SafetyWarningModal from './common/SafetyWarningModal';
-
-const buildingTypeOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'nhà phố', label: 'Nhà phố' },
-    { value: 'biệt thự', label: 'Biệt thự' },
-    { value: 'nhà cấp 4', label: 'Nhà cấp 4' },
-    { value: 'chung cư', label: 'Chung cư' },
-    { value: 'toà nhà văn phòng', label: 'Văn phòng' },
-    { value: 'quán cà phê', label: 'Cafe' },
-    { value: 'nhà hàng', label: 'Nhà hàng' },
-];
-
-const styleOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'Hiện đại', label: 'Hiện đại' },
-    { value: 'Tối giản', label: 'Tối giản' },
-    { value: 'Tân Cổ điển', label: 'Tân Cổ điển' },
-    { value: 'Scandinavian', label: 'Scandinavian' },
-    { value: 'Công nghiệp', label: 'Industrial' },
-    { value: 'Nhiệt đới', label: 'Nhiệt đới' },
-    { value: 'Brutalism', label: 'Brutalism' },
-];
-
-const contextOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'trên một đường phố Việt Nam', label: 'Đường phố VN' },
-    { value: 'ở một làng quê Việt Nam', label: 'Làng quê VN' },
-    { value: 'trong một khu đô thị hiện đại Việt Nam', label: 'Đô thị hiện đại' },
-    { value: 'tại một ngã ba đường phố Việt Nam', label: 'Ngã ba đường' },
-    { value: 'tại một ngã tư đường phố Việt Nam', label: 'Ngã tư đường' },
-];
-
-const lightingOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'bình minh dịu nhẹ', label: 'Bình minh' },
-    { value: 'buổi trưa, trời xanh trong', label: 'Trưa nắng' },
-    { value: 'nắng chiều, nắng vàng cam', label: 'Hoàng hôn' },
-    { value: 'buổi tối, đèn vàng từ trong nhà hắt ra, đèn đường sáng', label: 'Buổi tối' },
-    { value: 'đêm khuya, đèn công trình sáng và bầu trời đầy sao', label: 'Đêm sao' },
-];
-
-const weatherOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'trời trong xanh, quang đãng', label: 'Trời trong' },
-    { value: 'có mưa nhẹ và đường ướt', label: 'Mưa nhẹ' },
-    { value: 'có tuyết rơi nhẹ', label: 'Tuyết rơi' },
-    { value: 'under the scorching sun, clear shadows', label: 'Nắng gắt' },
-    { value: 'after a rain, with puddles and reflections', label: 'Sau mưa' },
-];
+import { useLanguage } from '../hooks/useLanguage';
 
 interface ImageGeneratorProps {
   state: ImageGeneratorState;
@@ -79,6 +31,7 @@ interface ImageGeneratorProps {
 }
 
 const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { 
         style, context, lighting, weather, buildingType, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
@@ -92,35 +45,110 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
 
+    // --- Dynamic Options with localized values ---
+    // The 'value' is now language-dependent to ensure the generated prompt matches the user's language setting.
+
+    const buildingTypeOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: t('opt.building.townhouse'), label: t('opt.building.townhouse') },
+        { value: t('opt.building.villa'), label: t('opt.building.villa') },
+        { value: t('opt.building.level4'), label: t('opt.building.level4') },
+        { value: t('opt.building.apartment'), label: t('opt.building.apartment') },
+        { value: t('opt.building.office'), label: t('opt.building.office') },
+        { value: t('opt.building.cafe'), label: t('opt.building.cafe') },
+        { value: t('opt.building.restaurant'), label: t('opt.building.restaurant') },
+    ], [t]);
+
+    const styleOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: t('opt.style.modern'), label: t('opt.style.modern') },
+        { value: t('opt.style.minimalist'), label: t('opt.style.minimalist') },
+        { value: t('opt.style.neoclassic'), label: t('opt.style.neoclassic') },
+        { value: t('opt.style.scandinavian'), label: t('opt.style.scandinavian') },
+        { value: t('opt.style.industrial'), label: t('opt.style.industrial') },
+        { value: t('opt.style.tropical'), label: t('opt.style.tropical') },
+        { value: t('opt.style.brutalism'), label: t('opt.style.brutalism') },
+    ], [t]);
+
+    const contextOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: t('opt.context.street_vn'), label: t('opt.context.street_vn') },
+        { value: t('opt.context.rural_vn'), label: t('opt.context.rural_vn') },
+        { value: t('opt.context.urban'), label: t('opt.context.urban') },
+        { value: t('opt.context.intersection_3'), label: t('opt.context.intersection_3') },
+        { value: t('opt.context.intersection_4'), label: t('opt.context.intersection_4') },
+    ], [t]);
+
+    const lightingOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: t('opt.lighting.sunrise'), label: t('opt.lighting.sunrise') },
+        { value: t('opt.lighting.noon'), label: t('opt.lighting.noon') },
+        { value: t('opt.lighting.sunset'), label: t('opt.lighting.sunset') },
+        { value: t('opt.lighting.evening'), label: t('opt.lighting.evening') },
+        { value: t('opt.lighting.night_stars'), label: t('opt.lighting.night_stars') },
+    ], [t]);
+
+    const weatherOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: t('opt.weather.sunny'), label: t('opt.weather.sunny') },
+        { value: t('opt.weather.rainy'), label: t('opt.weather.rainy') },
+        { value: t('opt.weather.snowy'), label: t('opt.weather.snowy') },
+        { value: t('opt.weather.scorching'), label: t('opt.weather.scorching') },
+        { value: t('opt.weather.after_rain'), label: t('opt.weather.after_rain') },
+    ], [t]);
+
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Biến thành ảnh chụp thực tế nhà ở';
+        const enDefault = 'Transform into a realistic house photo';
+        
+        // Only update if current prompt matches one of the defaults
+        if (customPrompt === viDefault || customPrompt === enDefault || !customPrompt) {
+             onStateChange({ customPrompt: t('img_gen.default_prompt') });
+        }
+    }, [language, t]); // Run when language changes
+
     const escapeRegExp = (string: string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
     const updatePrompt = useCallback((type: string, newValue: string, oldValue: string) => {
-        const getPromptPart = (partType: string, value: string): string => {
+        const getPromptPart = (partType: string, value: string, lang: string): string => {
             if (value === 'none' || !value) return '';
+            const isVi = lang === 'vi';
             switch (partType) {
-                case 'style': return `phong cách ${value}`;
-                case 'context': return `bối cảnh ${value}`;
-                case 'lighting': return `ánh sáng ${value}`;
-                case 'weather': return `thời tiết ${value}`;
-                case 'buildingType': return `là một ${value}`;
+                case 'style': return isVi ? `phong cách ${value}` : `style ${value}`;
+                case 'context': return isVi ? `bối cảnh ${value}` : `context ${value}`;
+                case 'lighting': return isVi ? `ánh sáng ${value}` : `lighting ${value}`;
+                case 'weather': return isVi ? `thời tiết ${value}` : `weather ${value}`;
+                case 'buildingType': return isVi ? `là một ${value}` : `is a ${value}`;
                 default: return '';
             }
         };
 
-        const oldPart = getPromptPart(type, oldValue);
-        const newPart = getPromptPart(type, newValue);
+        // Construct potential old parts in BOTH languages to ensure cleanup works even after language switch
+        const oldPartVi = getPromptPart(type, oldValue, 'vi');
+        const oldPartEn = getPromptPart(type, oldValue, 'en');
+        
+        // Construct new part in CURRENT language
+        const newPart = getPromptPart(type, newValue, language);
+
         let nextPrompt = customPrompt;
 
-        if (oldPart && nextPrompt.includes(oldPart)) {
-             nextPrompt = newPart 
-                ? nextPrompt.replace(oldPart, newPart) 
-                : nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPart)}`), '').replace(new RegExp(`${escapeRegExp(oldPart)},?\\s*`), '');
-        } else if (newPart) {
+        // Try to remove old part (check both VI and EN versions)
+        if (oldPartVi && nextPrompt.includes(oldPartVi)) {
+            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartVi)}`), '').replace(new RegExp(`${escapeRegExp(oldPartVi)},?\\s*`), '');
+        }
+        if (oldPartEn && nextPrompt.includes(oldPartEn)) {
+            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartEn)}`), '').replace(new RegExp(`${escapeRegExp(oldPartEn)},?\\s*`), '');
+        }
+
+        // Add new part
+        if (newPart) {
             nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart;
         }
 
+        // Cleanup commas
         onStateChange({ customPrompt: nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ') });
-    }, [customPrompt, onStateChange]);
+    }, [customPrompt, onStateChange, language]);
 
     const handleBuildingTypeChange = (newVal: string) => { updatePrompt('buildingType', newVal, buildingType); onStateChange({ buildingType: newVal }); };
     const handleStyleChange = (newVal: string) => { updatePrompt('style', newVal, style); onStateChange({ style: newVal }); };
@@ -147,15 +175,15 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+                 onStateChange({ error: t('common.insufficient') });
              }
              return;
         }
         
-        if (!customPrompt.trim()) { onStateChange({ error: 'Lời nhắc không được để trống.' }); return; }
+        if (!customPrompt.trim()) { onStateChange({ error: t('common.error') }); return; }
         
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
-        setStatusMessage('Đang tạo ảnh. Vui lòng đợi...');
+        setStatusMessage(t('common.processing'));
         
         let jobId: string | null = null;
         let logId: string | null = null;
@@ -227,9 +255,14 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                    });
+                    
+                    const errorMsg = t('msg.refund_success')
+                        .replace('{success}', successfulUrls.length.toString())
+                        .replace('{total}', numberOfImages.toString())
+                        .replace('{amount}', refundAmount.toString())
+                        .replace('{failed}', failedCount.toString());
+                    
+                    onStateChange({ error: errorMsg });
                 }
 
             } else {
@@ -243,7 +276,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -264,10 +297,10 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         if (!sourceImage) return;
         setIsAutoPromptLoading(true);
         try {
-            const newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage);
+            const newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage, language);
             onStateChange({ customPrompt: newPrompt });
         } catch (err: any) {
-            onStateChange({ error: "Không thể tạo prompt tự động." });
+            onStateChange({ error: t('common.error') });
         } finally {
             setIsAutoPromptLoading(false);
         }
@@ -282,7 +315,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     };
 
     const handleSendImageToSync = async (imageUrl: string) => {
-        try { const fileData = await geminiService.getFileDataFromUrl(imageUrl); onSendToViewSync(fileData); } catch (e) { onStateChange({ error: "Lỗi chuyển ảnh." }); }
+        try { const fileData = await geminiService.getFileDataFromUrl(imageUrl); onSendToViewSync(fileData); } catch (e) { onStateChange({ error: t('common.error') }); }
     };
 
     return (
@@ -290,24 +323,24 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <div className="flex flex-col gap-2">
-                <h2 className="text-2xl md:text-3xl font-bold text-text-primary dark:text-white">AI Render Kiến trúc</h2>
-                <p className="text-sm md:text-base text-text-secondary dark:text-gray-400">Biến phác thảo thành hiện thực hoặc tạo ý tưởng mới từ mô tả văn bản.</p>
+                <h2 className="text-2xl md:text-3xl font-bold text-text-primary dark:text-white">{t('img_gen.title')}</h2>
+                <p className="text-sm md:text-base text-text-secondary dark:text-gray-400">{t('img_gen.subtitle')}</p>
             </div>
             
             <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-4 md:p-6 rounded-xl border border-border-color dark:border-gray-700">
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                     <div className="space-y-6">
                         <div>
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Phác Thảo (Sketch)</label>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step1')}</label>
                             <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
                         </div>
                          <div>
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu (Tối đa 5 ảnh)</label>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.ref_images')}</label>
                             {resolution === 'Standard' ? (
                                 <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
                                     <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
-                                    <p className="text-sm text-text-secondary dark:text-gray-400">Ảnh tham chiếu chỉ hoạt động ở các bản Pro (1K trở lên).</p>
-                                    <button onClick={() => handleResolutionChange('1K')} className="text-xs text-[#7f13ec] hover:underline font-semibold">Nâng cấp ngay</button>
+                                    <p className="text-sm text-text-secondary dark:text-gray-400">{t('img_gen.ref_lock')}</p>
+                                    <button onClick={() => handleResolutionChange('1K')} className="text-xs text-[#7f13ec] hover:underline font-semibold">{t('img_gen.upgrade')}</button>
                                 </div>
                             ) : (
                                 <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
@@ -316,21 +349,21 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     </div>
                     <div className="space-y-4 flex flex-col">
                         <div className="relative">
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả ý tưởng (Prompt)</label>
-                            <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none resize-none text-sm" placeholder="VD: Một ngôi nhà phố hiện đại, mặt tiền 5m, nhiều cây xanh..." value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step2')}</label>
+                            <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none resize-none text-sm" placeholder={t('img_gen.prompt_placeholder')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
                             <button type="button" onClick={handleAutoPrompt} disabled={!sourceImage || isAutoPromptLoading || isLoading} className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${!sourceImage || isAutoPromptLoading || isLoading ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed' : 'bg-[#334155] hover:bg-[#475569] text-white shadow-sm'}`}>
-                                {isAutoPromptLoading ? <><Spinner /><span>Đang phân tích...</span></> : <><span className="material-symbols-outlined text-lg">auto_awesome</span><span>Tạo tự động Prompt</span></>}
+                                {isAutoPromptLoading ? <><Spinner /><span>{t('img_gen.analyzing')}</span></> : <><span className="material-symbols-outlined text-lg">auto_awesome</span><span>{t('img_gen.auto_prompt')}</span></>}
                             </button>
                         </div>
                         <div className="pt-2">
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh chi tiết</label>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step3')}</label>
                             <div className="space-y-4">
-                                <OptionSelector id="building-type-selector" label="Loại công trình" options={buildingTypeOptions} value={buildingType} onChange={handleBuildingTypeChange} disabled={isLoading} variant="grid" />
-                                <OptionSelector id="style-selector" label="Phong cách" options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
+                                <OptionSelector id="building-type-selector" label={t('opt.building_type')} options={buildingTypeOptions} value={buildingType} onChange={handleBuildingTypeChange} disabled={isLoading} variant="grid" />
+                                <OptionSelector id="style-selector" label={t('opt.style')} options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
                                 <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                                    <OptionSelector id="context-selector" label="Bối cảnh" options={contextOptions} value={context} onChange={handleContextChange} disabled={isLoading} variant="select" />
-                                    <OptionSelector id="lighting-selector" label="Ánh sáng" options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
-                                    <OptionSelector id="weather-selector" label="Thời tiết" options={weatherOptions} value={weather} onChange={handleWeatherChange} disabled={isLoading} variant="select" />
+                                    <OptionSelector id="context-selector" label={t('opt.context')} options={contextOptions} value={context} onChange={handleContextChange} disabled={isLoading} variant="select" />
+                                    <OptionSelector id="lighting-selector" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
+                                    <OptionSelector id="weather-selector" label={t('opt.weather')} options={weatherOptions} value={weather} onChange={handleWeatherChange} disabled={isLoading} variant="select" />
                                 </div>
                             </div>
                         </div>
@@ -346,12 +379,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-3 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-lg">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
-                        <div className="text-xs">{userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span> : <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>}</div>
+                        <div className="text-xs">{userCredits < cost ? <span className="text-red-500 font-semibold">{t('common.insufficient')} ({t('common.available')}: {userCredits})</span> : <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>}</div>
                     </div>
                     <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim()} className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg">
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : `Bắt đầu Render`}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('common.start_render')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                 </div>
@@ -359,12 +392,12 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
             <div>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-text-primary dark:text-white">Kết quả</h3>
+                    <h3 className="text-lg font-bold text-text-primary dark:text-white">{t('common.result')}</h3>
                     {resultImages.length === 1 && (
                         <div className="flex items-center gap-2">
-                            <button onClick={() => handleSendImageToSync(resultImages[0])} className="text-accent-600 bg-accent-50 hover:bg-accent-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-accent-200">Đồng bộ View</button>
+                            <button onClick={() => handleSendImageToSync(resultImages[0])} className="text-accent-600 bg-accent-50 hover:bg-accent-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-accent-200">{t('tool.viewsync')}</button>
                             <button onClick={handleDownload} disabled={isDownloading} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium shadow-sm flex items-center gap-2">
-                                {isDownloading ? <Spinner /> : null} Tải xuống
+                                {isDownloading ? <Spinner /> : null} {t('common.download')}
                             </button>
                         </div>
                     )}
@@ -373,13 +406,13 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                     {isLoading && (
                         <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
                             <div className="w-16 h-16 border-4 border-accent-200 border-t-accent-600 rounded-full animate-spin mb-4"></div>
-                            <p className="text-accent-600 dark:text-accent-400 font-medium animate-pulse">{statusMessage || 'Đang xử lý...'}</p>
+                            <p className="text-accent-600 dark:text-accent-400 font-medium animate-pulse">{statusMessage || t('common.processing')}</p>
                         </div>
                     )}
                     {!isLoading && resultImages.length === 1 && sourceImage && <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />}
                     {!isLoading && resultImages.length === 1 && !sourceImage && <img src={resultImages[0]} className="w-full h-full object-contain" />}
                     {!isLoading && resultImages.length > 1 && <ResultGrid images={resultImages} toolName="architecture-render" onSendToViewSync={handleSendImageToSync} />}
-                    {!isLoading && resultImages.length === 0 && <div className="text-center opacity-50"><p className="text-gray-500">Kết quả render sẽ xuất hiện ở đây</p></div>}
+                    {!isLoading && resultImages.length === 0 && <div className="text-center opacity-50"><p className="text-gray-500">{t('msg.no_result_render')}</p></div>}
                 </div>
             </div>
         </div>

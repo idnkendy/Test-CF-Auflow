@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { AspectRatio } from '../../types';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface AspectRatioSelectorProps {
   value: AspectRatio;
@@ -8,18 +9,20 @@ interface AspectRatioSelectorProps {
   disabled?: boolean;
 }
 
-const options: { value: AspectRatio; label: string }[] = [
-    { value: '1:1', label: 'Vuông (1:1)' },
-    { value: '4:3', label: 'Ngang (4:3)' },
-    { value: '3:4', label: 'Dọc (3:4)' },
-    { value: '16:9', label: 'Rộng (16:9)' },
-    { value: '9:16', label: 'Story (9:16)' },
-];
-
 const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({ value, onChange, disabled }) => {
+  const { t } = useLanguage();
+
+  const options: { value: AspectRatio; label: string }[] = [
+    { value: '1:1', label: t('opt.ar.square') },
+    { value: '4:3', label: t('opt.ar.standard') },
+    { value: '3:4', label: t('opt.ar.portrait') },
+    { value: '16:9', label: t('opt.ar.landscape') },
+    { value: '9:16', label: t('opt.ar.story') },
+  ];
+
   return (
     <div>
-        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Tỷ lệ khung hình</label>
+        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('opt.aspect_ratio')}</label>
         {/* Changed from fixed grid to flexible wrap to prevent text truncation */}
         <div className="flex flex-wrap gap-2 bg-gray-100 dark:bg-[#1A1A1A] border border-gray-200 dark:border-[#302839] p-1.5 rounded-xl shadow-inner">
             {options.map(option => (

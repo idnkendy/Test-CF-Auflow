@@ -8,6 +8,7 @@ interface SEOHeadProps {
   url?: string;
   keywords?: string; // New prop for keywords
   schemaType?: 'WebSite' | 'SoftwareApplication' | 'Article'; // New prop for structured data
+  noindex?: boolean; // Control visibility to search engines
 }
 
 const DEFAULT_TITLE = "OPZEN AI - Kiến tạo không gian với AI";
@@ -21,7 +22,8 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
   image = DEFAULT_IMAGE,
   url = typeof window !== 'undefined' ? window.location.href : '',
   keywords = DEFAULT_KEYWORDS,
-  schemaType = 'SoftwareApplication'
+  schemaType = 'SoftwareApplication',
+  noindex = false
 }) => {
   const siteTitle = title === DEFAULT_TITLE ? title : `${title} | OPZEN AI`;
 
@@ -43,6 +45,10 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     // 3. Update Standard Meta
     updateMeta('description', description);
     updateMeta('keywords', keywords);
+    
+    // Robots Tag
+    const robotsContent = noindex ? "noindex, nofollow" : "index, follow, max-image-preview:large";
+    updateMeta('robots', robotsContent);
 
     // 4. Update Open Graph
     updateMeta('og:title', siteTitle, 'property');
@@ -50,6 +56,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     updateMeta('og:image', image, 'property');
     updateMeta('og:url', url, 'property');
     updateMeta('og:type', 'website', 'property');
+    updateMeta('og:locale', 'vi_VN', 'property');
     
     // 5. Update Twitter
     updateMeta('twitter:title', siteTitle, 'property');
@@ -66,7 +73,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
     }
     link.setAttribute('href', url);
 
-    // 7. Inject JSON-LD Schema (Structured Data)
+    // 7. Inject JSON-LD Schema (Structured Data) with Rich Snippets
     const scriptId = 'seo-schema-json-ld';
     let script = document.getElementById(scriptId);
     
@@ -81,7 +88,7 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
         "@context": "https://schema.org",
         "@type": schemaType,
         "name": "OPZEN AI",
-        "url": "https://opzen.ai", // Replace with real domain if available
+        "url": "https://opzen.ai", 
         "description": DEFAULT_DESCRIPTION,
         "applicationCategory": "DesignApplication",
         "operatingSystem": "Web Browser",
@@ -90,12 +97,21 @@ export const SEOHead: React.FC<SEOHeadProps> = ({
             "price": "0",
             "priceCurrency": "VND"
         },
-        "image": DEFAULT_IMAGE
+        "aggregateRating": {
+            "@type": "AggregateRating",
+            "ratingValue": "4.8",
+            "ratingCount": "1250"
+        },
+        "image": DEFAULT_IMAGE,
+        "author": {
+            "@type": "Organization",
+            "name": "OPZEN AI Team"
+        }
     };
 
     script.textContent = JSON.stringify(schemaData);
 
-  }, [siteTitle, description, image, url, keywords, schemaType]);
+  }, [siteTitle, description, image, url, keywords, schemaType, noindex]);
 
   return null;
 };

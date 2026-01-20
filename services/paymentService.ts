@@ -3,7 +3,10 @@ import { supabase } from './supabaseClient';
 import { PricingPlan, UserStatus, Transaction } from '../types';
 import { plans } from '../constants/plans'; // Source of Truth for pricing
 
-export const getUserStatus = async (userId: string, email?: string): Promise<UserStatus> => {
+// @ts-ignore
+const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
+
+export const getUserStatus = async (userId: string, email?: string, fullName?: string): Promise<UserStatus> => {
     try {
         let { data, error } = await supabase
             .from('profiles')
@@ -11,12 +14,31 @@ export const getUserStatus = async (userId: string, email?: string): Promise<Use
             .eq('id', userId)
             .maybeSingle();
 
+        // NẾU KHÔNG TÌM THẤY DATA -> ĐÂY LÀ USER MỚI (SIGN UP)
         if (!data && email) {
+             // 1. Gửi Webhook sang LadiFlow ngay lập tức (Fire & Forget)
+             try {
+                 const baseUrl = BACKEND_URL.replace(/\/$/, "");
+                 fetch(`${baseUrl}/sync-ladipage`, {
+                     method: 'POST',
+                     headers: { 'Content-Type': 'application/json' },
+                     body: JSON.stringify({ 
+                         email, 
+                         full_name: fullName || email.split('@')[0], 
+                         is_new_user: true 
+                     })
+                 }).catch(err => console.error("[Sync] Failed to trigger worker:", err));
+             } catch (e) {
+                 console.error("[Sync] Error:", e);
+             }
+
+             // 2. Tạo hồ sơ mới trong DB
              const { error: insertError } = await supabase
                 .from('profiles')
-                .insert([{ id: userId, email, credits: 60 }]);
+                .insert([{ id: userId, email, credits: 60, full_name: fullName }]);
              
              if (insertError) {
+                 // Trường hợp Race Condition (đã tạo ở tab khác), thử lấy lại
                  const { data: retryData, error: retryError } = await supabase
                     .from('profiles')
                     .select('credits, subscription_end')

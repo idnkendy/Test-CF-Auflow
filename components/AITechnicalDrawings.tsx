@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { AITechnicalDrawingsState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -18,6 +18,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
 import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface AITechnicalDrawingsProps {
     state: AITechnicalDrawingsState;
@@ -27,20 +28,33 @@ interface AITechnicalDrawingsProps {
     onInsufficientCredits?: () => void;
 }
 
-const drawingTypeOptions = [
-    { value: 'floor-plan', label: 'Mặt bằng (Floor Plan)' },
-    { value: 'elevation', label: 'Mặt đứng (Elevation)' },
-    { value: 'section', label: 'Mặt cắt (Section)' },
-];
-
 const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
-    const { sourceImage, isLoading, error, resultImage, resultImages = [], numberOfImages = 1, drawingType, detailLevel, resolution, aspectRatio } = state;
+    const { t, language } = useLanguage();
+    const { sourceImage, isLoading, error, resultImage, resultImages = [], numberOfImages = 1, drawingType, detailLevel, resolution, aspectRatio, prompt } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false);
+    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Tạo một bản vẽ chiếu vuông góc mô tả công trình này theo mặt bằng, mặt cắt và 2 mặt đứng trái – phải, nền xanh blue, nét kỹ thuật màu trắng';
+        const enDefault = 'Create an orthogonal drawing describing this project with floor plan, section, and 2 left-right elevations, blue background, white technical lines';
+        
+        // If current prompt is empty or matches one of the defaults, update it
+        // Note: state now has 'prompt' property in interface.
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
     
+    const drawingTypeOptions = useMemo(() => [
+        { value: 'floor-plan', label: language === 'vi' ? 'Mặt bằng (Floor Plan)' : 'Floor Plan' },
+        { value: 'elevation', label: language === 'vi' ? 'Mặt đứng (Elevation)' : 'Elevation' },
+        { value: 'section', label: language === 'vi' ? 'Mặt cắt (Section)' : 'Section' },
+    ], [language]);
+
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -79,7 +93,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
         setStatusMessage('Đang phân tích...');
         setUpscaleWarning(null);
 
-        const fullPrompt = `Convert this 3D render into a professional 2D ${drawingType} architectural drawing. White lines on blue background.`;
+        const fullPrompt = `Convert this 3D render into a professional 2D ${drawingType} architectural drawing. ${prompt || ''}. White lines on blue background.`;
 
         // Use Flow for ALL resolutions
         const useFlow = true;
@@ -114,14 +128,14 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        setStatusMessage(t('common.processing'));
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt,
                             [sourceImage],
                             aspectRatio, // Pass raw ratio string
                             1,
                             modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(t('common.processing'))
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -182,7 +196,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
             } else {
                 // Fallback (Not reached with useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                     return images[0];
@@ -201,7 +215,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -234,33 +248,52 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Bản Vẽ Kỹ Thuật</h2>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.tech.title')}</h2>
+            <p className="text-text-secondary dark:text-gray-300 -mt-8 mb-6">{t('ext.tech.subtitle')}</p>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Render</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.tech.step1')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
                     
-                    <OptionSelector id="type" label="Loại bản vẽ" options={drawingTypeOptions} value={drawingType} onChange={(v) => onStateChange({ drawingType: v as any })} variant="grid" />
+                    <OptionSelector id="type" label={t('ext.tech.type')} options={drawingTypeOptions} value={drawingType} onChange={(v) => onStateChange({ drawingType: v as any })} variant="grid" />
                     
+                    <div>
+                         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.tech.step2')}</label>
+                         <textarea
+                            rows={3}
+                            className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
+                            placeholder={language === 'vi' ? "VD: Mặt đứng chính, chi tiết cửa sổ, tỷ lệ chuẩn..." : "Ex: Main elevation, window details, standard scale..."}
+                            value={prompt || ''}
+                            onChange={(e) => onStateChange({ prompt: e.target.value })}
+                        />
+                    </div>
+
                     <div className="grid grid-cols-2 gap-4">
-                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                        <AspectRatioSelector value={aspectRatio} onChange={(v) => onStateChange({ aspectRatio: v })} disabled={isLoading} />
+                        <div>
+                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
+                        </div>
+                        <div>
+                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                        </div>
                     </div>
                     
-                    <ResolutionSelector value={resolution} onChange={(v) => onStateChange({ resolution: v })} disabled={isLoading} />
+                    <div>
+                        <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
+                    </div>
 
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                             )}
                         </div>
                     </div>
@@ -270,7 +303,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                         disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Tạo Bản Vẽ'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.tech.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
@@ -278,7 +311,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
 
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Bản vẽ</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                         {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -300,7 +333,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -316,7 +349,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                         ) : resultImages.length > 1 ? (
                             <ResultGrid images={resultImages} toolName="drawing-generator" />
                         ) : (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

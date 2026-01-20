@@ -17,6 +17,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface SketchConverterProps {
     state: SketchConverterState;
@@ -26,23 +27,24 @@ interface SketchConverterProps {
     onInsufficientCredits?: () => void;
 }
 
-const sketchStyleOptions = [
-    { value: 'pencil', label: 'Chì (Pencil)' },
-    { value: 'charcoal', label: 'Than (Charcoal)' },
-    { value: 'watercolor', label: 'Màu nước (Watercolor)' },
-];
-
-const detailLevelOptions = [
-    { value: 'medium', label: 'Trung bình' },
-    { value: 'high', label: 'Chi tiết cao' },
-];
-
 const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { sourceImage, isLoading, error, resultImage, sketchStyle, detailLevel, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+
+    const sketchStyleOptions = [
+        { value: 'pencil', label: language === 'vi' ? 'Chì (Pencil)' : 'Pencil' },
+        { value: 'charcoal', label: language === 'vi' ? 'Than (Charcoal)' : 'Charcoal' },
+        { value: 'watercolor', label: language === 'vi' ? 'Màu nước (Watercolor)' : 'Watercolor' },
+    ];
+
+    const detailLevelOptions = [
+        { value: 'medium', label: language === 'vi' ? 'Trung bình' : 'Medium' },
+        { value: 'high', label: language === 'vi' ? 'Chi tiết cao' : 'High' },
+    ];
 
     // Cost logic
     const getCostPerImage = () => {
@@ -116,14 +118,14 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                 // --- FLOW LOGIC ---
                 const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const result = await externalVideoService.generateFlowImage(
                     fullPrompt,
                     [sourceImage],
                     aspectRatio, // Pass raw ratio directly
                     1,
                     modelName,
-                    (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                    (msg) => setStatusMessage(t('common.processing'))
                 );
 
                 if (result.imageUrls && result.imageUrls.length > 0) {
@@ -151,7 +153,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
 
             } else {
                 // Fallback
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                 resultUrl = images[0];
                 historyService.addToHistory({ tool: Tool.SketchConverter, prompt: fullPrompt, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
@@ -167,7 +169,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -175,7 +177,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi sketch (${rawMsg})`, logId);
-                friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
             }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
@@ -197,18 +199,18 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Biến Ảnh Thành Sketch</h2>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.sketch.title')}</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Gốc</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.sketch.step1')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <OptionSelector 
                             id="sketch-style" 
-                            label="Phong cách" 
+                            label={t('ext.sketch.style')} 
                             options={sketchStyleOptions} 
                             value={sketchStyle} 
                             onChange={(v) => onStateChange({ sketchStyle: v as any })} 
@@ -216,7 +218,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                         />
                         <OptionSelector 
                             id="detail-level" 
-                            label="Độ chi tiết" 
+                            label={t('ext.sketch.detail')} 
                             options={detailLevelOptions} 
                             value={detailLevel} 
                             onChange={(v) => onStateChange({ detailLevel: v as any })} 
@@ -237,13 +239,13 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}</span>
                             )}
                         </div>
                     </div>
@@ -253,14 +255,14 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                         disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : 'Tạo Sketch'}
+                        {isLoading ? <><Spinner /> {statusMessage || 'Đang vẽ...'}</> : t('ext.sketch.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                 </div>
 
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Sketch</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                         {resultImage && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -282,7 +284,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -298,7 +300,7 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                         ) : resultImage ? (
                              <img src={resultImage} alt="Result" className="w-full h-full object-contain" />
                         ) : (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

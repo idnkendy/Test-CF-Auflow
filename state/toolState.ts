@@ -27,6 +27,7 @@ export interface DrawingGeneratorState {
     numberOfImages: number;
     aspectRatio: AspectRatio;
     resolution: ImageResolution;
+    drawingType: 'floor-plan' | 'elevation' | 'section';
 }
 
 export interface DiagramGeneratorState {
@@ -321,7 +322,7 @@ export interface StagingState {
     error: string | null;
     resultImages: string[];
     numberOfImages: number;
-    aspectRatio: AspectRatio; // Added
+    aspectRatio: AspectRatio; // Added default
     resolution: ImageResolution;
 }
 
@@ -334,8 +335,9 @@ export interface AITechnicalDrawingsState {
     numberOfImages: number;
     drawingType: 'floor-plan' | 'elevation' | 'section';
     detailLevel: 'basic' | 'detailed' | 'annotated' | 'terrain';
-    aspectRatio: AspectRatio; // Added
+    aspectRatio: AspectRatio; // Added default
     resolution: ImageResolution;
+    prompt: string;
 }
 
 export interface SketchConverterState {
@@ -346,7 +348,7 @@ export interface SketchConverterState {
     sketchStyle: 'pencil' | 'charcoal' | 'watercolor';
     detailLevel: 'medium' | 'high';
     resolution: ImageResolution;
-    aspectRatio: AspectRatio;
+    aspectRatio: AspectRatio; // Changed from '16:9'
 }
 
 export interface FengShuiState {
@@ -606,6 +608,7 @@ export const initialToolStates = {
         detailLevel: 'basic',
         aspectRatio: '16:9', // Added default
         resolution: 'Standard',
+        prompt: '', // Initialize prompt
     } as AITechnicalDrawingsState,
     [Tool.SketchConverter]: {
         sourceImage: null,
@@ -664,7 +667,7 @@ export const initialToolStates = {
         resolution: 'Standard',
     } as LayoutGeneratorState,
     [Tool.DrawingGenerator]: {
-        prompt: 'Tạo một bản vẽ chiếu vuông góc mô tả công trình này theo mặt bằng, mặt cắt và 2 mặt đứng trái – phải, nền xanh blue, nét kỹ thuật màu trắng',
+        prompt: '', // Changed to empty to support dynamic language default
         sourceImage: null,
         isLoading: false,
         error: null,
@@ -672,6 +675,7 @@ export const initialToolStates = {
         numberOfImages: 1,
         aspectRatio: '16:9',
         resolution: 'Standard',
+        drawingType: 'floor-plan',
     } as DrawingGeneratorState,
     [Tool.DiagramGenerator]: {
         prompt: "Exploded axonometric architectural diagram, showing functional layers, flow arrows, analytical style, clean lines, pastel colors.",

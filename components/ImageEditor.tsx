@@ -19,6 +19,7 @@ import MultiImageUpload from './common/MultiImageUpload';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface ImageEditorProps {
     state: ImageEditorState;
@@ -89,6 +90,7 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 };
 
 const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t } = useLanguage();
     const { prompt, sourceImage, maskImage, referenceImages, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
@@ -146,7 +148,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -161,7 +163,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang phân tích yêu cầu...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
 
         let logId: string | null = null;
@@ -224,7 +226,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         effectiveAspectRatio, // Pass raw ratio
                         1,
                         modelName,
-                        (msg) => setStatusMessage(msg)
+                        (msg) => setStatusMessage(t('common.processing'))
                     );
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
@@ -267,9 +269,12 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                    });
+                    const errorMsg = t('msg.refund_success')
+                        .replace('{success}', successfulUrls.length.toString())
+                        .replace('{total}', numberOfImages.toString())
+                        .replace('{amount}', refundAmount.toString())
+                        .replace('{failed}', failedCount.toString());
+                    onStateChange({ error: errorMsg });
                 }
             } else {
                 // If no images generated, throw the specific last error if available
@@ -283,7 +288,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -338,13 +343,13 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     maskColor="rgba(239, 68, 68, 0.5)"
                 />
             )}
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Chỉnh Sửa Ảnh</h2>
-            <p className="text-text-secondary dark:text-gray-300 mb-6">Tải lên một bức ảnh và mô tả những thay đổi bạn muốn. Bạn cũng có thể dùng công cụ mask để chỉ định vùng cần chỉnh sửa.</p>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('editor.title')}</h2>
+            <p className="text-text-secondary dark:text-gray-300 mb-6">{t('editor.subtitle')}</p>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 flex flex-col">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Gốc</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('editor.step1')}</label>
                         <ImageUpload 
                             onFileSelect={handleFileSelect} 
                             previewUrl={sourceImage?.objectURL}
@@ -352,7 +357,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         />
                          {sourceImage && (
                             <div className="mt-4">
-                                <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">Tùy chọn vùng chọn:</p>
+                                <p className="text-sm text-text-secondary dark:text-gray-400 mb-2">{t('reno.mask_option')}</p>
                                 <div className="flex gap-2">
                                     <button
                                         type="button"
@@ -362,10 +367,10 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                             scrollToTop(); 
                                         }}
                                         className="w-full bg-purple-600 hover:bg-purple-700 text-white font-semibold py-2 px-4 rounded-lg transition-colors text-sm flex items-center justify-center gap-2"
-                                        title="Vẽ vùng chọn"
+                                        title={t('reno.draw_mask')}
                                     >
                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor"><path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" /><path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" /></svg>
-                                        {maskImage ? 'Sửa vùng chọn' : 'Vẽ vùng chọn (Mask)'}
+                                        {maskImage ? t('reno.edit_mask') : t('reno.draw_mask')}
                                     </button>
                                     {maskImage && (
                                         <button
@@ -378,30 +383,30 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                         </button>
                                     )}
                                 </div>
-                                {maskImage && <p className="text-xs text-green-500 dark:text-green-400 mt-2">Đã áp dụng vùng chọn. AI sẽ chỉ chỉnh sửa trong vùng này.</p>}
+                                {maskImage && <p className="text-xs text-green-500 dark:text-green-400 mt-2">{t('reno.mask_applied')}</p>}
                             </div>
                         )}
                     </div>
                     
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Ảnh Tham Chiếu (Tùy chọn)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('editor.step2')}</label>
                         {resolution === 'Standard' && !maskImage ? (
                              <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
                                 <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
                                 <p className="text-sm text-text-secondary dark:text-gray-400">
-                                    Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên) hoặc khi dùng Mask.
+                                    {t('img_gen.ref_lock')}
                                 </p>
                                 <button 
                                     onClick={() => handleResolutionChange('1K')}
                                     className="text-xs text-[#7f13ec] hover:underline font-semibold"
                                 >
-                                    Nâng cao chất lượng ảnh ngay
+                                    {t('img_gen.upgrade')}
                                 </button>
                             </div>
                         ) : (
                             <>
                                 <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
-                                <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">Tải lên tối đa 5 ảnh để AI tham khảo phong cách hoặc chi tiết.</p>
+                                <p className="text-xs text-text-secondary dark:text-gray-500 mt-2">{t('editor.ref_hint')}</p>
                             </>
                         )}
                     </div>
@@ -409,12 +414,12 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
                  <div className="space-y-6 flex flex-col h-full">
                      <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 flex-grow flex flex-col">
-                         <label htmlFor="prompt-editor" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Mô tả thay đổi mong muốn</label>
+                         <label htmlFor="prompt-editor" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('editor.step3')}</label>
                          <textarea
                             id="prompt-editor"
                             rows={6}
                             className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all flex-grow"
-                            placeholder="VD: Thay đổi màu sơn tường thành màu kem, thêm cây xanh vào góc phòng, làm cho ánh sáng ấm áp hơn..."
+                            placeholder={t('editor.prompt_placeholder')}
                             value={prompt}
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
@@ -436,13 +441,13 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                             </svg>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                             )}
                         </div>
                     </div>
@@ -451,7 +456,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         disabled={isLoading || !sourceImage || !prompt}
                         className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Chỉnh sửa'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('editor.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <p className="mt-2 text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
@@ -460,7 +465,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
             <div>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Chỉnh sửa</h3>
+                    <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('editor.result_title')}</h3>
                     {resultImages.length === 1 && (
                         <div className="flex items-center gap-2">
                             <button
@@ -478,7 +483,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                 className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2"
                             >
                                 {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
-                                Tải xuống
+                                {t('common.download')}
                             </button>
                         </div>
                     )}
@@ -487,7 +492,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     {isLoading && (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
                         </div>
                     )}
                     
@@ -503,7 +508,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     )}
 
                     {!isLoading && resultImages.length === 0 && (
-                         <p className="text-text-secondary dark:text-gray-400 text-center p-4">{sourceImage ? 'Kết quả chỉnh sửa sẽ hiển thị ở đây.' : 'Tải lên một ảnh để bắt đầu.'}</p>
+                         <p className="text-text-secondary dark:text-gray-400 text-center p-4">{sourceImage ? t('msg.no_result_render') : t('common.upload_placeholder')}</p>
                     )}
                 </div>
             </div>

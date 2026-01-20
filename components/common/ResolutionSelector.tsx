@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { ImageResolution } from '../../types';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface ResolutionSelectorProps {
   value: ImageResolution;
@@ -9,19 +10,21 @@ interface ResolutionSelectorProps {
   filter?: (option: { value: ImageResolution }) => boolean;
 }
 
-const options: { value: ImageResolution; label: string; badge?: string; cost: number; desc: string }[] = [
-    { value: 'Standard', label: 'Tiêu chuẩn', badge: 'Nhanh', cost: 5, desc: 'Nano Flash' },
-    { value: '1K', label: 'HD (1K)', badge: 'Chi tiết', cost: 10, desc: 'Nano Pro' },
-    { value: '2K', label: '2K QHD', badge: 'Sắc nét', cost: 20, desc: 'Nano Pro' },
-    { value: '4K', label: '4K UHD', badge: 'Siêu thực', cost: 30, desc: 'Nano Pro' },
-];
-
 const ResolutionSelector: React.FC<ResolutionSelectorProps> = ({ value, onChange, disabled, filter }) => {
+  const { t } = useLanguage();
+
+  const options: { value: ImageResolution; label: string; badge?: string; cost: number; desc: string }[] = [
+    { value: 'Standard', label: t('opt.res.standard'), badge: t('opt.res.badge.fast'), cost: 5, desc: t('opt.res.desc.flash') },
+    { value: '1K', label: t('opt.res.hd'), badge: t('opt.res.badge.detailed'), cost: 10, desc: t('opt.res.desc.pro') },
+    { value: '2K', label: t('opt.res.2k'), badge: t('opt.res.badge.sharp'), cost: 20, desc: t('opt.res.desc.pro') },
+    { value: '4K', label: t('opt.res.4k'), badge: t('opt.res.badge.realistic'), cost: 30, desc: t('opt.res.desc.pro') },
+  ];
+
   const visibleOptions = filter ? options.filter(filter) : options;
 
   return (
     <div className="w-full">
-        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Chất lượng ảnh & Độ phân giải</label>
+        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('opt.resolution')}</label>
         {/* Optimized Grid */}
         <div className={`grid gap-3 ${visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
             {visibleOptions.map(option => (

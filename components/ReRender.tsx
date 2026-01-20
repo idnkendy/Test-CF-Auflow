@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { ReRenderState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -17,6 +17,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import ResultGrid from './common/ResultGrid';
 import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface ReRenderProps {
     state: ReRenderState;
@@ -27,6 +28,7 @@ interface ReRenderProps {
 }
 
 const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -47,6 +49,17 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
     const unitCost = getCostPerImage();
     const cost = numberOfImages * unitCost;
 
+    // Update default prompt when language changes, only if the user hasn't typed anything custom
+    // or if the current prompt matches the default of the other language
+    useEffect(() => {
+        const viDefault = 'Biến ảnh thành ảnh thực tế';
+        const enDefault = 'Make it photorealistic';
+        
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
+
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImages: [] });
     };
@@ -60,7 +73,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -77,11 +90,11 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
         // Simplified status message
-        setStatusMessage('Đang xử lý, vui lòng đợi...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
 
-        // Prompt cứng cho Bước 1
-        const step1Prompt = "Chuyển ảnh về nét tay màu nước, giữ nguyên chi tiết";
+        // Prompt cứng cho Bước 1 (Sketch creation)
+        const step1Prompt = "Convert to watercolor sketch style, keep details";
         
         // Prompt cho Bước 2 (Kết hợp input user)
         const step2Prompt = `Turn this sketch into a photorealistic image. ${prompt}`;
@@ -191,9 +204,14 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                    });
+                    
+                    const errorMsg = t('msg.refund_success')
+                        .replace('{success}', successfulUrls.length.toString())
+                        .replace('{total}', numberOfImages.toString())
+                        .replace('{amount}', refundAmount.toString())
+                        .replace('{failed}', failedCount.toString());
+                    
+                    onStateChange({ error: errorMsg });
                 }
             } else {
                 throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
@@ -206,7 +224,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -236,20 +254,20 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">Re-Render (Làm chân thực thiết kế)</h2>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.rerender.title')}</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Gốc</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.rerender.step1')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
                     
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả yêu cầu (Prompt)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.rerender.step2')}</label>
                         <textarea
                             rows={4}
                             className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                            placeholder="VD: Biến ảnh thành ảnh thực tế, ánh sáng ban ngày, không gian hiện đại..."
+                            placeholder={t('ext.rerender.prompt_ph')}
                             value={prompt}
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
@@ -269,13 +287,13 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                             )}
                         </div>
                     </div>
@@ -285,7 +303,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
                         disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Thực hiện Re-Render'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.rerender.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
@@ -293,7 +311,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
 
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                         {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -315,7 +333,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -331,7 +349,7 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
                         ) : resultImages.length > 0 ? (
                              <ResultGrid images={resultImages} toolName="re-render" />
                         ) : (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

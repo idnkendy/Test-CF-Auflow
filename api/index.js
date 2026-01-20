@@ -27,6 +27,12 @@ const RUNNINGHUB_API_KEYS = [
 const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
 const UPSCALE_FAST_WEBAPP_ID = "1983430456135852034";
 
+// --- LADIPAGE / LADIFLOW CONFIGURATION ---
+// 1. Dán API Key của LadiFlow vào đây (Lấy trong Cài đặt -> API Key của LadiFlow)
+const LADIFLOW_API_KEY = "rDTPm0fYDhyDMAAXjAklw0Ek"; 
+// 2. URL API chuẩn của LadiFlow
+const LADIFLOW_API_URL = "https://api.ladiflow.com/v1/customers";
+
 const HEADERS = {
     'content-type': 'text/plain;charset=UTF-8', 
     'origin': 'https://labs.google',
@@ -214,8 +220,8 @@ async function triggerGenerationWithRefs(env, accounts, prompt, videoAspectRatio
         const aspectRatioEnum = videoAspectRatio || "VIDEO_ASPECT_RATIO_LANDSCAPE";
         
         const modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
-            ? "veo_3_0_r2v_fast_portrait_ultra" 
-            : "veo_3_0_r2v_fast_ultra";
+            ? "veo_3_1_r2v_fast_portrait_ultra" 
+            : "veo_3_1_r2v_fast_landscape_ultra";
 
         const uploadedMediaIds = [];
         for (const imgData of referenceImagesData) {
@@ -302,10 +308,10 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
         if (isDoubleImage) {
             // Case 3: Start Image + End Image
             modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
-               ? "veo_3_1_i2v_s_fast_portrait_ultra_fl" // Inferred portrait fl key
+               ? "veo_3_1_i2v_s_fast_portrait_ultra_fl" 
                : "veo_3_1_i2v_s_fast_ultra_fl";
             
-            googleUrl = 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartEndImage';
+            googleUrl = 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartAndEndImage';
         } else if (isI2V) {
             // Case 2: Image to Video (Start Only)
              modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
@@ -481,7 +487,7 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
             }] 
         };
 
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', { 
+        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:video:batchCheckAsyncVideoGenerationStatus', { 
             method: 'POST', 
             headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, }, 
             body: JSON.stringify(payload) 
@@ -489,7 +495,6 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
         
         if (res.status === 404 || res.status === 403) throw new Error(`NotFound/Permission (Account ID: ${authData.id})`);
         
-        // --- IMPROVED ERROR LOGGING HERE ---
         if (!res.ok) {
             let errorMsg = `Check Status Failed (${res.status})`;
             try {
@@ -505,7 +510,6 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
             }
             throw new Error(errorMsg);
         }
-        // ------------------------------------
         
         const data = await res.json();
         const opResult = data.operations?.[0];
@@ -530,9 +534,38 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
              } catch(e) {}
              return { status: 'failed', message: errorMsg, step: 'checking_status' };
         }
-        // Luôn trả về step: 'checking_status' để frontend biết đã qua bước lấy tên
         return { status: 'processing', step: 'checking_status', message: 'Google is generating video...' };
     });
+}
+
+// --- Helper to push to LadiFlow via API ---
+async function sendToLadiPage(data) {
+    if (!LADIFLOW_API_KEY) {
+        // API Key not configured
+        return;
+    }
+
+    try {
+        const payload = {
+            email: data.email,
+            phone: data.phone || "",
+            first_name: data.name, 
+            last_name: "", 
+            tags: data.tags 
+        };
+
+        const response = await fetch(LADIFLOW_API_URL, {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${LADIFLOW_API_KEY}`
+            },
+            body: JSON.stringify(payload)
+        });
+
+    } catch (e) {
+        console.error("[LadiFlow] Network error:", e);
+    }
 }
 
 // ... existing handleSePayWebhook ...
@@ -544,14 +577,52 @@ async function handleSePayWebhook(request, env) {
         const match = content.match(/OPZ\d+/i);
         const transactionCode = match ? match[0].toUpperCase() : null;
         if (!transactionCode) return new Response(JSON.stringify({ success: false, message: "No transaction code" }), { status: 200 });
+        
         const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
         const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
+        
+        // 1. Approve Transaction via DB
         const response = await fetch(`${sbUrl}/rest/v1/rpc/webhook_approve_transaction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` },
             body: JSON.stringify({ p_transaction_code: transactionCode, p_amount: amount })
         });
-        return new Response(JSON.stringify(await response.json()), { status: 200 });
+        
+        const result = await response.json();
+
+        // 2. Check for First Purchase & Sync to LadiPage
+        if (result && !result.error && LADIFLOW_API_KEY) {
+            // Retrieve User ID from transaction
+            const txQuery = await fetch(`${sbUrl}/rest/v1/transactions?select=user_id,customer_email,customer_name,customer_phone&transaction_code=eq.${transactionCode}&limit=1`, {
+                headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` }
+            });
+            const txData = await txQuery.json();
+            
+            if (txData && txData.length > 0) {
+                const tx = txData[0];
+                const userId = tx.user_id;
+
+                // Check count of completed transactions for this user
+                const countQuery = await fetch(`${sbUrl}/rest/v1/transactions?user_id=eq.${userId}&status=eq.completed&select=id`, {
+                    headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Range': '0-1' } // Get at least 2 to know if > 1
+                });
+                
+                // Note: Range 0-1 returns up to 2 items. If length is 1, it's the first purchase.
+                const countData = await countQuery.json();
+                
+                if (countData.length === 1) {
+                    // This is the FIRST successful transaction
+                    await sendToLadiPage({
+                        email: tx.customer_email,
+                        phone: tx.customer_phone,
+                        name: tx.customer_name,
+                        tags: ["OPZEN_FIRST_PURCHASE", "OPZEN_CUSTOMER"]
+                    });
+                }
+            }
+        }
+
+        return new Response(JSON.stringify(result), { status: 200 });
     } catch (e) { return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 }); }
 }
 
@@ -613,6 +684,31 @@ async function handleRunningHubProxy(action, body) {
     return data;
 }
 
+// --- NEW FUNCTION: GEO CHECK ---
+async function handleGeoCheck(request) {
+    const country = request.headers.get('cf-ipcountry') || 'VN';
+    return { country };
+}
+
+// --- NEW FUNCTION: SYNC USER TO LADIPAGE ---
+async function handleSyncLadiPage(body, env) {
+    if (!LADIFLOW_API_KEY) return { success: false, message: "API Key not configured" };
+    
+    // Only send if NEW USER tag required
+    const { is_new_user, email, full_name } = body;
+
+    if (is_new_user) {
+        await sendToLadiPage({
+            email: email,
+            name: full_name,
+            tags: ["OPZEN_NEW_USER"]
+        });
+        return { success: true, message: "Synced new user" };
+    }
+    
+    return { success: true, message: "Skipped sync (not new user)" };
+}
+
 export default {
     async fetch(request, env, ctx) {
         const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, HEAD, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Requested-With' };
@@ -636,16 +732,27 @@ export default {
                 else if (path.includes('/flow-create')) action = 'flow_create';
                 else if (path.includes('/flow-check')) action = 'flow_check';
                 else if (path.includes('/flow-upscale')) action = 'flow_upscale'; 
-                else if (path.includes('/upscale-create')) action = 'upscale_create'; // New
-                else if (path.includes('/upscale-check')) action = 'upscale_check';   // New
-                else if (path.includes('/upscale')) action = 'upscale'; // Old Veo upscale
+                else if (path.includes('/upscale-create')) action = 'upscale_create'; 
+                else if (path.includes('/upscale-check')) action = 'upscale_check';   
+                else if (path.includes('/upscale')) action = 'upscale'; 
                 else if (path.includes('/check-name')) action = 'check_name';
                 else if (path.includes('/check-status')) action = 'check_status';
-                // Note: removed '/check' path mapping
+                else if (path.includes('/check-geo')) action = 'check_geo'; 
+                else if (path.includes('/sync-ladipage')) action = 'sync_ladipage'; // NEW
+            }
+
+            if (action === 'check_geo') {
+                const result = await handleGeoCheck(request);
+                return sendJson(result);
             }
 
             if (action === 'upscale_create' || action === 'upscale_check') {
                 const result = await handleRunningHubProxy(action, body);
+                return sendJson(result);
+            }
+
+            if (action === 'sync_ladipage') {
+                const result = await handleSyncLadiPage(body, env);
                 return sendJson(result);
             }
             

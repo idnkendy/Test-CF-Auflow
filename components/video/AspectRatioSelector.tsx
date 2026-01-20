@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface AspectRatioSelectorProps {
     value: '16:9' | '9:16' | 'default';
@@ -7,6 +8,7 @@ interface AspectRatioSelectorProps {
 }
 
 const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({ value, onChange }) => {
+    const { t } = useLanguage();
     const [isOpen, setIsOpen] = useState(false);
     const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -41,7 +43,7 @@ const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({ value, onChan
             <button
                 onClick={() => setIsOpen(!isOpen)}
                 className="h-full w-full px-3 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] border border-gray-300 dark:border-[#302839] rounded-xl flex items-center gap-2 text-gray-800 dark:text-white font-medium transition-all shadow-sm whitespace-nowrap justify-between"
-                title="Chọn tỷ lệ khung hình"
+                title={t('opt.aspect_ratio')}
             >
                 <div className="flex items-center gap-2">
                     <span className="material-symbols-outlined text-xl text-[#7f13ec] notranslate">
@@ -67,7 +69,7 @@ const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({ value, onChan
                         <span className="material-symbols-outlined text-lg notranslate">crop_landscape</span>
                         <div className="flex flex-col items-start text-left">
                             <span className="font-bold">16:9</span>
-                            <span className="text-[10px] opacity-70">Ngang</span>
+                            <span className="text-[10px] opacity-70">{t('video.aspect.landscape')}</span>
                         </div>
                         {value === '16:9' && <span className="material-symbols-outlined text-sm ml-auto notranslate">check</span>}
                     </button>
@@ -82,7 +84,7 @@ const AspectRatioSelector: React.FC<AspectRatioSelectorProps> = ({ value, onChan
                         <span className="material-symbols-outlined text-lg notranslate">crop_portrait</span>
                         <div className="flex flex-col items-start text-left">
                             <span className="font-bold">9:16</span>
-                            <span className="text-[10px] opacity-70">Dọc</span>
+                            <span className="text-[10px] opacity-70">{t('video.aspect.portrait')}</span>
                         </div>
                         {value === '9:16' && <span className="material-symbols-outlined text-sm ml-auto notranslate">check</span>}
                     </button>

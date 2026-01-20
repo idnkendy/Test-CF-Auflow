@@ -1,5 +1,5 @@
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
@@ -17,96 +17,7 @@ import OptionSelector from './common/OptionSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import SafetyWarningModal from './common/SafetyWarningModal';
 import ImagePreviewModal from './common/ImagePreviewModal';
-
-const perspectiveAngles = [
-    { id: 'default', label: 'Mặc định', promptClause: "the same general perspective as the source image" },
-    { id: 'front', label: 'Chính diện', promptClause: "Straight-on front elevation view, symmetrical composition. Flat facade focusing on geometric shapes and materials." },
-    { id: 'left-side', label: '3/4 Trái', promptClause: "a 3/4 perspective view from the front-left, showing depth and dimension of the building massing." },
-    { id: 'right-side', label: '3/4 Phải', promptClause: "a 3/4 perspective view from the front-right, showing both the front and right facades" },
-    { id: 'wide-frame', label: 'Góc rộng', promptClause: "Wide-angle shot capturing the building within its surrounding context and landscape. Spacious atmosphere, expanded field of view." },
-    { id: 'panoramic', label: 'Panorama', promptClause: "Panoramic view, ultra-wide horizontal composition. Capturing the entire landscape and building context in a single frame. Cinematic wide shot." },
-    { id: 'top-down', label: 'Trên cao', promptClause: "Aerial bird's-eye view looking down from above. Drone photography showing the roof plan, site layout, and surrounding environment. Masterplan visualization." },
-    { id: 'low-angle', label: 'Ngước lên', promptClause: "Low angle worm's-eye view looking up at the building. Imposing and majestic stature against the sky. Dramatic perspective emphasizing height." },
-    { id: 'close-up', label: 'Cận cảnh', promptClause: "Macro close-up shot of architectural details. Focus on textures, materials, and intricate facade elements. Shallow depth of field, blurred background." },
-];
-
-const atmosphericAngles = [
-    { id: 'default', label: 'Mặc định', promptClause: "with standard daylight lighting" },
-    { id: 'early-morning', label: 'Sáng sớm', promptClause: "in the early morning, with soft, gentle sunrise light and long shadows" },
-    { id: 'midday-sun', label: 'Trưa nắng', promptClause: "at midday under bright, direct sunlight with strong, short shadows" },
-    { id: 'late-afternoon', label: 'Chiều tà', promptClause: "during the late afternoon (golden hour), with warm, orange-hued light and long, dramatic shadows" },
-    { id: 'night', label: 'Ban đêm', promptClause: "at night, with interior and exterior lights turned on" },
-    { id: 'rainy', label: 'Trời mưa', promptClause: "during a gentle rain, with wet surfaces and a slightly overcast sky" },
-    { id: 'misty', label: 'Sương mù', promptClause: "on a misty or foggy morning, creating a soft and mysterious atmosphere" },
-    { id: 'after-rain', label: 'Sau mưa', promptClause: "just after a rain shower, with wet ground reflecting the sky and surroundings, and a sense of freshness in the air" },
-];
-
-const framingAngles = [
-    { id: 'none', label: 'Không có hiệu ứng', promptClause: "" },
-    { id: 'through-trees', label: 'Xuyên qua hàng cây', promptClause: "The building is seen through a foreground of trees or foliage, creating a natural framing effect." },
-    { id: 'through-window', label: 'Nhìn qua cửa kính Cafe', promptClause: "The building is seen from inside a cozy cafe across the street, looking out through the cafe's large glass window, which creates a framing effect." },
-    { id: 'through-flowers', label: 'Xuyên qua hàng hoa', promptClause: "The building is viewed through a foreground of colorful flowers lining the roadside, creating a beautiful and soft framing effect." },
-    { id: 'through-car-window', label: 'Qua cửa kính xe hơi', promptClause: "The building is seen from the perspective of looking out from a car parked on the side of the road, with the car's window frame and side mirror creating a dynamic frame." },
-];
-
-const interiorViewAngles = [
-    { id: 'default', label: 'Mặc định', prompt: "Maintain the same camera perspective as the source image." },
-    { id: 'wide-angle', label: 'Góc rộng', prompt: "Generate a wide-angle view of the interior space, capturing as much of the room as possible. Maintain the same design style, furniture, and materials as the uploaded image." },
-    { id: 'from-corner', label: 'Từ góc phòng', prompt: "Generate a view from a corner of the room, looking towards the center. Maintain the same design style, furniture, and materials as the uploaded image." },
-    { id: 'detail-shot', label: 'Cận cảnh', prompt: "Generate a close-up detail shot of a key furniture piece or decorative element. Maintain the same design style, furniture, and materials as the uploaded image." },
-    { id: 'towards-window', label: 'Nhìn ra cửa sổ', prompt: "Generate a view from inside the room looking towards the main window, showing the natural light. Maintain the same design style, furniture, and materials as the uploaded image." },
-    { id: 'night-view', label: 'Ban đêm', prompt: "Generate a view of the interior space at night, with artificial lighting turned on (lamps, ceiling lights). Maintain the same design style, furniture, and materials as the uploaded image." },
-    { id: 'top-down-interior', label: 'Từ trên xuống', prompt: "Generate a top-down view of the room's layout, similar to a 3D floor plan. Maintain the same design style, furniture, and materials as the uploaded image." },
-];
-
-// --- CREATIVE VIEW CONSTANTS ---
-const creativeOptions = [
-    { 
-        id: 'interior', 
-        label: 'View Nội thất', 
-        icon: 'chair', 
-        desc: 'Tạo các góc phòng',
-        longDesc: 'Tự động tạo các góc nhìn nội thất khác nhau (Phòng khách, Bếp, Phòng ngủ...) từ cùng một phong cách thiết kế.'
-    },
-    { 
-        id: 'architecture', 
-        label: 'View Kiến trúc', 
-        icon: 'apartment', 
-        desc: 'Diễn họa ngoại thất',
-        longDesc: 'Tạo các phối cảnh ngoại thất đa dạng (Góc chim bay, Mặt tiền, Cận cảnh...) giữ nguyên ngôn ngữ kiến trúc.'
-    },
-    { 
-        id: 'interior-from-arch', 
-        label: 'Nội thất từ Kiến trúc', 
-        icon: 'foundation', 
-        desc: 'Tưởng tượng bên trong',
-        longDesc: 'AI sẽ phân tích kiến trúc ngoại thất để dự đoán và thiết kế không gian nội thất phù hợp bên trong.'
-    }
-];
-
-const interiorSlots = [
-    { name: 'Phòng khách', icon: 'chair', action: 'đang ngồi thư giãn trên sofa' },
-    { name: 'Phòng ngủ', icon: 'bed', action: 'đang nằm nghỉ ngơi trên giường' },
-    { name: 'Phòng bếp', icon: 'kitchen', action: 'đang chuẩn bị đồ ăn tại bàn bếp' },
-    { name: 'Phòng ăn', icon: 'dining', action: 'đang ngồi tại bàn ăn' },
-    { name: 'Phòng đọc', icon: 'menu_book', action: 'đang ngồi làm việc tại bàn' },
-    { name: 'Phòng tắm', icon: 'bathtub', action: 'đang đứng trước gương' },
-    { name: 'Hành lang', icon: 'door_sliding', action: 'đang đi bộ trong hành lang' },
-    { name: 'Góc cận cảnh', icon: 'center_focus_strong', action: 'đang chạm tay vào bề mặt vật liệu' },
-    { name: 'Ban công / Sân vườn', icon: 'deck', action: 'đang đứng ngắm cảnh' }
-];
-
-const architectureSlots = [
-    { name: 'Toàn cảnh 1', sub: 'Bình minh', icon: 'wb_twilight', promptDescription: "Góc cao toàn cảnh bao quát công trình, ánh sáng bình minh trong trẻo với sương nhẹ" },
-    { name: 'Toàn cảnh 2', sub: 'Hoàng hôn', icon: 'wb_sunny', promptDescription: "Góc nghiêng 45 độ toàn cảnh từ xa, bối cảnh bầu trời hoàng hôn vàng rực rỡ" },
-    { name: 'Toàn cảnh 3', sub: 'Góc chim bay', icon: 'flight', promptDescription: "Góc chụp flycam từ trên cao nhìn xuống (bird-eye view), thấy toàn bộ khuôn viên và cảnh quan" },
-    { name: 'Cận cảnh 1', sub: 'Vật liệu bề mặt', icon: 'texture', promptDescription: "Cận cảnh đặc tả bề mặt vật liệu hiện có trên công trình: vân đá, gỗ hoặc kim loại" },
-    { name: 'Cận cảnh 2', sub: 'Chi tiết cấu tạo', icon: 'construction', promptDescription: "Cận cảnh chi tiết cấu trúc hiện có: các khớp nối, lan can hoặc điểm giao cắt hình khối" },
-    { name: 'Cận cảnh 3', sub: 'Lối vào & Sảnh', icon: 'door_front', promptDescription: "Cận cảnh tập trung vào lối vào chính và sảnh đón của công trình gốc" },
-    { name: 'Cận cảnh 4', sub: 'Góc kiến trúc', icon: 'camera_alt', promptDescription: "Cận cảnh một góc chi tiết kiến trúc hoặc cảnh quan ngay sát chân công trình" },
-    { name: 'Nghệ thuật 1', sub: 'Xóa phông tiền cảnh', icon: 'blur_on', promptDescription: "Góc máy nghệ thuật với tiền cảnh mờ ảo, lấy nét sâu vào một chi tiết hiện hữu của công trình" },
-    { name: 'Nghệ thuật 2', sub: 'Phối cảnh đêm', icon: 'nights_stay', promptDescription: "Góc máy đêm kịch tính, nhấn mạnh ánh sáng hắt ra từ các ô cửa hiện có của công trình" }
-];
+import { useLanguage } from '../hooks/useLanguage';
 
 interface ViewSyncProps {
     state: ViewSyncState;
@@ -117,6 +28,7 @@ interface ViewSyncProps {
 }
 
 const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const {
         sourceImage, directionImage, characterImage, isLoading, error, resultImages, numberOfImages, sceneType,
         aspectRatio, customPrompt, selectedPerspective, selectedAtmosphere,
@@ -139,6 +51,98 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
     // Sync latest results for async updates
     const latestResultsRef = useRef(creativeResults);
     useEffect(() => { latestResultsRef.current = creativeResults; }, [creativeResults]);
+
+    // --- Translated Options ---
+    const perspectiveAngles = useMemo(() => [
+        { id: 'default', label: 'Default', promptClause: "the same general perspective as the source image" },
+        { id: 'front', label: 'Front (Chính diện)', promptClause: "Straight-on front elevation view, symmetrical composition. Flat facade focusing on geometric shapes and materials." },
+        { id: 'left-side', label: '3/4 Left (Trái)', promptClause: "a 3/4 perspective view from the front-left, showing depth and dimension of the building massing." },
+        { id: 'right-side', label: '3/4 Right (Phải)', promptClause: "a 3/4 perspective view from the front-right, showing both the front and right facades" },
+        { id: 'wide-frame', label: 'Wide Angle (Góc rộng)', promptClause: "Wide-angle shot capturing the building within its surrounding context and landscape. Spacious atmosphere, expanded field of view." },
+        { id: 'panoramic', label: 'Panorama', promptClause: "Panoramic view, ultra-wide horizontal composition. Capturing the entire landscape and building context in a single frame. Cinematic wide shot." },
+        { id: 'top-down', label: 'Top Down (Trên cao)', promptClause: "Aerial bird's-eye view looking down from above. Drone photography showing the roof plan, site layout, and surrounding environment. Masterplan visualization." },
+        { id: 'low-angle', label: 'Low Angle (Ngước lên)', promptClause: "Low angle worm's-eye view looking up at the building. Imposing and majestic stature against the sky. Dramatic perspective emphasizing height." },
+        { id: 'close-up', label: 'Close Up (Cận cảnh)', promptClause: "Macro close-up shot of architectural details. Focus on textures, materials, and intricate facade elements. Shallow depth of field, blurred background." },
+    ], []);
+
+    const atmosphericAngles = useMemo(() => [
+        { id: 'default', label: 'Default', promptClause: "with standard daylight lighting" },
+        { id: 'early-morning', label: 'Early Morning (Sáng sớm)', promptClause: "in the early morning, with soft, gentle sunrise light and long shadows" },
+        { id: 'midday-sun', label: 'Midday Sun (Trưa nắng)', promptClause: "at midday under bright, direct sunlight with strong, short shadows" },
+        { id: 'late-afternoon', label: 'Golden Hour (Chiều tà)', promptClause: "during the late afternoon (golden hour), with warm, orange-hued light and long, dramatic shadows" },
+        { id: 'night', label: 'Night (Ban đêm)', promptClause: "at night, with interior and exterior lights turned on" },
+        { id: 'rainy', label: 'Rainy (Mưa)', promptClause: "during a gentle rain, with wet surfaces and a slightly overcast sky" },
+        { id: 'misty', label: 'Misty (Sương mù)', promptClause: "on a misty or foggy morning, creating a soft and mysterious atmosphere" },
+        { id: 'after-rain', label: 'After Rain (Sau mưa)', promptClause: "just after a rain shower, with wet ground reflecting the sky and surroundings, and a sense of freshness in the air" },
+    ], []);
+
+    const framingAngles = useMemo(() => [
+        { id: 'none', label: 'None', promptClause: "" },
+        { id: 'through-trees', label: 'Through Trees', promptClause: "The building is seen through a foreground of trees or foliage, creating a natural framing effect." },
+        { id: 'through-window', label: 'Through Window', promptClause: "The building is seen from inside a cozy cafe across the street, looking out through the cafe's large glass window, which creates a framing effect." },
+        { id: 'through-flowers', label: 'Through Flowers', promptClause: "The building is viewed through a foreground of colorful flowers lining the roadside, creating a beautiful and soft framing effect." },
+        { id: 'through-car-window', label: 'Through Car Window', promptClause: "The building is seen from the perspective of looking out from a car parked on the side of the road, with the car's window frame and side mirror creating a dynamic frame." },
+    ], []);
+
+    const interiorViewAngles = useMemo(() => [
+        { id: 'default', label: 'Default', prompt: "Maintain the same camera perspective as the source image." },
+        { id: 'wide-angle', label: 'Wide Angle (Góc rộng)', prompt: "Generate a wide-angle view of the interior space, capturing as much of the room as possible. Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'from-corner', label: 'From Corner (Từ góc)', prompt: "Generate a view from a corner of the room, looking towards the center. Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'detail-shot', label: 'Detail (Cận cảnh)', prompt: "Generate a close-up detail shot of a key furniture piece or decorative element. Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'towards-window', label: 'Towards Window', prompt: "Generate a view from inside the room looking towards the main window, showing the natural light. Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'night-view', label: 'Night View', prompt: "Generate a view of the interior space at night, with artificial lighting turned on (lamps, ceiling lights). Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'top-down-interior', label: 'Top Down', prompt: "Generate a top-down view of the room's layout, similar to a 3D floor plan. Maintain the same design style, furniture, and materials as the uploaded image." },
+    ], []);
+
+    // --- Dynamic Creative Options ---
+    const creativeOptions = useMemo(() => [
+        { 
+            id: 'interior', 
+            label: t('sync.creative.opt.interior'), 
+            icon: 'chair', 
+            desc: t('sync.creative.opt.interior_desc'),
+            longDesc: t('sync.creative.opt.interior_long')
+        },
+        { 
+            id: 'architecture', 
+            label: t('sync.creative.opt.arch'), 
+            icon: 'apartment', 
+            desc: t('sync.creative.opt.arch_desc'),
+            longDesc: t('sync.creative.opt.arch_long')
+        },
+        { 
+            id: 'interior-from-arch', 
+            label: t('sync.creative.opt.int_from_arch'), 
+            icon: 'foundation', 
+            desc: t('sync.creative.opt.int_from_arch_desc'),
+            longDesc: t('sync.creative.opt.int_from_arch_long')
+        }
+    ], [t]);
+
+    // --- Dynamic Slots ---
+    const interiorSlots = useMemo(() => [
+        { name: t('sync.creative.slot.living_room'), icon: 'chair', action: 'sitting on sofa' },
+        { name: t('sync.creative.slot.bedroom'), icon: 'bed', action: 'resting on bed' },
+        { name: t('sync.creative.slot.kitchen'), icon: 'kitchen', action: 'preparing food' },
+        { name: t('sync.creative.slot.dining'), icon: 'dining', action: 'sitting at dining table' },
+        { name: t('sync.creative.slot.reading'), icon: 'menu_book', action: 'working at desk' },
+        { name: t('sync.creative.slot.bathroom'), icon: 'bathtub', action: 'standing by mirror' },
+        { name: t('sync.creative.slot.corridor'), icon: 'door_sliding', action: 'walking in corridor' },
+        { name: t('sync.creative.slot.closeup'), icon: 'center_focus_strong', action: 'touching material' },
+        { name: t('sync.creative.slot.balcony'), icon: 'deck', action: 'standing looking at view' }
+    ], [t]);
+
+    const architectureSlots = useMemo(() => [
+        { name: t('sync.creative.slot.pano1'), sub: t('sync.creative.sub.sunrise'), icon: 'wb_twilight', promptDescription: "High-angle panoramic view, clear sunrise light with light mist." },
+        { name: t('sync.creative.slot.pano2'), sub: t('sync.creative.sub.sunset'), icon: 'wb_sunny', promptDescription: "45-degree angle distant view, vibrant golden sunset sky background." },
+        { name: t('sync.creative.slot.pano3'), sub: t('sync.creative.sub.birdseye'), icon: 'flight', promptDescription: "Bird's eye view from above, showing the entire site and landscape." },
+        { name: t('sync.creative.slot.close1'), sub: t('sync.creative.sub.material'), icon: 'texture', promptDescription: "Close-up detailing surface materials: stone, wood, or metal textures." },
+        { name: t('sync.creative.slot.close2'), sub: t('sync.creative.sub.structure'), icon: 'construction', promptDescription: "Close-up of structural details: joints, railings, or massing intersections." },
+        { name: t('sync.creative.slot.close3'), sub: t('sync.creative.sub.entrance'), icon: 'door_front', promptDescription: "Close-up focused on the main entrance and lobby area." },
+        { name: t('sync.creative.slot.close4'), sub: t('sync.creative.sub.corner'), icon: 'camera_alt', promptDescription: "Close-up of an architectural corner or landscape detail near the base." },
+        { name: t('sync.creative.slot.art1'), sub: t('sync.creative.sub.bokeh'), icon: 'blur_on', promptDescription: "Artistic shot with blurred foreground (bokeh), deep focus on a specific detail." },
+        { name: t('sync.creative.slot.art2'), sub: t('sync.creative.sub.night'), icon: 'nights_stay', promptDescription: "Dramatic night perspective, emphasizing light spilling from windows." }
+    ], [t]);
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -181,7 +185,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${totalCost} credits.` });
              }
              return;
         }
@@ -191,7 +195,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang phân tích góc nhìn...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
 
         let logId: string | null = null;
@@ -268,14 +272,14 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        setStatusMessage(t('common.processing'));
                         const result = await externalVideoService.generateFlowImage(
                             finalPrompt,
                             inputImages,
                             aspectRatio, // Pass raw string
                             1,
                             modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(t('common.processing'))
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -327,9 +331,12 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                     if (failedCount > 0 && logId && user) {
                         const refundAmount = failedCount * unitCost;
                         await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                        onStateChange({ 
-                            error: `Đã tạo thành công ${imageUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                        });
+                        const errorMsg = t('msg.refund_success')
+                            .replace('{success}', imageUrls.length.toString())
+                            .replace('{total}', numberOfImages.toString())
+                            .replace('{amount}', refundAmount.toString())
+                            .replace('{failed}', failedCount.toString());
+                        onStateChange({ error: errorMsg });
                     }
                 } else {
                     // Total failure
@@ -349,17 +356,17 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+                onStateChange({ error: t('msg.safety_violation') });
+            } else {
+                onStateChange({ error: friendlyMsg });
             }
 
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 // Refund full amount on total failure caught here
                 await refundCredits(user.id, totalCost, `Hoàn tiền: Lỗi đồng bộ view (${rawMsg})`, logId);
-                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") friendlyMsg += " (Credits đã được hoàn trả)";
             }
             
-            onStateChange({ error: friendlyMsg });
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
@@ -374,10 +381,13 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         if (creativeOption === 'architecture') {
             const viewDescription = slot.promptDescription || slot.name;
             const charPrompt = characterImage 
-                ? `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào bối cảnh kiến trúc một cách tự nhiên (ví dụ: đang đi bộ trước sảnh, đứng ở ban công, hoặc đi dạo trong sân vườn). Đảm bảo trang phục and ngoại hình thống nhất with ảnh nhân vật.` 
+                ? (language === 'vi' 
+                    ? `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào bối cảnh kiến trúc một cách tự nhiên (ví dụ: đang đi bộ trước sảnh, đứng ở ban công, hoặc đi dạo trong sân vườn). Đảm bảo trang phục và ngoại hình thống nhất với ảnh nhân vật.` 
+                    : `ADD CHARACTER: Naturally integrate the character from the second image into the architectural context (e.g., walking in front of the lobby, standing on the balcony, or walking in the garden). Ensure consistent clothing and appearance with the character image.`)
                 : "";
 
-            fullPrompt = `Bạn là một Kiến trúc sư chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu kiến trúc đại diện cho 100% hình khối và chi tiết thực tế. Nhiệm vụ của bạn là vẽ lại một view kiến trúc cụ thể (cận cảnh hoặc nghệ thuật) từ công trình này.
+            if (language === 'vi') {
+                fullPrompt = `Bạn là một Kiến trúc sư chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu kiến trúc đại diện cho 100% hình khối và chi tiết thực tế. Nhiệm vụ của bạn là vẽ lại một view kiến trúc cụ thể (cận cảnh hoặc nghệ thuật) từ công trình này.
 YÊU CẦU BẮT BUỘC:
 - GIỮ NGUYÊN 100% mọi chi tiết kiến trúc, hình khối, vật liệu và cấu trúc từ ảnh mẫu.
 - TUYỆT ĐỐI KHÔNG vẽ thêm, không sáng tạo chi tiết mới, không thay đổi cấu kiện nếu không có trong ảnh gốc. Chỉ được phép lấy đúng những gì đang có trên công trình gốc để thể hiện.
@@ -386,28 +396,58 @@ YÊU CẦU BẮT BUỘC:
 - VIEW CẦN TẠO: "${viewDescription}".
 ${charPrompt}
 Kết quả phải là một ảnh chụp thực tế, 8k, sắc nét tuyệt đối.`;
+            } else {
+                 fullPrompt = `You are a professional Architect. You are provided with an architectural sample image representing 100% of the actual massing and details. Your task is to redraw a specific architectural view (close-up or artistic) from this building.
+MANDATORY REQUIREMENTS:
+- KEEP 100% of all architectural details, massing, materials, and structure from the sample image.
+- ABSOLUTELY DO NOT add, invent new details, or change components if they are not in the original image. You are only allowed to depict what is currently on the original building.
+- For CLOSE-UP and ARTISTIC views: You are only allowed to focus on existing components of the building, no interpolation or use of strange details.
+- You are only allowed to change camera angle, lens focal length, and lighting conditions to create a professional architectural photograph.
+- VIEW TO GENERATE: "${viewDescription}".
+${charPrompt}
+The result must be a photorealistic, 8k, absolutely sharp image.`;
+            }
 
         } else if (creativeOption === 'interior-from-arch') {
             const viewName = slot.name;
-            const charPrompt = characterImage ? "Có thêm nhân vật đang sinh hoạt trong không gian." : "";
+            const charPrompt = characterImage 
+                ? (language === 'vi' ? "Có thêm nhân vật đang sinh hoạt trong không gian." : "Include a character active in the space.")
+                : "";
 
-            fullPrompt = `Bạn là một Kiến trúc sư and Nhà thiết kế nội thất tài ba. Bạn được cung cấp một hình ảnh NGOẠI THẤT của một công trình kiến trúc. Nhiệm vụ của bạn là thiết kế and vẽ ra không gian NỘI THẤT bên trong công trình đó.
+            if (language === 'vi') {
+                fullPrompt = `Bạn là một Kiến trúc sư và Nhà thiết kế nội thất tài ba. Bạn được cung cấp một hình ảnh NGOẠI THẤT của một công trình kiến trúc. Nhiệm vụ của bạn là thiết kế và vẽ ra không gian NỘI THẤT bên trong công trình đó.
 YÊU CẦU BẮT BUỘC:
-- PHONG CÁCH: Nội thất phải hoàn toàn đồng nhất with phong cách kiến trúc ngoại thất (ví dụ: nếu kiến trúc hiện đại tối giản thì nội thất cũng phải hiện đại tối giản).
-- HỆ CỬA SỔ: Nếu không gian có cửa sổ, kiểu dáng khung cửa, vật liệu and tỷ lệ của cửa sổ PHẢI giống hệt with hệ cửa sổ thấy được ở mặt tiền kiến trúc trong ảnh gốc.
-- VẬT LIỆU: Sử dụng bảng vật liệu and màu sắc tương đồng with ngoại thất để tạo sự xuyên suốt.
+- PHONG CÁCH: Nội thất phải hoàn toàn đồng nhất với phong cách kiến trúc ngoại thất (ví dụ: nếu kiến trúc hiện đại tối giản thì nội thất cũng phải hiện đại tối giản).
+- HỆ CỬA SỔ: Nếu không gian có cửa sổ, kiểu dáng khung cửa, vật liệu và tỷ lệ của cửa sổ PHẢI giống hệt với hệ cửa sổ thấy được ở mặt tiền kiến trúc trong ảnh gốc.
+- VẬT LIỆU: Sử dụng bảng vật liệu và màu sắc tương đồng với ngoại thất để tạo sự xuyên suốt.
 - KHÔNG GIAN CẦN TẠO: "${viewName}".
 ${charPrompt}
 Kết quả là một bức ảnh chụp nhiếp ảnh nội thất chuyên nghiệp, 8k, ánh sáng ban ngày tự nhiên cực kỳ chân thực.`;
+            } else {
+                 fullPrompt = `You are a talented Architect and Interior Designer. You are provided with an EXTERIOR image of an architectural building. Your task is to design and draw the INTERIOR space inside that building.
+MANDATORY REQUIREMENTS:
+- STYLE: The interior must be completely consistent with the exterior architectural style (e.g., if the architecture is modern minimalist, the interior must also be modern minimalist).
+- WINDOW SYSTEM: If the space has windows, the style of the window frames, materials, and proportions MUST be identical to the window system visible on the architectural facade in the original image.
+- MATERIALS: Use a material and color palette similar to the exterior to create continuity.
+- SPACE TO GENERATE: "${viewName}".
+${charPrompt}
+The result is a professional interior photograph, 8k, extremely realistic natural daylight.`;
+            }
 
         } else {
             // Existing Interior Logic
-            const action = slot.action || "đang hoạt động trong không gian";
+            const action = slot.action || "active in the space";
             let charPrompt = "";
             if (characterImage) {
-                charPrompt = `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào không gian một cách tự nhiên. Nhân vật nên ${action}. Đảm bảo trang phục and ngoại hình của nhân vật thống nhất with ảnh nhân vật được cung cấp.`;
+                if (language === 'vi') {
+                     charPrompt = `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào không gian một cách tự nhiên. Nhân vật nên ${action}. Đảm bảo trang phục và ngoại hình của nhân vật thống nhất với ảnh nhân vật được cung cấp.`;
+                } else {
+                     charPrompt = `ADD CHARACTER: Naturally integrate the character from the second image into the space. The character should be ${action}. Ensure consistent clothing and appearance with the provided character image.`;
+                }
             }
-            fullPrompt = `Bạn là một Kiến trúc sư nội thất chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu đại diện cho style, màu sắc và vật liệu. Nhiệm vụ của bạn là tưởng tượng và vẽ ra một không gian khác trong cùng ngôi nhà đó.
+            
+            if (language === 'vi') {
+                fullPrompt = `Bạn là một Kiến trúc sư nội thất chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu đại diện cho style, màu sắc và vật liệu. Nhiệm vụ của bạn là tưởng tượng và vẽ ra một không gian khác trong cùng ngôi nhà đó.
 YÊU CẦU BẮT BUỘC:
 - GIỮ NGUYÊN Style thiết kế (ví dụ: Japandi, Industrial, Tân cổ điển...).
 - GIỮ NGUYÊN Bảng màu chủ đạo (ví dụ: Gỗ óc chó + Da bò + Xám bê tông).
@@ -415,6 +455,16 @@ YÊU CẦU BẮT BUỘC:
 - KHÔNG GIAN CẦN TẠO: "${slot.name}".
 ${charPrompt}
 Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, thực tế, 8k, ánh sáng ban ngày tự nhiên dịu nhẹ.`;
+            } else {
+                fullPrompt = `You are a professional Interior Architect. You are provided with a sample image representing style, color, and materials. Your task is to imagine and draw another space in the same house.
+MANDATORY REQUIREMENTS:
+- KEEP the design style (e.g., Japandi, Industrial, Neoclassical...).
+- KEEP the dominant color palette (e.g., Walnut wood + Cowhide + Concrete gray).
+- KEEP material properties (gloss, roughness, wood grain).
+- SPACE TO GENERATE: "${slot.name}".
+${charPrompt}
+Draw a professional architectural photograph, realistic, 8k, soft natural daylight.`;
+            }
         }
         
         return fullPrompt;
@@ -426,7 +476,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${unitCost} credits.` });
              }
              return;
         }
@@ -511,15 +561,16 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+                onStateChange({ error: t('msg.safety_violation') });
+            } else {
+                onStateChange({ error: friendlyMsg });
             }
 
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, unitCost, `Hoàn tiền: Lỗi view ${slot.name} (${rawMsg})`, logId);
-                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") friendlyMsg += " (Credits đã được hoàn trả)";
             }
-            onStateChange({ error: friendlyMsg });
+            
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             setGeneratingViews(prev => {
@@ -536,7 +587,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${creativeTotalCost} credits.` });
              }
              return;
         }
@@ -642,9 +693,12 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} view lỗi (Creative Batch)`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${successfulCount}/${slots.length} view. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} view bị lỗi.` 
-                    });
+                    const errorMsg = t('msg.refund_success')
+                        .replace('{success}', successfulCount.toString())
+                        .replace('{total}', slots.length.toString())
+                        .replace('{amount}', refundAmount.toString())
+                        .replace('{failed}', failedCount.toString());
+                    onStateChange({ error: errorMsg });
                 }
             } else {
                  if (lastError) throw lastError;
@@ -657,15 +711,15 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+                onStateChange({ error: t('msg.safety_violation') });
+            } else {
+                onStateChange({ error: friendlyMsg });
             }
 
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, creativeTotalCost, `Hoàn tiền: Lỗi sáng tạo view (${rawMsg})`, logId);
-                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") friendlyMsg += " (Credits đã được hoàn trả)";
             }
-            onStateChange({ error: friendlyMsg });
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
             setGeneratingViews(new Set()); // Clear all loading
         }
@@ -731,7 +785,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                         }`}
                     >
-                        Đồng Bộ View
+                        {t('sync.tab.sync')}
                     </button>
                     <button 
                         onClick={() => onStateChange({ activeTab: 'creative' })}
@@ -741,7 +795,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                 : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
                         }`}
                     >
-                        Sáng Tạo View
+                        {t('sync.tab.creative')}
                     </button>
                 </div>
             </div>
@@ -751,11 +805,11 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
                     <div className="space-y-4">
                         <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                            <label className="block text-sm font-medium mb-2">1. Tải Lên Ảnh Gốc</label>
+                            <label className="block text-sm font-medium mb-2">{t('sync.step1')}</label>
                             <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                         </div>
                         <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 space-y-4">
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Tùy chỉnh góc nhìn</label>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('sync.step2')}</label>
                             
                             {/* Scene Type Switcher */}
                             <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-4">
@@ -767,7 +821,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                             : 'text-text-secondary dark:text-gray-400 hover:text-text-primary'
                                     }`}
                                 >
-                                    Ngoại thất
+                                    {t('sync.scene.ext')}
                                 </button>
                                 <button 
                                     onClick={() => onStateChange({ sceneType: 'interior' })}
@@ -777,7 +831,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                             : 'text-text-secondary dark:text-gray-400 hover:text-text-primary'
                                     }`}
                                 >
-                                    Nội thất
+                                    {t('sync.scene.int')}
                                 </button>
                             </div>
 
@@ -785,7 +839,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                             {(sceneType === 'exterior' || !sceneType) ? (
                                 <OptionSelector 
                                     id="perspective" 
-                                    label="Chọn Góc Máy Ngoại Thất" 
+                                    label={t('sync.angle.ext')}
                                     options={perspectiveAngles.map(a => ({ value: a.id, label: a.label }))} 
                                     value={selectedPerspective} 
                                     onChange={(val) => onStateChange({ selectedPerspective: val })} 
@@ -795,7 +849,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                             ) : (
                                 <OptionSelector 
                                     id="interior-angle" 
-                                    label="Chọn Góc Máy Nội Thất" 
+                                    label={t('sync.angle.int')} 
                                     options={interiorViewAngles.map(a => ({ value: a.id, label: a.label }))} 
                                     value={selectedInteriorAngle} 
                                     onChange={(val) => onStateChange({ selectedInteriorAngle: val })} 
@@ -807,7 +861,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                                 <OptionSelector 
                                     id="framing" 
-                                    label="Hiệu ứng khung hình" 
+                                    label={t('sync.framing')} 
                                     options={framingAngles.map(a => ({ value: a.id, label: a.label }))} 
                                     value={selectedFraming} 
                                     onChange={(val) => onStateChange({ selectedFraming: val })} 
@@ -816,7 +870,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                 />
                                 <OptionSelector 
                                     id="atmosphere" 
-                                    label="Thời gian / Không khí" 
+                                    label={t('sync.atmosphere')} 
                                     options={atmosphericAngles.map(a => ({ value: a.id, label: a.label }))} 
                                     value={selectedAtmosphere} 
                                     onChange={(val) => onStateChange({ selectedAtmosphere: val })} 
@@ -828,7 +882,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                             <textarea 
                                 rows={3} 
                                 className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm focus:ring-2 focus:ring-accent outline-none transition-all" 
-                                placeholder="Mô tả thêm (ví dụ: trời nắng đẹp, nhiều cây xanh)..." 
+                                placeholder={t('sync.prompt_placeholder')}
                                 value={customPrompt} 
                                 onChange={(e) => onStateChange({ customPrompt: e.target.value })} 
                             />
@@ -842,19 +896,19 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                             <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-1 border border-gray-200 dark:border-gray-700">
                                 <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                                     <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                                    <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{unitCost * numberOfImages} Credits</span></span>
+                                    <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{unitCost * numberOfImages} Credits</span></span>
                                 </div>
                                 <div className="text-xs">
                                     {userCredits < unitCost * numberOfImages ? (
-                                        <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                        <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                                     ) : (
-                                        <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                        <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                                     )}
                                 </div>
                             </div>
 
                             <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg">
-                                {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Tạo hàng loạt'}
+                                {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('sync.btn_generate')}
                             </button>
                             {upscaleWarning && <p className="mt-2 text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
                         </div>
@@ -863,9 +917,9 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                         {isLoading ? (
                             <div className="flex flex-col items-center">
                                 <Spinner />
-                                <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý...'}</p>
+                                <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
                             </div>
-                        ) : resultImages.length > 0 ? <ResultGrid images={resultImages} toolName="view-sync" /> : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
+                        ) : resultImages.length > 0 ? <ResultGrid images={resultImages} toolName="view-sync" /> : <p className="text-gray-400">{t('msg.no_result_render')}</p>}
                     </div>
                 </div>
             )}
@@ -875,8 +929,8 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                 // SELECTION SCREEN
                 <div className="flex flex-col gap-8 animate-fade-in py-4">
                     <div className="text-center max-w-2xl mx-auto">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Chọn Chế Độ Sáng Tạo</h2>
-                        <p className="text-gray-500 dark:text-gray-400">Khám phá các góc nhìn mới từ thiết kế của bạn với các công cụ chuyên sâu.</p>
+                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{t('sync.creative.title')}</h2>
+                        <p className="text-gray-500 dark:text-gray-400">{t('sync.creative.desc')}</p>
                     </div>
                     
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -894,7 +948,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                     <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{opt.longDesc || opt.desc}</p>
                                 </div>
                                 <div className="mt-auto pt-4 flex items-center text-sm font-semibold text-[#7f13ec] opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-2 group-hover:translate-y-0">
-                                    Bắt đầu ngay <span className="material-symbols-outlined text-sm ml-1">arrow_forward</span>
+                                    {t('sync.creative.btn_start')} <span className="material-symbols-outlined text-sm ml-1">arrow_forward</span>
                                 </div>
                             </button>
                         ))}
@@ -915,7 +969,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                 className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white mb-4 transition-colors"
                             >
                                 <span className="material-symbols-outlined text-lg">arrow_back</span>
-                                Quay lại chọn chế độ
+                                {t('sync.workspace.back')}
                             </button>
                             
                             <div className="flex items-center gap-3 p-3 bg-[#7f13ec]/5 dark:bg-[#7f13ec]/10 rounded-xl border border-[#7f13ec]/20">
@@ -939,8 +993,8 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                         <div className="bg-white dark:bg-[#1E1E1E] rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-[#302839] space-y-6">
                             <div>
                                 <label className="flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">
-                                    <span>Ảnh Gốc (Style)</span>
-                                    {sourceImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">Đã tải lên</span>}
+                                    <span>{t('sync.workspace.source')}</span>
+                                    {sourceImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">OK</span>}
                                 </label>
                                 <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-black/20 overflow-hidden">
                                     <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
@@ -949,14 +1003,14 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                             
                             <div>
                                 <label className="flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">
-                                    <span>Ảnh Nhân vật (Tùy chọn)</span>
-                                    {characterImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">Đã tải lên</span>}
+                                    <span>{t('sync.workspace.char')}</span>
+                                    {characterImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">OK</span>}
                                 </label>
                                 <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-black/20 overflow-hidden">
                                     <ImageUpload onFileSelect={handleCharacterSelect} previewUrl={characterImage?.objectURL} id="char-upload" />
                                 </div>
                                 <p className="text-[10px] text-gray-400 mt-1.5 px-1">
-                                    Nhân vật sẽ được AI lồng ghép tự nhiên vào bối cảnh.
+                                    {t('sync.workspace.char_hint')}
                                 </p>
                             </div>
 
@@ -972,13 +1026,13 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                             <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-1 border border-gray-200 dark:border-gray-700">
                                 <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                                     <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                                    <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{creativeTotalCost} Credits</span></span>
+                                    <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{creativeTotalCost} Credits</span></span>
                                 </div>
                                 <div className="text-xs">
                                     {userCredits < creativeTotalCost ? (
-                                        <span className="text-red-500 font-semibold">Không đủ</span>
+                                        <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                                     ) : (
-                                        <span className="text-green-600 dark:text-green-400">Khả dụng</span>
+                                        <span className="text-green-600 dark:text-green-400">{t('common.available')}</span>
                                     )}
                                 </div>
                             </div>
@@ -988,7 +1042,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                 disabled={generatingViews.size > 0 || !sourceImage} 
                                 className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg"
                             >
-                                {generatingViews.size > 0 ? <><Spinner /> Đang xử lý {generatingViews.size} ảnh...</> : `Tạo trọn bộ (${slots.length} ảnh)`}
+                                {generatingViews.size > 0 ? <><Spinner /> {generatingViews.size}...</> : t('sync.workspace.btn_generate_batch').replace('{count}', slots.length.toString())}
                             </button>
                         </div>
                     </div>
@@ -997,7 +1051,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                     <div className="lg:col-span-8">
                         {/* Header for Results */}
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">Kết quả sáng tạo</h3>
+                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">{t('sync.workspace.result_title')}</h3>
                             
                             {/* BULK DOWNLOAD BUTTON */}
                             {hasCreativeResults && (
@@ -1007,7 +1061,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                     className="flex items-center gap-2 px-4 py-2 bg-gray-800 dark:bg-white text-white dark:text-black hover:bg-gray-700 dark:hover:bg-gray-200 rounded-lg text-sm font-bold transition-all shadow-md disabled:opacity-50"
                                 >
                                     {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-lg">download_for_offline</span>}
-                                    <span>Tải tất cả ({Object.values(creativeResults).filter(Boolean).length})</span>
+                                    <span>{t('sync.workspace.download_all')} ({Object.values(creativeResults).filter(Boolean).length})</span>
                                 </button>
                             )}
                         </div>
@@ -1065,7 +1119,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                                     {/* Shimmer Effect */}
                                                     <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                                     <Spinner />
-                                                    <span className="text-xs font-bold text-gray-400 mt-3 animate-pulse uppercase tracking-wider">Đang vẽ...</span>
+                                                    <span className="text-xs font-bold text-gray-400 mt-3 animate-pulse uppercase tracking-wider">{t('sync.workspace.generating')}</span>
                                                 </div>
                                             ) : (
                                                 // Empty State
@@ -1094,7 +1148,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                         {/* Added Footer Section: Cost & Single Action */}
                                         <div className="p-3 border-t border-[#302839] bg-[#252525] flex flex-col gap-2">
                                             <div className="flex justify-between items-center text-[10px] font-medium text-gray-400">
-                                                <span>Chi phí</span>
+                                                <span>{t('sync.workspace.cost')}</span>
                                                 <div className="flex items-center gap-1 text-yellow-500">
                                                     <span className="material-symbols-outlined text-xs">monetization_on</span>
                                                     {unitCost} Credits
@@ -1112,7 +1166,7 @@ Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, 
                                                 }`}
                                             >
                                                 {isGenerating ? <Spinner /> : <span className="material-symbols-outlined text-sm">{resultUrl ? 'refresh' : 'auto_fix_high'}</span>}
-                                                <span>{isGenerating ? 'Đang tạo...' : (resultUrl ? 'Tạo lại' : 'Tạo ảnh')}</span>
+                                                <span>{isGenerating ? t('sync.workspace.generating') : (resultUrl ? t('sync.workspace.regenerate') : t('sync.workspace.generate'))}</span>
                                             </button>
                                         </div>
                                     </div>

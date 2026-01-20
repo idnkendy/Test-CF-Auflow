@@ -1,5 +1,6 @@
 
 import React, { useState, useRef, useEffect } from 'react';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface Option {
   value: string;
@@ -25,6 +26,7 @@ const OptionSelector: React.FC<OptionSelectorProps> = ({
   id, 
   variant = 'select' 
 }) => {
+  const { t } = useLanguage();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -74,7 +76,7 @@ const OptionSelector: React.FC<OptionSelectorProps> = ({
       >
         <div className="flex items-center gap-2 overflow-hidden">
             <span className={`truncate text-sm font-semibold ${selectedOption ? 'text-text-primary dark:text-white' : 'text-gray-400'}`}>
-            {selectedOption ? selectedOption.label : 'Chọn tùy chọn...'}
+            {selectedOption ? selectedOption.label : t('common.select_option')}
             </span>
         </div>
         

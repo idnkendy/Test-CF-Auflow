@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { DiagramGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -17,6 +17,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
 import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import { useLanguage } from '../hooks/useLanguage';
 
 interface DiagramGeneratorProps {
     state: DiagramGeneratorState;
@@ -26,32 +27,43 @@ interface DiagramGeneratorProps {
     onInsufficientCredits?: () => void;
 }
 
-const diagramPresets = [
-    {
-        label: "Phối cảnh phân tầng",
-        value: "Tạo một axonometric exploded diagram từ ảnh render này.\nGiữ đúng hình khối và tỷ lệ công trình gốc.\nXây dựng lại mô hình dưới dạng axonometric và tách thành các lớp:\n– mái\n– tầng trên\n– tầng dưới\n– mặt sàn\n– nền/đế\nHiển thị các lớp theo dạng exploded view với đường dẫn chấm thẳng đứng.\nNét mảnh, đồng đều, độ rõ cao, đơn giản hóa chi tiết nhưng giữ đúng hình học.\nThêm nhãn chú thích Mặt bằng tầng 1,2,3 theo thứ tự từ dưới lên.\nKhông thêm chi tiết mới ngoài hình gốc."
-    },
-    {
-        label: "Sơ đồ phân tích kiến trúc",
-        value: "Tạo một concept diagram kiến trúc bằng cách vẽ các đường sketch, nét bút chì và ghi chú lên trên ảnh render này.\nGiữ nguyên hình ảnh gốc và thêm các yếu tố diagram như:\n– mũi tên tay vẽ (hand-drawn arrows)\n– vòng cung chỉ hướng\n– ký hiệu ánh sáng, gió, mặt trời\n– ghi chú text ngắn mô tả công năng, hướng gió, ánh sáng, lối vào, khoảng mở\n– khung chữ viết tay (handwritten annotation boxes)\n– đường nét trắng nhẹ, phong cách schematic architectural diagram\n\nPhong cách: giống bản phác thảo kiến trúc sư trên mô hình, nét tự nhiên, mềm, hơi nguệch ngoạc nhưng thẩm mỹ.\nKhông làm thay đổi hình khối công trình trong ảnh gốc.\nKhông thêm chi tiết mới, chỉ overlay diagram lên trên.\nKết quả: một concept architectural diagram đẹp, trực quan, giống bản viết tay minh họa ý tưởng."
-    },
-    {
-        label: "Phối cảnh axonometric",
-        value: "Biến ảnh đầu vào thành phong cách biểu diễn kiến trúc dạng diagram. Giữ công trình chính nổi bật với màu sắc vật liệu phong cách technical illustration, đường nét sạch, mô hình hóa theo dạng 3D massing. Render theo phong cách axonometric / isometric.\nLàm mờ và giản lược toàn bộ bối cảnh xung quanh thành các khối trắng tinh, ít chi tiết, viền mảnh. Nhà cửa, đường phố, cây xanh chuyển thành tone trắng – xám nhạt như mô hình study mass.\nTập trung thể hiện rõ hình khối kiến trúc chính, các đường cong, tầng setback, ban công, cửa sổ trình bày bằng các đường line đều và tối giản.\nLoại bỏ texture thực tế, ánh sáng mềm, không đổ bóng mạnh.\nPhong cách tổng thể giống mô hình concept kiến trúc, minimal, clean, high-level design diagram"
-    },
-    {
-        label: "Sơ đồ chú thích kiến trúc",
-        value: "Hãy biến bức ảnh tôi cung cấp thành một Architectural Annotation Diagram chi tiết.\nYêu cầu:\n 1. Vẽ overlay đường viền trắng (white outline) lên toàn bộ các chi tiết kiến trúc quan trọng: mái, cột, lan can, bậc tam cấp, tượng đá, phù điêu, đá lát…\n 2. Thêm mũi tên chú thích bằng tiếng Việt + tiếng Anh cho từng bộ phận (song ngữ).\n 3. Tạo icon minh họa line-art màu trắng cho từng loại vật liệu/chi tiết như: ngói, cột đá, phù điêu, đá lát, tượng.\n 4. Mỗi icon đặt cạnh label và có đường line trắng (leader line) dẫn đến vị trí đúng trong ảnh.\n 5. Phong cách minh họa giống kiến trúc kỹ thuật: rõ ràng, sạch sẽ, cân đối, nhẹ nhàng nhưng chính xác.\n 6. Giữ ảnh chụp gốc làm nền, overlay đường viền và label lên trên như bản phân tích kiến trúc.\n 7. Xuất ra ảnh diagram hoàn chỉnh + danh sách chi tiết + mô tả ngắn về phong cách.\n8 lưu ý phải chú thích đúng vật liệu và vị trí."
-    }
-];
-
 const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, diagramType, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+
+    // Dynamic Presets using translations
+    // NOTE: For 'value', we must provide English prompts if the language is English to help the AI.
+    const diagramPresets = useMemo(() => [
+        {
+            label: t('diag.preset.exploded'),
+            value: language === 'vi' 
+                ? "Tạo một axonometric exploded diagram từ ảnh render này.\nGiữ đúng hình khối và tỷ lệ công trình gốc.\nXây dựng lại mô hình dưới dạng axonometric và tách thành các lớp:\n– mái\n– tầng trên\n– tầng dưới\n– mặt sàn\n– nền/đế\nHiển thị các lớp theo dạng exploded view với đường dẫn chấm thẳng đứng.\nNét mảnh, đồng đều, độ rõ cao, đơn giản hóa chi tiết nhưng giữ đúng hình học.\nThêm nhãn chú thích Mặt bằng tầng 1,2,3 theo thứ tự từ dưới lên.\nKhông thêm chi tiết mới ngoài hình gốc."
+                : "Create an axonometric exploded diagram from this render.\nMaintain original building massing and proportions.\nReconstruct the model in axonometric view and separate into layers:\n- roof\n- upper floor\n- lower floor\n- floor slab\n- base/foundation\nDisplay layers in exploded view with vertical dashed guidelines.\nThin, consistent lines, high clarity, simplified details but geometrically accurate.\nAdd labels for Floor 1, 2, 3 in ascending order.\nDo not add new details outside the original image."
+        },
+        {
+            label: t('diag.preset.concept'),
+            value: language === 'vi'
+                ? "Tạo một concept diagram kiến trúc bằng cách vẽ các đường sketch, nét bút chì và ghi chú lên trên ảnh render này.\nGiữ nguyên hình ảnh gốc và thêm các yếu tố diagram như:\n– mũi tên tay vẽ (hand-drawn arrows)\n– vòng cung chỉ hướng\n– ký hiệu ánh sáng, gió, mặt trời\n– ghi chú text ngắn mô tả công năng, hướng gió, ánh sáng, lối vào, khoảng mở\n– khung chữ viết tay (handwritten annotation boxes)\n– đường nét trắng nhẹ, phong cách schematic architectural diagram\n\nPhong cách: giống bản phác thảo kiến trúc sư trên mô hình, nét tự nhiên, mềm, hơi nguệch ngoạc nhưng thẩm mỹ.\nKhông làm thay đổi hình khối công trình trong ảnh gốc.\nKhông thêm chi tiết mới, chỉ overlay diagram lên trên.\nKết quả: một concept architectural diagram đẹp, trực quan, giống bản viết tay minh họa ý tưởng."
+                : "Create an architectural concept diagram by overlaying sketch lines, pencil strokes, and notes on this render.\nKeep the original image and add diagram elements such as:\n- hand-drawn arrows\n- directional arcs\n- symbols for light, wind, sun\n- short text notes describing function, wind direction, light, entrances, openings\n- handwritten annotation boxes\n- light white lines, schematic architectural diagram style\n\nStyle: like an architect's sketch over a model, natural, soft, slightly loose but aesthetic strokes.\nDo not alter the building massing in the original image.\nDo not add new details, only overlay diagram elements.\nResult: a beautiful, intuitive concept architectural diagram, resembling a hand-drawn idea illustration."
+        },
+        {
+            label: t('diag.preset.axonometric'),
+            value: language === 'vi'
+                ? "Biến ảnh đầu vào thành phong cách biểu diễn kiến trúc dạng diagram. Giữ công trình chính nổi bật với màu sắc vật liệu phong cách technical illustration, đường nét sạch, mô hình hóa theo dạng 3D massing. Render theo phong cách axonometric / isometric.\nLàm mờ và giản lược toàn bộ bối cảnh xung quanh thành các khối trắng tinh, ít chi tiết, viền mảnh. Nhà cửa, đường phố, cây xanh chuyển thành tone trắng – xám nhạt như mô hình study mass.\nTập trung thể hiện rõ hình khối kiến trúc chính, các đường cong, tầng setback, ban công, cửa sổ trình bày bằng các đường line đều và tối giản.\nLoại bỏ texture thực tế, ánh sáng mềm, không đổ bóng mạnh.\nPhong cách tổng thể giống mô hình concept kiến trúc, minimal, clean, high-level design diagram"
+                : "Transform the input image into an architectural diagram representation style. Keep the main building prominent with technical illustration style material colors, clean lines, modeled as 3D massing. Render in axonometric / isometric style.\nBlur and simplify the entire surrounding context into pure white blocks, low detail, thin outlines. Houses, streets, trees become white-light gray tones like a study mass model.\nFocus on clearly showing the main architectural massing, curves, setbacks, balconies, windows presented with even and minimalist lines.\nRemove realistic textures, soft lighting, no strong shadows.\nOverall style resembles an architectural concept model, minimal, clean, high-level design diagram."
+        },
+        {
+            label: t('diag.preset.annotation'),
+            value: language === 'vi'
+                ? "Hãy biến bức ảnh tôi cung cấp thành một Architectural Annotation Diagram chi tiết.\nYêu cầu:\n 1. Vẽ overlay đường viền trắng (white outline) lên toàn bộ các chi tiết kiến trúc quan trọng: mái, cột, lan can, bậc tam cấp, tượng đá, phù điêu, đá lát…\n 2. Thêm mũi tên chú thích bằng tiếng Việt + tiếng Anh cho từng bộ phận (song ngữ).\n 3. Tạo icon minh họa line-art màu trắng cho từng loại vật liệu/chi tiết như: ngói, cột đá, phù điêu, đá lát, tượng.\n 4. Mỗi icon đặt cạnh label và có đường line trắng (leader line) dẫn đến vị trí đúng trong ảnh.\n 5. Phong cách minh họa giống kiến trúc kỹ thuật: rõ ràng, sạch sẽ, cân đối, nhẹ nhàng nhưng chính xác.\n 6. Giữ ảnh chụp gốc làm nền, overlay đường viền và label lên trên như bản phân tích kiến trúc.\n 7. Xuất ra ảnh diagram hoàn chỉnh + danh sách chi tiết + mô tả ngắn về phong cách.\n8 lưu ý phải chú thích đúng vật liệu và vị trí."
+                : "Transform the provided image into a detailed Architectural Annotation Diagram.\nRequirements:\n 1. Draw white outline overlays on all important architectural details: roof, columns, railings, steps, statues, reliefs, paving stones...\n 2. Add annotation arrows in English for each part.\n 3. Create white line-art illustrative icons for each material/detail type: tiles, stone columns, reliefs, paving, statues.\n 4. Place each icon next to a label with a white leader line pointing to the correct position in the image.\n 5. Illustration style resembles technical architecture: clear, clean, balanced, light but accurate.\n 6. Keep the original photo as background, overlay outlines and labels like an architectural analysis.\n 7. Output a complete diagram image + detail list + short style description.\n 8. Note: must annotate correct materials and positions."
+        }
+    ], [t, language]);
     
     const getCostPerImage = () => {
         switch (resolution) {
@@ -85,7 +97,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -101,7 +113,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang phân tích...');
+        setStatusMessage(t('ext.floorplan.analyzing'));
         setUpscaleWarning(null);
 
         const fullPrompt = `${prompt} Ensure the output maintains professional architectural diagram aesthetics.`;
@@ -138,14 +150,14 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        setStatusMessage(t('common.processing'));
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt, 
                             [sourceImage], 
                             aspectRatio, // Pass actual ratio string directly
                             1, 
                             modelName, 
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(t('common.processing'))
                         );
                         
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -203,7 +215,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
 
             } else {
                 // Fallback (Not reached with useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                     return images[0];
@@ -222,7 +234,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -253,17 +265,17 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Diagram Kiến Trúc</h2>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.diagram.title')}</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Mô Hình</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.diagram.step1')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
                     
                     <OptionSelector 
                         id="diagram-type"
-                        label="2. Chọn Loại Diagram (Nhấn để điền nội dung)"
+                        label={t('ext.diagram.step2')}
                         options={diagramPresets}
                         value={diagramType}
                         onChange={handlePresetChange}
@@ -272,7 +284,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
                     />
 
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Mô tả chi tiết (Có thể chỉnh sửa)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.diagram.step3')}</label>
                         <textarea
                             rows={6}
                             className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
@@ -296,13 +308,13 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')} ({t('common.available')}: {userCredits})</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                             )}
                         </div>
                     </div>
@@ -312,7 +324,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
                         disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang phân tích...'}</> : 'Tạo Diagram'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.diagram.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
@@ -320,7 +332,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
 
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Diagram</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                         {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -342,7 +354,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -356,7 +368,7 @@ const DiagramGenerator: React.FC<DiagramGeneratorProps> = ({ state, onStateChang
                         ) : resultImages.length > 0 ? (
                              <ResultGrid images={resultImages} toolName="diagram-generator" />
                         ) : (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

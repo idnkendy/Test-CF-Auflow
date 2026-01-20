@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { RealEstatePosterState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -18,6 +18,7 @@ import NumberOfImagesSelector from './common/NumberOfImagesSelector';
 import ResultGrid from './common/ResultGrid';
 import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 import ImageComparator from './ImageComparator';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface RealEstatePosterProps {
     state: RealEstatePosterState;
@@ -27,18 +28,8 @@ interface RealEstatePosterProps {
     onInsufficientCredits?: () => void;
 }
 
-const posterPresets = [
-    {
-        label: "Poster Infographic Tiện ích",
-        value: "Hãy tạo một poster bất động sản cao cấp theo đúng phong cách infographic như hình mẫu:\n• Hình dự án ở dưới, chiếm 40–50% poster\n• Phía trên là danh sách tiện ích xung quanh dạng cột đứng có ảnh minh họa và số thứ tự\n• Typography sang trọng, sắc nét, mô phỏng phong cách thiết kế cao cấp quốc tế.\n\nYÊU CẦU BỐ CỤC:\n 1. Khu tiện ích (phần trên poster)\n\n • Tạo 4–6 ô tiện ích dạng hình chữ nhật đứng.\n • Mỗi ô gồm:\n• ảnh minh họa tiện ích\n• số thứ tự (01–05)\n• tiêu đề tiện ích\n• mô tả ngắn 1 dòng\n • Các ô xếp thành hàng ngang, có hiệu ứng phát sáng nhẹ.\n\n 2. Khu hình dự án\n\n • Đặt hình dự án lớn ở phần dưới poster.\n • Tăng độ sáng – độ trong – hiệu ứng ánh đèn vàng warm.\n • Giữ đúng đường nét công trình.\n\n 3. Tiêu đề chính\n\n • Text sang trọng:\nĐÓN ĐẦU NGUỒN KHÁCH DỒI DÀO QUANH NĂM\n • Hoặc AI tự đề xuất tiêu đề phù hợp.\n\n 4. Tagline dự án\n\n • Ví dụ:\nTỌA ĐỘ GIAO THƯƠNG ĐẮT GIÁ – BỨT PHÁ TIỀM NĂNG KINH DOANH\n • Font serif hoặc sans-serif luxury.\n\n 5. Logo & branding\n\n • Đặt logo dự án phía dưới phải.\n • Tông màu vàng gold / trắng.\n\n 6. Màu sắc & phong cách\n\n • Tone xanh–nâu–xám sang trọng.\n • Ánh sáng mềm, mang cảm giác cao cấp.\n • Dùng hiệu ứng chiều sâu và transition mượt giữa phần trên & dưới.\n\nOUTPUT\n\n• 1 poster hoàn chỉnh theo layout giống hình tôi gửi\n• Có tiện ích → hình dự án → tagline → logo\n• Bố cục đẹp, rõ, sang trọng — dùng được ngay cho marketing BĐS."
-    },
-    {
-        label: "Poster Luxury Hiện đại",
-        value: "Hãy tạo một Poster Bất động sản chuyên nghiệp từ bức ảnh tòa nhà tôi cung cấp, theo phong cách hiện đại – sang trọng như các poster dự án cao cấp.\nYêu cầu:\n\n1. Thiết kế tổng thể\n • Nền gradient tối – xanh navy hoặc xanh đêm.\n • Phía dưới là hình tòa nhà (ảnh gốc) được làm sáng, nổi bật, tăng độ sắc nét.\n • Hiệu ứng ánh sáng vàng sang trọng trên các cửa kính.\n\n2. Bố cục thông tin\n • Tiêu đề lớn, nổi bật ở trung tâm poster:\nWHERE LUXURY MEETS LOCATION (hoặc tùy chỉnh theo ảnh)\n • Dòng mô tả nhỏ phía dưới: 3 & 4 BHK Prime Residencies hoặc nội dung phù hợp.\n\n3. Icon tiện ích xung quanh\n\nTạo các vòng tròn icon kết nối bằng nét đứt:\n • Hospital\n • Educational Institutions\n • Shopping Mall\n • Restaurants\n • Upcoming Highway\n(hoặc tự động nhận diện và tạo icon phù hợp với ảnh)\n\n4. Logo dự án\n • Thêm logo/mẫu logo ở chính giữa phía dưới (tự thiết kế dạng monogram sang trọng nếu ảnh không có logo).\n • Tông màu vàng hoặc trắng.\n\n5. Footer thông tin\n • Đặt thông tin liên hệ, hotline, địa chỉ ở cuối poster.\n • Typography hiện đại, dễ đọc.\n\n6. Phong cách\n • Luxury\n • Clean, minimal nhưng ấn tượng\n • Ánh sáng cinematic\n • Layout cân đối giống poster BĐS cao cấp quốc tế.\n\nHãy xuất ra 1 Poster hoàn chỉnh với bố cục đẹp, rõ ràng, mang tính thương mại và phù hợp marketing bất động sản."
-    }
-];
-
 const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, posterStyle, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -46,6 +37,34 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
     
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Thiết kế poster bất động sản sang trọng, hiện đại. Bao gồm tiêu đề lớn, thông tin nổi bật, bố cục tạp chí. Giữ hình ảnh công trình làm chủ đạo.';
+        const enDefault = 'Design a luxurious, modern real estate poster. Include large headline, key information, magazine layout. Keep the building image as the main focus.';
+        
+        // If current prompt is empty or matches one of the defaults, update it
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
+
+    // Dynamic Presets using translations
+    // NOTE: Values must be switched to English if language is English
+    const posterPresets = useMemo(() => [
+        {
+            label: t('poster.preset.infographic'),
+            value: language === 'vi' 
+                ? "Hãy tạo một poster bất động sản cao cấp theo đúng phong cách infographic như hình mẫu:\n• Hình dự án ở dưới, chiếm 40–50% poster\n• Phía trên là danh sách tiện ích xung quanh dạng cột đứng có ảnh minh họa và số thứ tự\n• Typography sang trọng, sắc nét, mô phỏng phong cách thiết kế cao cấp quốc tế.\n\nYÊU CẦU BỐ CỤC:\n 1. Khu tiện ích (phần trên poster)\n\n • Tạo 4–6 ô tiện ích dạng hình chữ nhật đứng.\n • Mỗi ô gồm:\n• ảnh minh họa tiện ích\n• số thứ tự (01–05)\n• tiêu đề tiện ích\n• mô tả ngắn 1 dòng\n • Các ô xếp thành hàng ngang, có hiệu ứng phát sáng nhẹ.\n\n 2. Khu hình dự án\n\n • Đặt hình dự án lớn ở phần dưới poster.\n • Tăng độ sáng – độ trong – hiệu ứng ánh đèn vàng warm.\n • Giữ đúng đường nét công trình.\n\n 3. Tiêu đề chính\n\n • Text sang trọng:\nĐÓN ĐẦU NGUỒN KHÁCH DỒI DÀO QUANH NĂM\n • Hoặc AI tự đề xuất tiêu đề phù hợp.\n\n 4. Tagline dự án\n\n • Ví dụ:\nTỌA ĐỘ GIAO THƯƠNG ĐẮT GIÁ – BỨT PHÁ TIỀM NĂNG KINH DOANH\n • Font serif hoặc sans-serif luxury.\n\n 5. Logo & branding\n\n • Đặt logo dự án phía dưới phải.\n • Tông màu vàng gold / trắng.\n\n 6. Màu sắc & phong cách\n\n • Tone xanh–nâu–xám sang trọng.\n • Ánh sáng mềm, mang cảm giác cao cấp.\n • Dùng hiệu ứng chiều sâu và transition mượt giữa phần trên & dưới.\n\nOUTPUT\n\n• 1 poster hoàn chỉnh theo layout giống hình tôi gửi\n• Có tiện ích → hình dự án → tagline → logo\n• Bố cục đẹp, rõ, sang trọng — dùng được ngay cho marketing BĐS."
+                : "Create a high-end real estate poster in an infographic style:\n• Project image at the bottom, occupying 40–50% of the poster\n• Above is a list of surrounding amenities in vertical columns with illustrations and numbers\n• Luxurious, sharp typography, simulating international high-end design style.\n\nLAYOUT REQUIREMENTS:\n 1. Amenities Area (top part)\n • Create 4–6 rectangular amenity boxes.\n • Each box includes: icon/image, number (01–05), title, short description.\n • Arranged horizontally with a slight glow effect.\n\n 2. Project Image Area\n • Large project image at the bottom.\n • Increase brightness, clarity, warm light effect.\n • Keep original building lines.\n\n 3. Main Title\n • Luxurious text: PRIME LOCATION - YEAR-ROUND TRAFFIC\n • Or AI suggests a suitable title.\n\n 4. Tagline\n • Example: GOLDEN INTERSECTION - BREAKTHROUGH BUSINESS POTENTIAL\n • Serif or luxury sans-serif font.\n\n 5. Logo & Branding\n • Logo at bottom right.\n • Gold/White tone.\n\n 6. Color & Style\n • Luxurious Blue-Brown-Gray tone.\n • Soft lighting, premium feel.\n • Depth effect and smooth transition.\n\nOUTPUT\n• 1 complete poster with layout\n• Amenities -> Project Image -> Tagline -> Logo\n• Beautiful, clear, luxurious layout ready for real estate marketing."
+        },
+        {
+            label: t('poster.preset.luxury'),
+            value: language === 'vi'
+                ? "Hãy tạo một Poster Bất động sản chuyên nghiệp từ bức ảnh tòa nhà tôi cung cấp, theo phong cách hiện đại – sang trọng như các poster dự án cao cấp.\nYêu cầu:\n\n1. Thiết kế tổng thể\n • Nền gradient tối – xanh navy hoặc xanh đêm.\n • Phía dưới là hình tòa nhà (ảnh gốc) được làm sáng, nổi bật, tăng độ sắc nét.\n • Hiệu ứng ánh sáng vàng sang trọng trên các cửa kính.\n\n2. Bố cục thông tin\n • Tiêu đề lớn, nổi bật ở trung tâm poster:\nWHERE LUXURY MEETS LOCATION (hoặc tùy chỉnh theo ảnh)\n • Dòng mô tả nhỏ phía dưới: 3 & 4 BHK Prime Residencies hoặc nội dung phù hợp.\n\n3. Icon tiện ích xung quanh\n\nTạo các vòng tròn icon kết nối bằng nét đứt:\n • Hospital\n • Educational Institutions\n • Shopping Mall\n • Restaurants\n • Upcoming Highway\n(hoặc tự động nhận diện và tạo icon phù hợp với ảnh)\n\n4. Logo dự án\n • Thêm logo/mẫu logo ở chính giữa phía dưới (tự thiết kế dạng monogram sang trọng nếu ảnh không có logo).\n • Tông màu vàng hoặc trắng.\n\n5. Footer thông tin\n • Đặt thông tin liên hệ, hotline, địa chỉ ở cuối poster.\n • Typography hiện đại, dễ đọc.\n\n6. Phong cách\n • Luxury\n • Clean, minimal nhưng ấn tượng\n • Ánh sáng cinematic\n • Layout cân đối giống poster BĐS cao cấp quốc tế.\n\nHãy xuất ra 1 Poster hoàn chỉnh với bố cục đẹp, rõ ràng, mang tính thương mại và phù hợp marketing bất động sản."
+                : "Create a Professional Real Estate Poster from the provided building image, in a Modern - Luxury style.\nRequirements:\n\n1. Overall Design\n • Dark gradient background – navy blue or night blue.\n • Project image at the bottom (original), brightened, sharpened.\n • Luxurious golden light effect on windows.\n\n2. Info Layout\n • Large title in center:\nWHERE LUXURY MEETS LOCATION\n • Subtitle: 3 & 4 BHK Prime Residencies.\n\n3. Amenity Icons\nCreate connected circle icons:\n • Hospital\n • Educational Institutions\n • Shopping Mall\n • Restaurants\n • Upcoming Highway\n\n4. Project Logo\n • Add logo/mockup logo at bottom center (luxury monogram style).\n • Gold or White tone.\n\n5. Footer Info\n • Contact info, hotline, address at the bottom.\n • Modern, readable typography.\n\n6. Style\n • Luxury\n • Clean, minimal but impressive\n • Cinematic lighting\n • Balanced layout like international real estate posters.\n\nOutput 1 complete Poster with beautiful, clear layout, commercial and suitable for marketing."
+        }
+    ], [t, language]);
+
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -78,7 +97,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -94,7 +113,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang thiết kế...');
+        setStatusMessage(t('ext.floorplan.analyzing'));
         setUpscaleWarning(null);
 
         const fullPrompt = `Create a high-quality real estate marketing poster. Instructions: ${prompt}.`;
@@ -131,14 +150,14 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        setStatusMessage(t('common.processing'));
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt, 
                             [sourceImage], 
                             aspectRatio, // Pass actual ratio string directly
                             1, 
                             modelName, 
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(t('common.processing'))
                         );
                         
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -196,7 +215,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
 
             } else {
                 // Fallback (Not reached with useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                     return images[0];
@@ -215,7 +234,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -246,17 +265,17 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Poster Bất Động Sản</h2>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.poster.title')}</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Bất Động Sản</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.poster.step1')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
                     
                     <OptionSelector 
                         id="poster-style"
-                        label="2. Chọn Mẫu Poster (Nhấn để điền nội dung)"
+                        label={t('ext.poster.step2')}
                         options={posterPresets}
                         value={posterStyle}
                         onChange={handlePresetChange}
@@ -265,11 +284,11 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                     />
 
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Thông tin hiển thị (Có thể chỉnh sửa)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.poster.step3')}</label>
                         <textarea
                             rows={8}
                             className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                            placeholder="Mô tả chi tiết poster bạn muốn tạo..."
+                            placeholder={language === 'vi' ? "Mô tả chi tiết poster bạn muốn tạo..." : "Detailed description of the poster you want to create..."}
                             value={prompt}
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
@@ -289,13 +308,13 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')} ({t('common.available')}: {userCredits})</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                             )}
                         </div>
                     </div>
@@ -305,7 +324,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                         disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-2 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang thiết kế...'}</> : 'Tạo Poster'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.poster.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
@@ -313,7 +332,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
 
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Poster</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                         {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -335,7 +354,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -351,7 +370,7 @@ const RealEstatePoster: React.FC<RealEstatePosterProps> = ({ state, onStateChang
                         ) : resultImages.length > 0 ? (
                              <img src={resultImages[0]} alt="Result" className="w-full h-full object-contain" />
                         ) : (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

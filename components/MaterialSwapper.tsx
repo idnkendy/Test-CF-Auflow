@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { MaterialSwapperState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -17,6 +17,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface MaterialSwapperProps {
     state: MaterialSwapperState;
@@ -27,12 +28,24 @@ interface MaterialSwapperProps {
 }
 
 const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { prompt, sceneImage, materialImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Thay thế sàn trong ảnh chính bằng vật liệu gỗ từ ảnh tham khảo.';
+        const enDefault = 'Replace the floor in the main image with the wood material from the reference image.';
+        
+        // If current prompt is empty or matches one of the defaults, update it
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
 
     const getCostPerImage = () => {
         switch (resolution) {
@@ -52,7 +65,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -63,7 +76,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang xử lý...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
 
         let logId: string | null = null;
@@ -102,7 +115,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                         aspectRatio, // Pass actual ratio string directly
                         1,
                         modelName,
-                        (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                        (msg) => setStatusMessage(t('common.processing'))
                     );
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
@@ -155,7 +168,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -183,12 +196,12 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
         <div>
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <h2 className="text-2xl font-bold mb-4">AI Thay Vật Liệu / Staging</h2>
+            <h2 className="text-2xl font-bold mb-4">{t('ext.material.title')}</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border">
                     <ImageUpload onFileSelect={(f) => onStateChange({ sceneImage: f, resultImages: [] })} previewUrl={sceneImage?.objectURL} />
                     <ImageUpload onFileSelect={(f) => onStateChange({ materialImage: f })} previewUrl={materialImage?.objectURL} />
-                    <textarea rows={3} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder="Mô tả yêu cầu..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
+                    <textarea rows={3} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder={t('ext.material.prompt_ph')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                     <div className="grid grid-cols-2 gap-4">
                         <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
                         <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
@@ -198,26 +211,26 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                             )}
                         </div>
                     </div>
 
                     <button onClick={handleGenerate} disabled={isLoading || !sceneImage || !materialImage} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg shadow-lg">
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Thực Hiện Thay Thế'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.material.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold">Kết quả</h3>
+                        <h3 className="text-xl font-semibold">{t('common.result')}</h3>
                         {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -239,7 +252,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -255,7 +268,7 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
                         ) : resultImages.length > 1 ? (
                             <ResultGrid images={resultImages} toolName="material-swap" />
                         ) : (
-                            <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>
+                            <p className="text-gray-400">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

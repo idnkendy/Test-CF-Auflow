@@ -6,6 +6,7 @@ import * as geminiService from '../services/geminiService';
 import ImageUpload from './common/ImageUpload';
 import Spinner from './Spinner';
 import OptionSelector from './common/OptionSelector';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface SuggestionCardProps {
     title: string;
@@ -14,6 +15,7 @@ interface SuggestionCardProps {
 }
 
 const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelectPrompt }) => {
+    const { t } = useLanguage();
     const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
     const handleCopy = (text: string, index: number) => {
@@ -29,10 +31,10 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelec
     // Mapping title to icons/colors for visual distinction
     const getCategoryStyle = (title: string) => {
         const t = title.toLowerCase();
-        if (t.includes('toàn cảnh')) return { icon: 'landscape', color: 'text-blue-500', bg: 'bg-blue-500/10' };
-        if (t.includes('trung cảnh')) return { icon: 'photo_camera', color: 'text-green-500', bg: 'bg-green-500/10' };
-        if (t.includes('lấy nét') || t.includes('cận')) return { icon: 'center_focus_strong', color: 'text-orange-500', bg: 'bg-orange-500/10' };
-        if (t.includes('chi tiết')) return { icon: 'texture', color: 'text-purple-500', bg: 'bg-purple-500/10' };
+        if (t.includes('toàn cảnh') || t.includes('wide')) return { icon: 'landscape', color: 'text-blue-500', bg: 'bg-blue-500/10' };
+        if (t.includes('trung cảnh') || t.includes('medium')) return { icon: 'photo_camera', color: 'text-green-500', bg: 'bg-green-500/10' };
+        if (t.includes('lấy nét') || t.includes('cận') || t.includes('focus')) return { icon: 'center_focus_strong', color: 'text-orange-500', bg: 'bg-orange-500/10' };
+        if (t.includes('chi tiết') || t.includes('detail')) return { icon: 'texture', color: 'text-purple-500', bg: 'bg-purple-500/10' };
         return { icon: 'lightbulb', color: 'text-gray-500', bg: 'bg-gray-500/10' };
     };
 
@@ -61,17 +63,17 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelec
                             <button 
                                 onClick={() => handleCopy(prompt, index)}
                                 className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-gray-500 hover:text-purple-600 dark:text-gray-400 dark:hover:text-purple-400 bg-white dark:bg-[#333] hover:bg-purple-50 dark:hover:bg-purple-900/20 rounded border border-gray-200 dark:border-gray-600 transition-colors"
-                                title="Sao chép nội dung"
+                                title={t('prompt_suggester.copy')}
                             >
                                 {copiedIndex === index ? (
                                     <>
                                         <span className="material-symbols-outlined text-[14px] text-green-500">check</span>
-                                        <span className="text-green-500">Đã chép</span>
+                                        <span className="text-green-500">{t('prompt_suggester.copied')}</span>
                                     </>
                                 ) : (
                                     <>
                                         <span className="material-symbols-outlined text-[14px]">content_copy</span>
-                                        <span>Sao chép</span>
+                                        <span>{t('prompt_suggester.copy')}</span>
                                     </>
                                 )}
                             </button>
@@ -79,10 +81,10 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelec
                             <button 
                                 onClick={() => onSelectPrompt(prompt)}
                                 className="flex items-center gap-1.5 px-3 py-1 text-xs font-bold text-white bg-purple-600 hover:bg-purple-700 rounded shadow-sm transition-colors"
-                                title="Sử dụng ngay trong Đồng bộ View"
+                                title={t('prompt_suggester.use')}
                             >
                                 <span className="material-symbols-outlined text-[14px]">send</span>
-                                <span>Sử dụng</span>
+                                <span>{t('prompt_suggester.use')}</span>
                             </button>
                         </div>
                     </div>
@@ -92,14 +94,6 @@ const SuggestionCard: React.FC<SuggestionCardProps> = ({ title, prompts, onSelec
     );
 };
 
-const suggestionSubjects = [
-    { value: 'all', label: 'Tất cả chủ đề' },
-    { value: 'Góc toàn cảnh', label: 'Góc toàn cảnh' },
-    { value: 'Góc trung cảnh', label: 'Góc trung cảnh' },
-    { value: 'Góc lấy nét', label: 'Góc lấy nét' },
-    { value: 'Chi tiết kiến trúc', label: 'Chi tiết kiến trúc' },
-];
-
 interface PromptSuggesterProps {
     state: PromptSuggesterState;
     onStateChange: (newState: Partial<PromptSuggesterState>) => void;
@@ -107,7 +101,16 @@ interface PromptSuggesterProps {
 }
 
 const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange, onSendToViewSyncWithPrompt }) => {
+    const { t, language } = useLanguage();
     const { sourceImage, isLoading, error, suggestions, selectedSubject, numberOfSuggestions, customInstruction } = state;
+
+    const suggestionSubjects = [
+        { value: 'all', label: t('prompt_suggester.topic.all') },
+        { value: 'Góc toàn cảnh', label: t('prompt_suggester.topic.wide') },
+        { value: 'Góc trung cảnh', label: t('prompt_suggester.topic.medium') },
+        { value: 'Góc lấy nét', label: t('prompt_suggester.topic.focus') },
+        { value: 'Chi tiết kiến trúc', label: t('prompt_suggester.topic.detail') },
+    ];
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({
@@ -119,7 +122,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
 
     const handleGenerate = async () => {
         if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên một ảnh để nhận gợi ý.' });
+            onStateChange({ error: t('common.error') });
             return;
         }
 
@@ -128,10 +131,16 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
         onStateChange({ isLoading: true, error: null });
 
         try {
-            const result = await geminiService.generatePromptSuggestions(sourceImage, selectedSubject, numberOfSuggestions, customInstruction);
+            const result = await geminiService.generatePromptSuggestions(
+                sourceImage, 
+                selectedSubject, 
+                numberOfSuggestions, 
+                customInstruction,
+                language // Pass current language
+            );
             onStateChange({ suggestions: result });
         } catch (err: any) {
-            onStateChange({ error: err.message || 'Đã xảy ra lỗi không mong muốn.' });
+            onStateChange({ error: err.message || t('common.error') });
         } finally {
             onStateChange({ isLoading: false });
         }
@@ -141,7 +150,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
         if (sourceImage) {
             onSendToViewSyncWithPrompt(sourceImage, prompt);
         } else {
-            onStateChange({ error: 'Không tìm thấy ảnh gốc để gửi đi. Vui lòng tải lại ảnh.' });
+            onStateChange({ error: t('common.error') });
         }
     };
 
@@ -171,10 +180,10 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
             {/* Header Section */}
             <div className="flex flex-col gap-2">
                 <h2 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-purple-600 to-pink-500 dark:from-purple-400 dark:to-pink-400 w-fit">
-                    AI Gợi Ý Prompt
+                    {t('prompt_suggester.title')}
                 </h2>
                 <p className="text-text-secondary dark:text-gray-300 max-w-2xl text-base leading-relaxed">
-                    Tải lên một bức ảnh kiến trúc, AI sẽ phân tích và đề xuất các ý tưởng prompt chuyên nghiệp, chi tiết để bạn sử dụng trực tiếp cho việc render hoặc đồng bộ view.
+                    {t('prompt_suggester.desc')}
                 </p>
             </div>
 
@@ -185,12 +194,12 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                     <div className="bg-white dark:bg-[#1E1E1E] p-6 rounded-2xl border border-gray-200 dark:border-[#302839] shadow-sm hover:shadow-md transition-shadow">
                         <div className="flex justify-between items-center mb-4">
                             <label className="block text-sm font-bold text-gray-700 dark:text-gray-200">
-                                1. Ảnh cần phân tích
+                                {t('prompt_suggester.step1')}
                             </label>
                             {sourceImage && (
                                 <span className="text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-2 py-0.5 rounded-full flex items-center gap-1">
                                     <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                                    Đã tải lên
+                                    {t('prompt_suggester.uploaded')}
                                 </span>
                             )}
                         </div>
@@ -200,13 +209,13 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                     {/* Settings Card */}
                     <div className="bg-white dark:bg-[#1E1E1E] p-6 rounded-2xl border border-gray-200 dark:border-[#302839] shadow-sm hover:shadow-md transition-shadow">
                         <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-4">
-                            2. Cấu hình gợi ý
+                            {t('prompt_suggester.step2')}
                         </label>
                         
                         <div className="space-y-5">
                             <OptionSelector 
                                 id="suggestion-subject"
-                                label="Chủ đề tập trung"
+                                label={t('prompt_suggester.focus_topic')}
                                 options={suggestionSubjects}
                                 value={selectedSubject}
                                 onChange={(val) => onStateChange({ selectedSubject: val })}
@@ -215,7 +224,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                             
                             <div>
                                 <label htmlFor="suggestion-count" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">
-                                    Số lượng gợi ý (Mỗi loại)
+                                    {t('prompt_suggester.count')}
                                 </label>
                                 <div className="relative">
                                     <input 
@@ -248,18 +257,18 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                                         </button>
                                     </div>
                                 </div>
-                                <p className="text-[10px] text-gray-400 mt-1.5 px-1">Nhập số lượng từ 1 đến 10 (Mặc định: 5)</p>
+                                <p className="text-[10px] text-gray-400 mt-1.5 px-1">{t('prompt_suggester.count_hint')}</p>
                             </div>
 
                             <div>
                                 <label htmlFor="custom-instruction" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">
-                                    Yêu cầu đặc biệt (Optional)
+                                    {t('prompt_suggester.custom_req')}
                                 </label>
                                 <textarea 
                                     id="custom-instruction"
                                     rows={3}
                                     className="w-full bg-white dark:bg-[#252525] border border-gray-200 dark:border-[#302839] rounded-xl p-3 text-sm text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500 outline-none transition-all resize-none placeholder-gray-400 dark:placeholder-gray-600"
-                                    placeholder="VD: Tập trung vào ánh sáng tự nhiên, phong cách wabi-sabi,..."
+                                    placeholder={t('prompt_suggester.custom_req_ph')}
                                     value={customInstruction}
                                     onChange={(e) => onStateChange({ customInstruction: e.target.value })}
                                     disabled={isLoading}
@@ -274,14 +283,14 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                         className="w-full py-4 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] disabled:from-gray-300 disabled:to-gray-400 disabled:cursor-not-allowed text-white font-bold rounded-2xl shadow-lg hover:shadow-purple-500/30 transition-all transform hover:-translate-y-0.5 active:translate-y-0 flex items-center justify-center gap-3 text-lg"
                     >
                         {isLoading ? <Spinner /> : <span className="material-symbols-outlined">auto_fix_high</span>}
-                        {isLoading ? 'Đang phân tích...' : 'Phân tích & Tạo Gợi ý'}
+                        {isLoading ? t('prompt_suggester.analyzing') : t('prompt_suggester.btn_analyze')}
                     </button>
                     
                     {error && (
                         <div className="p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 rounded-xl flex items-start gap-3 animate-fade-in">
                             <span className="material-symbols-outlined text-red-500 mt-0.5">error</span>
                             <div>
-                                <h4 className="text-sm font-bold text-red-700 dark:text-red-400">Đã xảy ra lỗi</h4>
+                                <h4 className="text-sm font-bold text-red-700 dark:text-red-400">{t('common.error')}</h4>
                                 <p className="text-sm text-red-600 dark:text-red-300 mt-1">{error}</p>
                             </div>
                         </div>
@@ -293,7 +302,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                      <div className="flex items-center justify-between mb-4">
                         <h3 className="text-xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
                             <span className="material-symbols-outlined text-purple-500">lightbulb</span>
-                            Kết quả từ AI
+                            {t('prompt_suggester.results')}
                         </h3>
                         {suggestions && !isLoading && (
                             <button 
@@ -301,7 +310,7 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                                 className="text-xs text-gray-500 hover:text-red-500 flex items-center gap-1 transition-colors"
                             >
                                 <span className="material-symbols-outlined text-sm">delete</span>
-                                Xóa kết quả
+                                {t('prompt_suggester.clear')}
                             </button>
                         )}
                      </div>
@@ -313,9 +322,9 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                                 <div className="w-16 h-16 bg-purple-500/10 rounded-full flex items-center justify-center mb-4 animate-pulse">
                                     <span className="material-symbols-outlined text-4xl text-purple-500 animate-spin">smart_toy</span>
                                 </div>
-                                <h4 className="text-lg font-bold text-gray-800 dark:text-white mb-2">AI đang suy nghĩ...</h4>
+                                <h4 className="text-lg font-bold text-gray-800 dark:text-white mb-2">{t('prompt_suggester.thinking')}</h4>
                                 <p className="text-gray-500 dark:text-gray-400 text-sm max-w-xs text-center">
-                                    Đang phân tích hình ảnh, bố cục và ánh sáng để đưa ra gợi ý tốt nhất.
+                                    {t('prompt_suggester.thinking_desc')}
                                 </p>
                             </div>
                         )}
@@ -325,11 +334,9 @@ const PromptSuggester: React.FC<PromptSuggesterProps> = ({ state, onStateChange,
                                 <div className="w-20 h-20 bg-gray-100 dark:bg-[#1E1E1E] rounded-full flex items-center justify-center mx-auto mb-6 shadow-inner">
                                     <span className="material-symbols-outlined text-5xl text-gray-300 dark:text-gray-600">image_search</span>
                                 </div>
-                                <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-2">Chưa có kết quả</h3>
+                                <h3 className="text-lg font-bold text-gray-700 dark:text-gray-300 mb-2">{t('prompt_suggester.no_results')}</h3>
                                 <p className="text-gray-500 dark:text-gray-500 text-sm leading-relaxed">
-                                    Hãy tải lên một bức ảnh ở cột bên trái và nhấn nút 
-                                    <strong className="text-purple-500 mx-1">Phân tích</strong> 
-                                    để AI bắt đầu làm việc.
+                                    {t('prompt_suggester.no_results_desc')}
                                 </p>
                              </div>
                         )}

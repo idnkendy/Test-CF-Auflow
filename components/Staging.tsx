@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { StagingState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -18,6 +18,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import ResolutionSelector from './common/ResolutionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface StagingProps {
     state: StagingState;
@@ -28,12 +29,24 @@ interface StagingProps {
 }
 
 const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { prompt, sceneImage, objectImages, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Đặt các đồ vật này vào không gian một cách hợp lý và tự nhiên.';
+        const enDefault = 'Place these objects into the space reasonably and naturally.';
+        
+        // If current prompt is empty or matches one of the defaults, update it
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
 
     // Calculate cost based on resolution
     const getCostPerImage = () => {
@@ -73,7 +86,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang phân tích không gian...');
+        setStatusMessage(t('ext.floorplan.analyzing'));
         setUpscaleWarning(null);
 
         let logId: string | null = null;
@@ -121,7 +134,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage(`[1/2] Đang xử lý staging (${modelName})... (${index + 1}/${numberOfImages})`);
+                        setStatusMessage(t('common.processing'));
                         
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt,
@@ -129,7 +142,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                             aspectRatio, // Pass raw ratio
                             1,
                             modelName,
-                            (msg) => setStatusMessage(msg)
+                            (msg) => setStatusMessage(t('common.processing'))
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -180,7 +193,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
 
             } else {
                 // Fallback (Not reached with useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(
                         fullPrompt, 
@@ -214,7 +227,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -251,20 +264,20 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
         <div>
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <h2 className="text-2xl font-bold mb-4">AI Staging (Dàn dựng nội thất)</h2>
+            <h2 className="text-2xl font-bold mb-4">{t('ext.staging.title')}</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Không Gian Trống</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.staging.step1')}</label>
                         <ImageUpload onFileSelect={handleSceneFileSelect} previewUrl={sceneImage?.objectURL} />
                     </div>
                     
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Tải Lên Đồ Nội Thất (Tùy chọn)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.staging.step2')}</label>
                         <MultiImageUpload onFilesChange={handleObjectFilesChange} maxFiles={5} />
                     </div>
 
-                    <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder="Mô tả phong cách nội thất, cách sắp xếp..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
+                    <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder={t('ext.staging.prompt_ph')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                     
                     <div className="grid grid-cols-2 gap-4">
                         <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
@@ -275,19 +288,19 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                             )}
                         </div>
                     </div>
                     
                     <button onClick={handleGenerate} disabled={isLoading || !sceneImage} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors shadow-lg flex justify-center items-center gap-2">
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Bắt đầu Staging'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.staging.btn_generate')}
                     </button>
                     
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
@@ -295,7 +308,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                 </div>
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold">Kết quả</h3>
+                        <h3 className="text-xl font-semibold">{t('common.result')}</h3>
                         {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -317,7 +330,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -333,7 +346,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                         ) : resultImages.length > 1 ? (
                             <ResultGrid images={resultImages} toolName="staging" />
                         ) : (
-                            <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>
+                            <p className="text-gray-400">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

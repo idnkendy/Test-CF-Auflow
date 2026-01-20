@@ -1,7 +1,9 @@
 
 import React from 'react';
 import { Tool } from '../types';
+import { useLanguage } from '../hooks/useLanguage';
 
+// ... (KEEP ALL ICON COMPONENTS AS IS) ...
 // --- MAIN ICONS ---
 const FloorPlanIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
@@ -127,162 +129,56 @@ interface NavigationProps {
   onGoHome?: () => void;
 }
 
-export const mainNavItems = [
-    { tool: Tool.ArchitecturalRendering, label: 'Render Kiến trúc', icon: <PhotoIcon /> },
-    { tool: Tool.InteriorRendering, label: 'Render Nội thất', icon: <InteriorIcon /> },
-    { tool: Tool.Renovation, label: 'Cải Tạo AI', icon: <RenovationIcon /> },
-    { tool: Tool.ViewSync, label: 'Đồng Bộ View', icon: <ViewGridIcon /> },
-    { tool: Tool.ImageEditing, label: 'Chỉnh Sửa Ảnh', icon: <SparklesIcon /> },
-];
+// Hook to provide translated utility tools
+export const useUtilityTools = () => {
+    const { t } = useLanguage();
+    
+    return {
+        label: t('tool.extended'),
+        icon: <PlusCircleIcon />,
+        tools: [
+            { tool: Tool.ReRender, label: t('ext.rerender.title'), desc: t('dash.rerender.desc'), icon: <BrushIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/RERENDER%20THUMB.jpeg' },
+            { tool: Tool.FloorPlan, label: t('ext.floorplan.title'), desc: t('dash.floorplan.desc'), icon: <FloorPlanIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render-mat-bang.png' },
+            { tool: Tool.PromptSuggester, label: t('tool.prompt'), desc: t('dash.prompt.desc'), icon: <MagicTextIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/prompt-recommend.png' },
+            { tool: Tool.EditByNote, label: t('tool.edit_note'), desc: t('dash.edit_note.desc'), icon: <AnnotationIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/edit-by-note.png' },
+            { tool: Tool.LayoutGenerator, label: t('tool.layout'), desc: t('dash.layout.desc'), icon: <LayoutBoardIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/layout.png' },
+            { tool: Tool.DrawingGenerator, label: t('tool.drawing'), desc: t('dash.drawing.desc'), icon: <BlueprintIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/tao-ban-ve.png' },
+            { tool: Tool.DiagramGenerator, label: t('tool.diagram'), desc: t('dash.diagram.desc'), icon: <StructureIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/diagram.png' },
+            { tool: Tool.RealEstatePoster, label: t('tool.poster'), desc: t('dash.poster.desc'), icon: <MarketingIcon />, image: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=600&auto=format&fit=crop' },
+            { tool: Tool.UrbanPlanning, label: t('tool.urban'), desc: t('dash.urban.desc'), icon: <UrbanIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render-quy-hoach.png' },
+            { tool: Tool.LandscapeRendering, label: t('tool.landscape'), desc: t('dash.landscape.desc'), icon: <LandscapeIcon />, image: 'https://images.unsplash.com/photo-1558293842-c0fd3db86157?q=80&w=600&auto=format&fit=crop' },
+            { tool: Tool.Moodboard, label: t('tool.moodboard'), desc: t('dash.moodboard.desc'), icon: <MoodboardIcon />, image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=600&auto=format&fit=crop' },
+            { tool: Tool.Upscale, label: t('tool.upscale'), desc: t('dash.upscale.desc'), icon: <UpscaleIcon />, image: 'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=600&auto=format&fit=crop' },
+            { tool: Tool.MaterialSwap, label: t('tool.material'), desc: t('dash.material.desc'), icon: <MaterialIcon />, image: 'https://images.unsplash.com/photo-1615529182904-14819c35db37?q=80&w=600&auto=format&fit=crop' },
+            { tool: Tool.Staging, label: t('tool.staging'), desc: t('dash.staging.desc'), icon: <CubeIcon />, image: 'https://images.unsplash.com/photo-1631679706909-1844bbd07221?q=80&w=600&auto=format&fit=crop' },
+            { tool: Tool.SketchConverter, label: t('tool.sketch'), desc: t('dash.sketch.desc'), icon: <PencilIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/photo-to-sketch.png' },
+            { tool: Tool.AITechnicalDrawings, label: t('tool.technical'), desc: t('dash.technical.desc'), icon: <BlueprintIcon />, image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=600&auto=format&fit=crop' },
+            { tool: Tool.FengShui, label: t('tool.fengshui'), desc: t('dash.fengshui.desc'), icon: <FengShuiIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/phong-thuy.png' },
+        ]
+    };
+};
 
+// Deprecated static export for backward compatibility if needed, but App.tsx should update
 export const utilityToolsGroup = {
     label: 'Tính năng mở rộng',
     icon: <PlusCircleIcon />,
-    tools: [
-        { 
-            tool: Tool.ReRender, 
-            label: 'Re-Render', 
-            icon: <BrushIcon />, 
-            desc: 'Làm mới hình ảnh với quy trình Sketch -> Realistic 2 bước.',
-            gradient: 'from-pink-500/20 to-red-500/20 hover:border-pink-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/RERENDER%20THUMB.jpeg'
-        },
-        { 
-            tool: Tool.FloorPlan, 
-            label: 'Render Mặt Bằng', 
-            icon: <FloorPlanIcon />, 
-            desc: 'Chuyển đổi bản vẽ 2D thành phối cảnh 3D ấn tượng',
-            gradient: 'from-blue-500/20 to-cyan-500/20 hover:border-blue-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render-mat-bang.png'
-        },
-        { 
-            tool: Tool.PromptSuggester, 
-            label: 'Gợi ý Prompt', 
-            icon: <MagicTextIcon />, 
-            desc: 'AI phân tích ảnh và gợi ý prompt cho Đồng bộ View.',
-            gradient: 'from-yellow-500/20 to-orange-500/20 hover:border-yellow-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/prompt-recommend.png'
-        },
-        { 
-            tool: Tool.EditByNote, 
-            label: 'Sửa Bằng Ghi Chú', 
-            icon: <AnnotationIcon />, 
-            desc: 'Chỉnh sửa ảnh trực tiếp bằng các câu lệnh ngôn ngữ tự nhiên.',
-            gradient: 'from-purple-500/20 to-pink-500/20 hover:border-purple-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/edit-by-note.png'
-        },
-        { 
-            tool: Tool.LayoutGenerator, 
-            label: 'Tạo Layout', 
-            icon: <LayoutBoardIcon />, 
-            desc: 'Tạo bố cục kiến trúc từ ý tưởng.',
-            gradient: 'from-indigo-500/20 to-blue-500/20 hover:border-indigo-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/layout.png'
-        },
-        { 
-            tool: Tool.DrawingGenerator, 
-            label: 'Tạo Bản vẽ', 
-            icon: <BlueprintIcon />, 
-            desc: 'Tạo các bản vẽ kỹ thuật chiếu vuông góc.',
-            gradient: 'from-cyan-500/20 to-teal-500/20 hover:border-cyan-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/tao-ban-ve.png'
-        },
-        { 
-            tool: Tool.DiagramGenerator, 
-            label: 'Tạo Diagram', 
-            icon: <StructureIcon />, 
-            desc: 'Tạo sơ đồ phân tích kiến trúc.',
-            gradient: 'from-orange-500/20 to-amber-500/20 hover:border-orange-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/diagram.png'
-        },
-        { 
-            tool: Tool.RealEstatePoster, 
-            label: 'Poster BDS', 
-            icon: <MarketingIcon />, 
-            desc: 'Tạo poster quảng cáo bất động sản chuyên nghiệp.',
-            gradient: 'from-slate-500/20 to-gray-500/20 hover:border-slate-500/50',
-            image: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=600&auto=format&fit=crop'
-        },
-        { 
-            tool: Tool.UrbanPlanning, 
-            label: 'Render Quy hoạch', 
-            icon: <UrbanIcon />, 
-            desc: 'Phối cảnh tổng thể cho khu đô thị và dự án lớn',
-            gradient: 'from-green-500/20 to-emerald-500/20 hover:border-green-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render-quy-hoach.png'
-        },
-        { 
-            tool: Tool.LandscapeRendering, 
-            label: 'Render Sân vườn', 
-            icon: <LandscapeIcon />, 
-            desc: 'Thiết kế cảnh quan, sân vườn và tiểu cảnh',
-            gradient: 'from-lime-500/20 to-green-500/20 hover:border-lime-500/50',
-            image: 'https://images.unsplash.com/photo-1558293842-c0fd3db86157?q=80&w=600&auto=format&fit=crop'
-        },
-        { 
-            tool: Tool.Moodboard, 
-            label: 'Tạo Moodboard', 
-            icon: <MoodboardIcon />, 
-            desc: 'Sắp xếp ý tưởng, màu sắc và vật liệu',
-            gradient: 'from-pink-500/20 to-rose-500/20 hover:border-pink-500/50',
-            image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=600&auto=format&fit=crop'
-        },
-        { 
-            tool: Tool.Upscale, 
-            label: 'Upscale AI', 
-            icon: <UpscaleIcon />, 
-            desc: 'Nâng cao chất lượng và độ phân giải ảnh',
-            gradient: 'from-yellow-500/20 to-orange-500/20 hover:border-yellow-500/50',
-            image: 'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=600&auto=format&fit=crop'
-        },
-        { 
-            tool: Tool.MaterialSwap, 
-            label: 'Thay Vật Liệu', 
-            icon: <MaterialIcon />, 
-            desc: 'Thử nghiệm các loại vật liệu khác nhau trên bề mặt',
-            gradient: 'from-teal-500/20 to-cyan-500/20 hover:border-teal-500/50',
-            image: 'https://images.unsplash.com/photo-1615529182904-14819c35db37?q=80&w=600&auto=format&fit=crop'
-        },
-        { 
-            tool: Tool.Staging, 
-            label: 'AI Staging', 
-            icon: <CubeIcon />, 
-            desc: 'Thêm đồ nội thất vào phòng trống tự động',
-            gradient: 'from-violet-500/20 to-fuchsia-500/20 hover:border-violet-500/50',
-            image: 'https://images.unsplash.com/photo-1631679706909-1844bbd07221?q=80&w=600&auto=format&fit=crop'
-        },
-        { 
-            tool: Tool.SketchConverter, 
-            label: 'Ảnh thành Sketch', 
-            icon: <PencilIcon />, 
-            desc: 'Chuyển ảnh render hoặc chụp thành tranh vẽ tay',
-            gradient: 'from-gray-500/20 to-slate-500/20 hover:border-gray-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/photo-to-sketch.png'
-        },
-        { 
-            tool: Tool.AITechnicalDrawings, 
-            label: 'Bản vẽ kỹ thuật', 
-            icon: <BlueprintIcon />, 
-            desc: 'Tạo mặt bằng, mặt đứng từ ảnh phối cảnh',
-            gradient: 'from-cyan-600/20 to-blue-600/20 hover:border-cyan-600/50',
-            image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=600&auto=format&fit=crop'
-        },
-        { 
-            tool: Tool.FengShui, 
-            label: 'Phong thủy', 
-            icon: <FengShuiIcon />, 
-            desc: 'Phân tích phong thủy bát trạch và huyền không',
-            gradient: 'from-amber-500/20 to-yellow-500/20 hover:border-amber-500/50',
-            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/phong-thuy.png'
-        },
-    ]
+    tools: []
 };
 
-const historyItem = { tool: Tool.History, label: 'Lịch sử', icon: <HistoryIcon /> };
-
 const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMobileOpen = false, onCloseMobile, onGoHome }) => {
+    const { t } = useLanguage();
+    const utilityTools = useUtilityTools();
     
-    const isExtendedToolActive = utilityToolsGroup.tools.some(item => item.tool === activeTool) || activeTool === Tool.ExtendedFeaturesDashboard;
+    // Define items using translation hook
+    const mainNavItems = [
+        { tool: Tool.ArchitecturalRendering, label: t('tool.arch'), icon: <PhotoIcon /> },
+        { tool: Tool.InteriorRendering, label: t('tool.interior'), icon: <InteriorIcon /> },
+        { tool: Tool.Renovation, label: t('tool.renovation'), icon: <RenovationIcon /> },
+        { tool: Tool.ViewSync, label: t('tool.viewsync'), icon: <ViewGridIcon /> },
+        { tool: Tool.ImageEditing, label: t('tool.editor'), icon: <SparklesIcon /> },
+    ];
+    
+    const isExtendedToolActive = utilityTools.tools.some(item => item.tool === activeTool) || activeTool === Tool.ExtendedFeaturesDashboard;
 
     // isCompact logic: Force compact mode on 'md' screens (tablet), show text on 'lg' and up
     const renderItem = (item: { tool: Tool; label: string; icon: React.ReactElement<any>; }) => (
@@ -314,7 +210,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
         >
              <aside className="absolute inset-y-0 left-0 w-[80%] max-w-[300px] bg-surface dark:bg-[#121212] border-r border-border-color dark:border-[#302839] shadow-2xl p-4 flex flex-col h-full overflow-y-auto">
                 <div className="flex justify-between items-center mb-6 px-2">
-                    <h2 className="text-xl font-bold text-text-primary dark:text-white">Menu</h2>
+                    <h2 className="text-xl font-bold text-text-primary dark:text-white">{t('nav.menu')}</h2>
                     <button 
                         onClick={onCloseMobile} 
                         className="p-2 rounded-lg bg-gray-100 dark:bg-[#302839] text-text-secondary dark:text-gray-400 hover:text-white"
@@ -332,7 +228,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                             <span className="text-gray-400 group-hover:text-[#7f13ec]">
                                 <HomeIcon />
                             </span>
-                            <span className="truncate">Trang chủ</span>
+                            <span className="truncate">{t('nav.home')}</span>
                         </button>
                     )}
 
@@ -362,24 +258,24 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                         }`}
                     >
                         <span className={`${isExtendedToolActive ? 'text-white' : 'text-gray-400 group-hover:text-[#7f13ec]'}`}>
-                            {utilityToolsGroup.icon}
+                            {utilityTools.icon}
                         </span>
-                        <span className="truncate">{utilityToolsGroup.label}</span>
+                        <span className="truncate">{t('tool.extended')}</span>
                     </button>
 
                     <div className="pt-4 mt-4 border-t border-border-color dark:border-[#302839]">
                          <button
-                            onClick={() => setActiveTool(historyItem.tool)}
+                            onClick={() => setActiveTool(Tool.History)}
                             className={`group flex items-center w-full gap-3 px-4 py-3 rounded-xl text-left transition-all duration-200 text-sm font-medium ${
-                            activeTool === historyItem.tool
+                            activeTool === Tool.History
                                 ? 'bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] text-white shadow-md'
                                 : 'text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white'
                             }`}
                         >
-                            <span className={`${activeTool === historyItem.tool ? 'text-white' : 'text-gray-400 group-hover:text-[#7f13ec]'}`}>
-                                {historyItem.icon}
+                            <span className={`${activeTool === Tool.History ? 'text-white' : 'text-gray-400 group-hover:text-[#7f13ec]'}`}>
+                                <HistoryIcon />
                             </span>
-                            <span className="truncate">{historyItem.label}</span>
+                            <span className="truncate">{t('nav.history')}</span>
                         </button>
                     </div>
                 </div>
@@ -397,7 +293,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                     <button
                         onClick={onGoHome}
                         className="group relative flex items-center justify-center p-2 rounded-full transition-all duration-300 outline-none text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5"
-                        title="Trang chủ"
+                        title={t('nav.home')}
                     >
                         <HomeIcon className="h-6 w-6" />
                     </button>
@@ -422,13 +318,13 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
                             ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10'
                             : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'
                         }`}
-                        title={utilityToolsGroup.label}
+                        title={t('tool.extended')}
                     >
                         <span className={`relative z-10 transition-colors duration-300 ${isExtendedToolActive ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
-                            {React.cloneElement(utilityToolsGroup.icon, { className: "h-5 w-5 md:h-6 md:w-6" })}
+                            {React.cloneElement(utilityTools.icon, { className: "h-5 w-5 md:h-6 md:w-6" })}
                         </span>
                         {/* Hidden on md, visible on lg+ */}
-                        <span className="relative z-10 hidden lg:inline">{utilityToolsGroup.label}</span>
+                        <span className="relative z-10 hidden lg:inline">{t('tool.extended')}</span>
                     </button>
                 </div>
             </div>
@@ -437,18 +333,18 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
             <div className="absolute right-6 flex items-center">
                 <div className="flex items-center p-1.5 rounded-full bg-gray-50/80 dark:bg-white/5 border border-gray-200 dark:border-white/5 shadow-inner">
                     <button
-                        onClick={() => setActiveTool(historyItem.tool)}
+                        onClick={() => setActiveTool(Tool.History)}
                         className={`group relative flex items-center gap-2 px-3 lg:px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
-                        ${activeTool === historyItem.tool
+                        ${activeTool === Tool.History
                             ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10' 
                             : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'
                         }`}
-                        title={historyItem.label}
+                        title={t('nav.history')}
                     >
-                        <span className={`relative z-10 transition-colors duration-300 ${activeTool === historyItem.tool ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
-                            {React.cloneElement(historyItem.icon, { className: "h-5 w-5 md:h-6 md:w-6" })}
+                        <span className={`relative z-10 transition-colors duration-300 ${activeTool === Tool.History ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
+                            <HistoryIcon className="h-5 w-5 md:h-6 md:w-6" />
                         </span>
-                        <span className={`relative z-10 hidden lg:inline`}>{historyItem.label}</span>
+                        <span className={`relative z-10 hidden lg:inline`}>{t('nav.history')}</span>
                     </button>
                 </div>
             </div>

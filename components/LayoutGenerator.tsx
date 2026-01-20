@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { LayoutGeneratorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -16,7 +16,8 @@ import ResultGrid from './common/ResultGrid';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface LayoutGeneratorProps {
     state: LayoutGeneratorState;
@@ -27,13 +28,25 @@ interface LayoutGeneratorProps {
 }
 
 const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false);
     
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Tạo một bảng trình bày kiến trúc (architectural presentation board) sử dụng thiết kế của tòa nhà này. Tạo các bản vẽ đặc trưng gồm: mặt bằng, mặt cắt, phối cảnh trục đo axonometric và 5 sơ đồ diễn tiến khối (massing evolution) từng bước. Tạo thêm các cảnh khác, nội thất, mặt đứng và khiến bảng trình bày trở nên mạch lạc và thu hút bằng bố cục và phần chữ được sắp xếp hợp lý.';
+        const enDefault = 'Create an architectural presentation board using the design of this building. Generate characteristic drawings including: floor plans, sections, axonometric perspectives, and 5 step-by-step massing evolution diagrams. Add other views, interiors, elevations, and make the presentation coherent and attractive with well-arranged layout and typography.';
+        
+        // If current prompt is empty or matches one of the defaults, update it
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
+
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -59,7 +72,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -70,12 +83,17 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
         }
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang thiết kế layout...');
+        setStatusMessage(t('ext.floorplan.analyzing'));
         setUpscaleWarning(null);
 
-        const fullPrompt = `Architectural Layout & Presentation Task: "${prompt}". 
-        ${sourceImage ? 'Use the provided image as the primary visual reference/design base.' : ''}
-        Ensure the final output has a professional graphic composition, clear linework, and coherent layout style.`;
+        // Language-aware prompt construction
+        const promptIntro = language === 'en' 
+            ? 'Architectural Layout & Presentation Task:' 
+            : 'Tác vụ Layout & Trình bày Kiến trúc:';
+            
+        const fullPrompt = `${promptIntro} "${prompt}". 
+        ${sourceImage ? (language === 'en' ? 'Use the provided image as the primary visual reference/design base.' : 'Sử dụng hình ảnh được cung cấp làm tài liệu tham khảo/thiết kế chính.') : ''}
+        ${language === 'en' ? 'Ensure the final output has a professional graphic composition, clear linework, and coherent layout style.' : 'Đảm bảo đầu ra cuối cùng có bố cục đồ họa chuyên nghiệp, nét vẽ rõ ràng và phong cách trình bày mạch lạc.'}`;
 
         // Use Flow for ALL resolutions
         const useFlow = true;
@@ -109,14 +127,14 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        setStatusMessage(t('common.processing'));
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt, 
                             inputImages, 
                             aspectRatio, // Use raw aspect ratio string 
                             1, 
                             modelName, 
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(t('common.processing'))
                         );
                         
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -174,7 +192,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
 
             } else {
                 // Fallback (Not reached with useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage || undefined, jobId || undefined);
                     return images[0];
@@ -193,7 +211,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -224,19 +242,19 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tạo Layout & Presentation</h2>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.layout.title')}</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Phác Thảo / Render (Tùy chọn)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.layout.step1')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả yêu cầu Layout</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.layout.step2')}</label>
                         <textarea
                             rows={6}
                             className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                            placeholder="VD: Tạo bảng trình bày kiến trúc gồm mặt bằng, mặt cắt và phối cảnh trục đo..."
+                            placeholder={language === 'vi' ? "VD: Tạo bảng trình bày kiến trúc gồm mặt bằng, mặt cắt và phối cảnh trục đo..." : "Ex: Create an architectural presentation board including plans, sections, and axonometric views..."}
                             value={prompt}
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
@@ -256,13 +274,13 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                             )}
                         </div>
                     </div>
@@ -272,7 +290,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                         disabled={isLoading}
                         className="w-full flex justify-center items-center gap-2 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang tạo...'}</> : 'Tạo Layout'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.layout.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                     {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
@@ -280,7 +298,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
 
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả Layout</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                         {resultImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -302,7 +320,7 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -315,10 +333,10 @@ const LayoutGenerator: React.FC<LayoutGeneratorProps> = ({ state, onStateChange,
                             </div>
                         ) : resultImages.length === 1 && sourceImage ? (
                             <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
-                        ) : resultImages.length > 0 ? (
-                             <img src={resultImages[0]} alt="Result" className="w-full h-full object-contain" />
+                        ) : resultImages.length > 1 ? (
+                            <ResultGrid images={resultImages} toolName="layout-generator" />
                         ) : (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">Kết quả sẽ hiển thị ở đây.</p>
+                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
                         )}
                     </div>
                 </div>

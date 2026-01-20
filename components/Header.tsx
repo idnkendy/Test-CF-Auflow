@@ -1,9 +1,12 @@
 
+// ... (imports remain the same)
 import React, { useState, useRef, useEffect } from 'react';
 import { UserStatus } from '../types';
 import { User } from '@supabase/supabase-js';
 import { Logo } from './common/Logo';
+import { useLanguage } from '../hooks/useLanguage';
 
+// ... (Other Icons remain the same)
 const SunIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M12 12a5 5 0 100-10 5 5 0 000 10z" />
@@ -71,6 +74,7 @@ interface HeaderProps {
 }
 
 const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignOut, onOpenGallery, onUpgrade, onOpenProfile, userStatus, user, onToggleNav }) => {
+  const { language, setLanguage, t } = useLanguage();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -86,9 +90,14 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
     };
   }, []);
 
+  const toggleLanguage = () => {
+    const newLang = language === 'vi' ? 'en' : 'vi';
+    setLanguage(newLang);
+  };
+
   const expirationDate = userStatus?.subscriptionEnd 
-    ? new Date(userStatus.subscriptionEnd).toLocaleDateString('vi-VN') 
-    : 'Vĩnh viễn';
+    ? new Date(userStatus.subscriptionEnd).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US') 
+    : t('header.forever');
 
   return (
      <header className="bg-surface/80 dark:bg-[#121212]/80 backdrop-blur-md shadow-sm sticky top-0 z-40 transition-colors duration-300 px-3 sm:px-6 lg:px-8 border-b border-border-color dark:border-[#302839]">
@@ -102,19 +111,43 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                     <span className="material-symbols-outlined text-2xl">menu</span>
                 </button>
 
-                <div className="flex items-center cursor-pointer group" onClick={onGoHome} title="Trang chủ">
+                <div className="flex items-center cursor-pointer group" onClick={onGoHome} title={t('nav.home')}>
                     <Logo className="w-10 h-10 sm:w-12 sm:h-12 text-[#7f13ec]" />
-                    <span className="text-text-primary dark:text-white text-lg sm:text-xl font-bold tracking-tight ml-2 sm:ml-3">OPZEN AI</span>
+                    <span className="text-text-primary dark:text-white text-lg sm:text-xl font-bold tracking-tight ml-2 sm:ml-3 hidden sm:inline-block">{t('app.name')}</span>
                 </div>
             </div>
             
             <div className="flex items-center space-x-2 sm:space-x-5">
+                {/* Modern Language Switcher (Updated Bigger & Wider) */}
+                <button 
+                    onClick={toggleLanguage}
+                    className="relative bg-gray-100 dark:bg-[#252525] rounded-full border border-gray-200 dark:border-[#3a3a3a] h-10 w-24 cursor-pointer focus:outline-none hover:border-[#7f13ec]/50 transition-all duration-300 group shadow-inner p-1"
+                    aria-label="Switch Language"
+                >
+                    {/* Active Background Pill with Smooth Animation */}
+                    <div 
+                        className={`absolute top-1 bottom-1 left-1 w-10 bg-[#7f13ec] rounded-full shadow-md shadow-purple-500/30 transition-transform duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+                            language === 'en' ? 'translate-x-[3rem]' : 'translate-x-0'
+                        }`}
+                    ></div>
+                    
+                    {/* Text Labels - Centered via Grid */}
+                    <div className="absolute inset-0 grid grid-cols-2 z-10 select-none pointer-events-none">
+                        <div className="flex items-center justify-center">
+                            <span className={`text-sm font-bold transition-colors duration-300 ${language === 'vi' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>VN</span>
+                        </div>
+                        <div className="flex items-center justify-center">
+                            <span className={`text-sm font-bold transition-colors duration-300 ${language === 'en' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>EN</span>
+                        </div>
+                    </div>
+                </button>
+
                 {/* Status Display - External (Premium Glassmorphism Design) */}
                 {!isDropdownOpen && userStatus && (
                     <button
                         onClick={onUpgrade}
                         className="hidden sm:flex items-center gap-1.5 pl-3 pr-1 py-1 rounded-full bg-white/50 dark:bg-[#1E1E1E]/50 border border-gray-200 dark:border-[#333] backdrop-blur-md shadow-sm hover:shadow-purple-500/20 hover:border-purple-500/40 transition-all duration-300 group"
-                        title="Nạp thêm Credits"
+                        title={t('header.topup_tooltip')}
                     >
                         <div className="flex items-center gap-2 px-2">
                             <div className="text-yellow-500 drop-shadow-sm">
@@ -134,7 +167,7 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3">
                                     <path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" />
                                 </svg>
-                                <span className="text-xs font-bold uppercase tracking-wide">Nạp</span>
+                                <span className="text-xs font-bold uppercase tracking-wide">{t('header.topup')}</span>
                             </div>
                         </div>
                     </button>
@@ -166,17 +199,16 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                                 {user ? (
                                     <div className="mb-3">
                                         <p className="text-sm font-bold text-text-primary dark:text-white truncate">
-                                            {user.user_metadata?.full_name || user.email?.split('@')[0] || 'Người dùng'}
+                                            {user.user_metadata?.full_name || user.email?.split('@')[0] || t('header.account')}
                                         </p>
                                         <p className="text-xs text-text-secondary dark:text-gray-400 truncate">
                                             {user.email}
                                         </p>
                                     </div>
                                 ) : (
-                                    <p className="text-sm font-bold text-text-primary dark:text-white mb-2">Tài khoản</p>
+                                    <p className="text-sm font-bold text-text-primary dark:text-white mb-2">{t('header.account')}</p>
                                 )}
                                 
-                                {/* Credit & Expiration Display - Internal Dropdown (Fallback/Mobile) */}
                                 {userStatus && (
                                     <div className="space-y-2 mt-3">
                                         <div 
@@ -187,12 +219,12 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                                                  <div className="text-yellow-500"><CoinIcon /></div>
                                                  <span className="font-semibold">{new Intl.NumberFormat('en-US').format(userStatus.credits)} Credits</span>
                                              </div>
-                                             <span className="text-[10px] bg-[#7f13ec] text-white px-2 py-0.5 rounded-full font-bold">+ Nạp</span>
+                                             <span className="text-[10px] bg-[#7f13ec] text-white px-2 py-0.5 rounded-full font-bold">+ {t('header.topup')}</span>
                                         </div>
                                         <div className="flex items-center justify-between text-xs text-text-secondary dark:text-gray-400 px-1">
                                              <div className="flex items-center gap-2">
                                                  <CalendarIcon />
-                                                 <span>Hết hạn:</span>
+                                                 <span>{t('header.expired')}</span>
                                              </div>
                                              <span className="font-medium text-text-primary dark:text-white">{expirationDate}</span>
                                         </div>
@@ -207,13 +239,13 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                                             onClick={() => { onOpenProfile(); setIsDropdownOpen(false); }}
                                             className="w-full text-left px-4 py-2.5 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white flex items-center gap-3"
                                         >
-                                            <GiftIcon /> Nhập Giftcode
+                                            <GiftIcon /> {t('nav.giftcode')}
                                         </button>
                                         <button 
                                             onClick={() => { onOpenProfile(); setIsDropdownOpen(false); }}
                                             className="w-full text-left px-4 py-2.5 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white flex items-center gap-3"
                                         >
-                                            <ProfileIcon /> Hồ sơ cá nhân
+                                            <ProfileIcon /> {t('nav.profile')}
                                         </button>
                                     </>
                                 )}
@@ -223,7 +255,7 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                                         onClick={() => { onOpenGallery(); setIsDropdownOpen(false); }}
                                         className="w-full text-left px-4 py-2.5 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white flex items-center gap-3"
                                     >
-                                        <GalleryIcon /> Thư viện của tôi
+                                        <GalleryIcon /> {t('nav.gallery')}
                                     </button>
                                 )}
                             </div>
@@ -234,7 +266,7 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                                 onClick={onSignOut}
                                 className="w-full text-left px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3 rounded-b-lg"
                             >
-                                <LogoutIcon /> Đăng xuất
+                                <LogoutIcon /> {t('nav.logout')}
                             </button>
                         </div>
                     )}

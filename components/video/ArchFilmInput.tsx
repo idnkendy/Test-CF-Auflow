@@ -6,6 +6,7 @@ import MultiImageUpload from '../common/MultiImageUpload';
 import ImageUpload from '../common/ImageUpload';
 import Spinner from '../Spinner';
 import AspectRatioSelector from './AspectRatioSelector';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface ArchFilmInputProps {
     videoState: VideoGeneratorState;
@@ -34,6 +35,7 @@ const ArchFilmInput: React.FC<ArchFilmInputProps> = ({
     onAspectRatioChange,
     onGenerateContextPrompts,
 }) => {
+    const { t } = useLanguage();
     const creationItems = videoState.contextItems.filter(item => !item.isUploaded);
 
     return (
@@ -41,7 +43,7 @@ const ArchFilmInput: React.FC<ArchFilmInputProps> = ({
             <div className="p-4 border-b border-border-color dark:border-[#302839] bg-surface dark:bg-[#191919]">
                 <h3 className="text-lg font-bold text-text-primary dark:text-white flex items-center gap-2">
                     <span className="material-symbols-outlined text-[#7f13ec]">movie_filter</span>
-                    Phim Kiến Trúc
+                    {t('video.title')}
                 </h3>
             </div>
 
@@ -52,7 +54,7 @@ const ArchFilmInput: React.FC<ArchFilmInputProps> = ({
                     <div className="flex justify-between items-center mb-1">
                         <h3 className="text-gray-900 dark:text-white font-bold text-sm flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-[#7f13ec] text-white flex items-center justify-center text-xs">1</span>
-                            Tải ảnh bối cảnh
+                            {t('video.input.upload_context')}
                         </h3>
                     </div>
                     <div className="rounded-xl bg-white dark:bg-[#1E1E1E] transition-colors min-h-[180px] flex flex-col overflow-hidden">
@@ -70,7 +72,7 @@ const ArchFilmInput: React.FC<ArchFilmInputProps> = ({
                     <div className="flex justify-between items-center mb-1">
                         <h3 className="text-gray-900 dark:text-white font-bold text-sm flex items-center gap-2">
                             <span className="w-5 h-5 rounded-full bg-[#7f13ec] text-white flex items-center justify-center text-xs">2</span>
-                            Thêm nhân vật (Tùy chọn)
+                            {t('video.input.add_char')}
                         </h3>
                     </div>
                     
@@ -82,14 +84,14 @@ const ArchFilmInput: React.FC<ArchFilmInputProps> = ({
                                 previewUrl={videoState.characterImage?.objectURL} 
                                 id="character-upload" 
                             />
-                            <p className="text-[10px] text-gray-500 text-center mt-2">Tải ảnh nhân vật để giữ nhất quán</p>
+                            <p className="text-[10px] text-gray-500 text-center mt-2">{t('video.input.char_hint')}</p>
                         </div>
                         
                         {/* Scene Selection */}
                         {videoState.characterImage && creationItems.length > 0 && (
                             <div className="flex flex-col bg-white dark:bg-[#1E1E1E] rounded-xl border border-border-color dark:border-[#302839] p-3">
                                 <p className="text-xs text-text-secondary dark:text-gray-400 mb-2 font-semibold">
-                                    Chọn cảnh áp dụng nhân vật:
+                                    {t('video.input.select_scene')}
                                 </p>
                                 <div className="space-y-2 max-h-[150px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-700 pr-1">
                                     {creationItems.map((item, idx) => (
@@ -117,7 +119,7 @@ const ArchFilmInput: React.FC<ArchFilmInputProps> = ({
                                                 <img src={item.file.objectURL} className="w-full h-full object-cover" alt={`Scene ${idx+1}`} />
                                             </div>
                                             <span className="text-xs text-text-primary dark:text-gray-300 truncate flex-1 font-medium">
-                                                Bối cảnh {idx + 1}
+                                                {t('video.input.scene')} {idx + 1}
                                             </span>
                                         </div>
                                     ))}
@@ -140,7 +142,7 @@ const ArchFilmInput: React.FC<ArchFilmInputProps> = ({
                         className="flex-1 py-3 bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold rounded-xl shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2 h-full"
                     >
                         {isGeneratingPrompts ? <Spinner /> : <span className="material-symbols-outlined notranslate">auto_fix_high</span>}
-                        <span className="whitespace-nowrap">{isGeneratingPrompts ? 'Đang tạo Prompt...' : 'Tạo Bối Cảnh'}</span>
+                        <span className="whitespace-nowrap">{isGeneratingPrompts ? t('video.input.generating_prompts') : t('video.input.generate_context')}</span>
                     </button>
                 </div>
             </div>

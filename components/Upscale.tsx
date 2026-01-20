@@ -12,6 +12,7 @@ import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import { useLanguage } from '../hooks/useLanguage';
 
 // --- CONFIGURATION ---
 const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
@@ -50,6 +51,7 @@ interface UpscaleProps {
 }
 
 const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t } = useLanguage();
     const { sourceImage, isLoading, error, upscaledImages, detailMode } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -115,7 +117,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
 
         pollingIntervalRef.current = window.setInterval(async () => {
             if (attempts >= maxAttempts) {
-                handleError("Quá thời gian xử lý.");
+                handleError(t('ext.upscale.timeout_error'));
                 return;
             }
             attempts++;
@@ -181,7 +183,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         // --- SAFETY MODAL TRIGGER (Async/Polling) ---
         if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
             setShowSafetyModal(true);
-            onStateChange({ isLoading: false, error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+            onStateChange({ isLoading: false, error: t('msg.safety_violation') });
         } else {
             onStateChange({ isLoading: false, error: friendlyMsg });
         }
@@ -209,12 +211,12 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         }
 
         if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên một ảnh để nâng cấp.' });
+            onStateChange({ error: t('ext.upscale.upload_error') });
             return;
         }
 
         onStateChange({ isLoading: true, error: null, upscaledImages: [] });
-        setStatusMessage(detailMode === 'fast' ? 'Đang tải ảnh & khởi tạo...' : 'Đang tải ảnh & khởi tạo (Pro)...');
+        setStatusMessage(detailMode === 'fast' ? t('ext.upscale.status_init') : t('ext.upscale.status_init_pro'));
 
         let logId: string | null = null;
         let jobId: string | null = null;
@@ -239,11 +241,11 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             // 1. Upload to Supabase Storage
-            setStatusMessage('Đang tải ảnh lên máy chủ...');
+            setStatusMessage(t('ext.upscale.status_upload'));
             const publicImageUrl = await uploadToSupabase(sourceImage);
 
             // 2. Prepare RunningHub Payload
-            setStatusMessage('Đang gửi yêu cầu xử lý AI...');
+            setStatusMessage(t('ext.upscale.status_send'));
             let runningHubPayload;
             
             if (detailMode === 'fast') {
@@ -267,12 +269,12 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             const data = await fetchProxy('/upscale-create', runningHubPayload);
 
             if (!data || (data.code && data.code !== 0) || !data.data?.taskId) {
-                throw new Error(data.msg || 'Không thể bắt đầu tác vụ xử lý hình ảnh.');
+                throw new Error(data.msg || t('ext.upscale.start_error'));
             }
 
             // 4. Start Polling (Triggered by state change)
             setRunningHubTaskId(data.data.taskId);
-            setStatusMessage(detailMode === 'fast' ? 'AI đang nâng cấp nhanh...' : 'AI đang tái tạo chi tiết...');
+            setStatusMessage(detailMode === 'fast' ? t('ext.upscale.status_process_fast') : t('ext.upscale.status_process_quality'));
 
         } catch (err: any) {
             let msg = err.message || "";
@@ -281,14 +283,14 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             // --- SAFETY MODAL TRIGGER (Sync/Initial) ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+                friendlyMsg = t('msg.safety_violation');
             }
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Upscale (${msg})`, logId);
-                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") {
-                    friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== t('msg.safety_violation')) {
+                    friendlyMsg += t('video.msg.refund');
                 }
             }
             
@@ -315,16 +317,16 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Tăng Độ Chi Tiết (Upscale)</h2>
+            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.upscale.title')}</h2>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Ảnh Cần Nâng Cấp</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.upscale.step1')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                     </div>
 
                     <div className="space-y-3">
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400">2. Chọn Chế Độ</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400">{t('ext.upscale.step2')}</label>
                         <div className="grid grid-cols-2 gap-3">
                             <button
                                 onClick={() => onStateChange({ detailMode: 'fast' })}
@@ -337,9 +339,9 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                             >
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="material-symbols-outlined text-yellow-500">bolt</span>
-                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Nhanh (4K Fast)</span>
+                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>{t('ext.upscale.fast')}</span>
                                 </div>
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tăng độ nét cơ bản, giữ nguyên chi tiết gốc. Tốc độ cao.</p>
+                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">{t('ext.upscale.fast_desc')}</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
                                     <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 20 Credits
                                 </div>
@@ -356,9 +358,9 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                             >
                                 <div className="flex items-center gap-2 mb-1">
                                     <span className="material-symbols-outlined text-purple-500">auto_awesome</span>
-                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>Chi tiết (4K Quality)</span>
+                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>{t('ext.upscale.quality')}</span>
                                 </div>
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">Tái tạo  và nâng cấp chi tiết, thêm texture 4K, phù hợp ảnh quy mô lớn.</p>
+                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">{t('ext.upscale.quality_desc')}</p>
                                 <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
                                     <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 30 Credits
                                 </div>
@@ -369,13 +371,13 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                     <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                         <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                             <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
                         <div className="text-xs">
                             {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">Không đủ</span>
+                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                             ) : (
-                                <span className="text-green-600 dark:text-green-400">Đủ điều kiện</span>
+                                <span className="text-green-600 dark:text-green-400">{t('common.available')}</span>
                             )}
                         </div>
                     </div>
@@ -385,14 +387,14 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                         disabled={isLoading || !sourceImage}
                         className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                     >
-                        {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý...'}</> : 'Thực hiện Nâng cấp'}
+                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.upscale.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                 </div>
 
                 <div>
                     <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">Kết quả So sánh</h3>
+                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                         {upscaledImages.length > 0 && (
                             <div className="flex items-center gap-2">
                                 <button
@@ -414,7 +416,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                                             <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
                                         </svg>
                                     )}
-                                    <span>Tải xuống</span>
+                                    <span>{t('common.download')}</span>
                                 </button>
                             </div>
                         )}
@@ -430,7 +432,7 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
                         ) : (
                              <div className="text-center text-text-secondary dark:text-gray-400 p-4">
                                 <span className="material-symbols-outlined text-4xl mb-2 opacity-50">compare</span>
-                                <p>Kết quả sẽ hiển thị ở đây.</p>
+                                <p>{t('msg.no_result_render')}</p>
                              </div>
                         )}
                     </div>

@@ -4,6 +4,7 @@ import { PricingPlan, UserStatus } from '../types';
 import { Logo } from './common/Logo';
 import { plans } from '../constants/plans';
 import { Session } from '@supabase/supabase-js';
+import { useLanguage } from '../hooks/useLanguage';
 
 // --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
 const IS_PAYMENT_MAINTENANCE = false;
@@ -26,6 +27,7 @@ interface PublicPricingProps {
 }
 
 const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate, onPlanSelect, session, userStatus, onDashboardNavigate, onSignOut }) => {
+    const { t } = useLanguage();
     
     const handlePlanClick = (plan: PricingPlan) => {
         if (IS_PAYMENT_MAINTENANCE) return;
@@ -70,17 +72,17 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                 onClick={onDashboardNavigate} 
                                 className="bg-white text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors"
                             >
-                                Vào App
+                                Dashboard
                             </button>
                         </>
                     ) : (
                         <>
-                            <button onClick={() => onAuthNavigate('login')} className="text-white/80 hover:text-white text-sm font-medium">Đăng nhập</button>
+                            <button onClick={() => onAuthNavigate('login')} className="text-white/80 hover:text-white text-sm font-medium">{t('nav.login')}</button>
                             <button 
                                 onClick={() => onAuthNavigate('signup')}
                                 className="hidden sm:flex bg-white text-black px-4 py-2 rounded-lg text-sm font-bold hover:bg-gray-200 transition-colors"
                             >
-                                Đăng ký miễn phí
+                                {t('nav.signup')}
                             </button>
                         </>
                     )}
@@ -89,9 +91,9 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
 
             <main className="flex-grow px-4 sm:px-10 py-16 max-w-[1200px] mx-auto w-full">
                 <div className="text-center mb-16">
-                    <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">BẢNG GIÁ GÓI SỬ DỤNG AI</h1>
+                    <h1 className="text-3xl md:text-5xl font-bold text-white mb-4">{t('pricing.title')}</h1>
                     <p className="text-lg text-gray-400 max-w-2xl mx-auto">
-                        Chọn gói cước phù hợp với nhu cầu sáng tạo của bạn. Không phí ẩn, hủy bất cứ lúc nào.
+                        {t('pricing.subtitle')}
                     </p>
                 </div>
 
@@ -114,7 +116,7 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                 {plan.highlight && (
                                     <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
                                         <span className="bg-gradient-to-r from-[#8A2BE2] to-[#DA70D6] text-white text-xs uppercase font-bold px-4 py-1.5 rounded-full shadow-lg whitespace-nowrap">
-                                            Phổ biến nhất
+                                            {t('pricing.popular')}
                                         </span>
                                     </div>
                                 )}
@@ -147,12 +149,12 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                             </span>
                                             <span className="text-base md:text-sm lg:text-lg text-gray-400 font-medium mt-2 ml-1.5">{plan.currency}</span>
                                         </div>
-                                        <p className="text-gray-500 text-xs font-medium mt-2">Thanh toán một lần</p>
+                                        <p className="text-gray-500 text-xs font-medium mt-2">{t('pricing.one_time')}</p>
                                     </div>
                                     
                                     <div className="mt-4 md:mt-6 border-t border-[#302839] pt-4 md:pt-6">
                                         <div className="inline-flex items-center justify-center gap-2 bg-[#2a1a35] text-[#DA70D6] px-5 py-2.5 md:px-3 md:py-2 lg:px-5 lg:py-2.5 rounded-xl border border-[#DA70D6]/30 w-full">
-                                            <span className="text-xs md:text-[10px] lg:text-xs uppercase tracking-wide font-semibold opacity-90">Nhận ngay</span>
+                                            <span className="text-xs md:text-[10px] lg:text-xs uppercase tracking-wide font-semibold opacity-90">{t('pricing.get_now')}</span>
                                             <span className="text-lg md:text-base lg:text-xl font-bold">{new Intl.NumberFormat('vi-VN').format(plan.credits || 0)} Credits</span>
                                         </div>
                                     </div>
@@ -182,7 +184,7 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                                 : 'bg-white text-black hover:bg-gray-200 hover:-translate-y-0.5')
                                     }`}
                                 >
-                                    {IS_PAYMENT_MAINTENANCE ? 'Hệ thống bảo trì' : 'Chọn gói này'}
+                                    {IS_PAYMENT_MAINTENANCE ? t('pricing.maintenance') : t('pricing.select_plan')}
                                 </button>
                             </div>
                         );
@@ -191,24 +193,13 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
 
                 {/* FAQ SECTION */}
                 <div className="max-w-3xl mx-auto">
-                    <h2 className="text-2xl md:text-3xl font-bold text-white mb-8 text-center">Câu hỏi thường gặp</h2>
+                    <h2 className="text-2xl md:text-3xl font-bold text-white mb-8 text-center">{t('pricing.faq_title')}</h2>
                     <div className="space-y-4">
                         <div className="bg-[#191919] p-6 rounded-xl border border-[#302839]">
-                            <h3 className="font-bold text-white mb-2">Credits dùng để làm gì?</h3>
-                            <p className="text-gray-400 text-sm">Credits là đơn vị tiền tệ để sử dụng các công cụ AI. Ví dụ: Tạo 1 ảnh tốn 5 credits, tạo video tốn 5 credits. Bạn chỉ bị trừ credits khi AI tạo ra kết quả thành công.</p>
+                            <h3 className="font-bold text-white mb-2">{t('faq.q1')}</h3>
+                            <p className="text-gray-400 text-sm">{t('faq.a1')}</p>
                         </div>
-                        <div className="bg-[#191919] p-6 rounded-xl border border-[#302839]">
-                            <h3 className="font-bold text-white mb-2">Credits có cộng dồn không?</h3>
-                            <p className="text-gray-400 text-sm">Có. Khi bạn mua thêm gói mới, số credits sẽ được cộng dồn vào tài khoản hiện tại của bạn và hạn sử dụng sẽ được gia hạn theo gói mới nhất.</p>
-                        </div>
-                        <div className="bg-[#191919] p-6 rounded-xl border border-[#302839]">
-                            <h3 className="font-bold text-white mb-2">Tôi có thể hủy gói không?</h3>
-                            <p className="text-gray-400 text-sm">Đây là gói mua một lần (One-time purchase) theo tháng, không tự động gia hạn (Subscription). Bạn không cần lo lắng về việc bị trừ tiền tự động.</p>
-                        </div>
-                        <div className="bg-[#191919] p-6 rounded-xl border border-[#302839]">
-                            <h3 className="font-bold text-white mb-2">Có gói dùng thử miễn phí không?</h3>
-                            <p className="text-gray-400 text-sm">Có! Mỗi tài khoản mới đăng ký sẽ được tặng ngay 60 Credits và 1 tháng sử dụng miễn phí để trải nghiệm đầy đủ các tính năng.</p>
-                        </div>
+                        {/* More static FAQs can be added to i18n later if needed, reused hero FAQ for now */}
                     </div>
                 </div>
             </main>
@@ -220,7 +211,7 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                         <Logo className="w-10 h-10 text-[#7f13ec]" />
                         <h2 className="text-white text-xl font-bold">OPZEN AI</h2>
                     </div>
-                    <p className="text-gray-500 text-sm">© 2025 OPZEN AI. All rights reserved.</p>
+                    <p className="text-gray-500 text-sm">{t('footer.copyright')}</p>
                 </div>
             </footer>
         </div>

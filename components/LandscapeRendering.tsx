@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
@@ -19,35 +19,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import SafetyWarningModal from './common/SafetyWarningModal';
-
-const gardenStyleOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'vườn Zen Nhật Bản', label: 'Zen Nhật Bản' },
-    { value: 'vườn nhiệt đới rậm rạp', label: 'Nhiệt đới' },
-    { value: 'sân vườn Anh Quốc cổ điển', label: 'Anh Quốc' },
-    { value: 'sân vườn hiện đại, tối giản', label: 'Hiện đại' },
-    { value: 'vườn Địa Trung Hải', label: 'Địa Trung Hải' },
-    { value: 'vườn làng quê Việt Nam', label: 'Quê Việt Nam' },
-];
-
-const timeOfDayOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'ban ngày nắng đẹp', label: 'Nắng đẹp' },
-    { value: 'hoàng hôn (giờ vàng)', label: 'Hoàng hôn' },
-    { value: 'ban đêm với đèn sân vườn', label: 'Ban đêm' },
-    { value: 'ngày u ám, nhiều mây', label: 'U ám' },
-    { value: 'sau cơn mưa, mặt đất ẩm ướt', label: 'Sau mưa' },
-];
-
-const featureOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'có một hồ cá Koi nhỏ', label: 'Hồ cá Koi' },
-    { value: 'có lối đi bằng đá cuội', label: 'Lối đi đá' },
-    { value: 'có một giàn hoa giấy', label: 'Giàn hoa' },
-    { value: 'có khu vực BBQ ngoài trời', label: 'Khu BBQ' },
-    { value: 'có một thác nước nhỏ', label: 'Thác nước' },
-    { value: 'có nhiều loại hoa đầy màu sắc', label: 'Vườn hoa' },
-];
+import { useLanguage } from '../hooks/useLanguage';
 
 interface LandscapeRenderingProps {
   state: LandscapeRenderingState;
@@ -59,6 +31,7 @@ interface LandscapeRenderingProps {
 }
 
 const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { 
         gardenStyle, timeOfDay, features, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
@@ -71,6 +44,50 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
 
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Render một sân vườn nhỏ phía sau nhà, có lối đi bằng đá, nhiều hoa và một bộ bàn ghế nhỏ.';
+        const enDefault = 'Render a small backyard garden with stone path, flowers, and a small table set.';
+        
+        if (language === 'en' && customPrompt.includes(viDefault)) {
+             onStateChange({ customPrompt: customPrompt.replace(viDefault, enDefault) });
+        } else if (language === 'vi' && customPrompt.includes(enDefault)) {
+             onStateChange({ customPrompt: customPrompt.replace(enDefault, viDefault) });
+        } else if (!customPrompt) {
+             onStateChange({ customPrompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language, customPrompt]);
+
+    // Using English values for prompting efficiency, labels change based on lang
+    const gardenStyleOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'Japanese Zen garden', label: language === 'vi' ? 'Vườn Zen Nhật Bản' : 'Japanese Zen' },
+        { value: 'tropical garden', label: language === 'vi' ? 'Vườn nhiệt đới' : 'Tropical' },
+        { value: 'English classic garden', label: language === 'vi' ? 'Sân vườn Anh Quốc cổ điển' : 'English Classic' },
+        { value: 'modern minimalist garden', label: language === 'vi' ? 'Sân vườn hiện đại, tối giản' : 'Modern Minimalist' },
+        { value: 'Mediterranean garden', label: language === 'vi' ? 'Vườn Địa Trung Hải' : 'Mediterranean' },
+        { value: 'Vietnamese rural garden', label: language === 'vi' ? 'Vườn làng quê Việt Nam' : 'Vietnamese Rural' },
+    ], [t, language]);
+
+    const timeOfDayOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'sunny daytime', label: language === 'vi' ? 'Ban ngày nắng đẹp' : 'Sunny Day' },
+        { value: 'golden hour sunset', label: language === 'vi' ? 'Hoàng hôn (giờ vàng)' : 'Sunset' },
+        { value: 'night with garden lights', label: language === 'vi' ? 'Ban đêm với đèn sân vườn' : 'Night' },
+        { value: 'overcast day', label: language === 'vi' ? 'Ngày u ám, nhiều mây' : 'Overcast' },
+        { value: 'after rain', label: language === 'vi' ? 'Sau cơn mưa, mặt đất ẩm ướt' : 'After Rain' },
+    ], [t, language]);
+
+    const featureOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'small Koi pond', label: language === 'vi' ? 'Hồ cá Koi nhỏ' : 'Koi Pond' },
+        { value: 'stone pathway', label: language === 'vi' ? 'Lối đi bằng đá cuội' : 'Stone Path' },
+        { value: 'bougainvillea trellis', label: language === 'vi' ? 'Giàn hoa giấy' : 'Flower Trellis' },
+        { value: 'outdoor BBQ area', label: language === 'vi' ? 'Khu vực BBQ ngoài trời' : 'BBQ Area' },
+        { value: 'small waterfall', label: language === 'vi' ? 'Thác nước nhỏ' : 'Waterfall' },
+        { value: 'colorful flower garden', label: language === 'vi' ? 'Nhiều loại hoa đầy màu sắc' : 'Flower Garden' },
+    ], [t, language]);
+
     const escapeRegExp = (string: string) => {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
@@ -78,10 +95,11 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
     const updatePrompt = useCallback((type: 'gardenStyle' | 'timeOfDay' | 'features', newValue: string, oldValue: string) => {
         const getPromptPart = (partType: string, value: string): string => {
             if (value === 'none' || !value) return '';
+            // Always construct English phrase parts since values are English now
             switch (partType) {
-                case 'gardenStyle': return `theo phong cách ${value}`;
-                case 'timeOfDay': return `vào lúc ${value}`;
-                case 'features': return `và ${value}`;
+                case 'gardenStyle': return `in ${value} style`;
+                case 'timeOfDay': return `at ${value}`;
+                case 'features': return `with ${value}`;
                 default: return '';
             }
         };
@@ -187,7 +205,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
-        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
         
         let logId: string | null = null;
@@ -271,9 +289,12 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                    });
+                    const errorMsg = t('msg.refund_success')
+                        .replace('{success}', successfulUrls.length.toString())
+                        .replace('{total}', numberOfImages.toString())
+                        .replace('{amount}', refundAmount.toString())
+                        .replace('{failed}', failedCount.toString());
+                    onStateChange({ error: errorMsg });
                 }
             } else {
                 if (lastError) throw lastError;
@@ -286,7 +307,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
             
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -340,27 +361,27 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <div>
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Sân Vườn & Cảnh Quan</h2>
+                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.landscape.title')}</h2>
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                         <div className="space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Bản Vẽ/Ảnh Hiện Trạng</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.landscape.step1')}</label>
                                 <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
                             </div>
                              <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.ref_images')}</label>
                                 {resolution === 'Standard' ? (
                                     <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
                                         <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
                                         <p className="text-sm text-text-secondary dark:text-gray-400">
-                                            Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
+                                            {t('img_gen.ref_lock')}
                                         </p>
                                         <button 
                                             onClick={() => handleResolutionChange('1K')}
                                             className="text-xs text-[#7f13ec] hover:underline font-semibold"
                                         >
-                                            Nâng cao chất lượng ảnh ngay
+                                            {t('img_gen.upgrade')}
                                         </button>
                                     </div>
                                 ) : (
@@ -370,16 +391,16 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                         </div>
                          <div className="space-y-4 flex flex-col">
                              <div>
-                                <label htmlFor="custom-prompt-landscape" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả ý tưởng</label>
-                                <textarea id="custom-prompt-landscape" rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none" placeholder="Mô tả khu vườn mơ ước..." value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
+                                <label htmlFor="custom-prompt-landscape" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.landscape.step2')}</label>
+                                <textarea id="custom-prompt-landscape" rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none" placeholder={t('ext.landscape.prompt_ph')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
                              </div>
                             <div className="pt-2">
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.landscape.step3')}</label>
                                 <div className="space-y-4">
-                                    <OptionSelector id="garden-style-selector" label="Phong cách" options={gardenStyleOptions} value={gardenStyle} onChange={handleGardenStyleChange} disabled={isLoading} variant="grid" />
+                                    <OptionSelector id="garden-style-selector" label={t('ext.landscape.style')} options={gardenStyleOptions} value={gardenStyle} onChange={handleGardenStyleChange} disabled={isLoading} variant="grid" />
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <OptionSelector id="feature-selector" label="Điểm nhấn" options={featureOptions} value={features} onChange={handleFeaturesChange} disabled={isLoading} variant="select" />
-                                        <OptionSelector id="time-selector-landscape" label="Thời gian" options={timeOfDayOptions} value={timeOfDay} onChange={handleTimeOfDayChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="feature-selector" label={t('ext.landscape.feature')} options={featureOptions} value={features} onChange={handleFeaturesChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="time-selector-landscape" label={t('ext.landscape.time')} options={timeOfDayOptions} value={timeOfDay} onChange={handleTimeOfDayChange} disabled={isLoading} variant="select" />
                                     </div>
                                 </div>
                             </div>
@@ -396,10 +417,14 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                          <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-3 border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                                <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                             </div>
                             <div className="text-xs">
-                                {userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
+                                {userCredits < cost ? (
+                                    <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
+                                ) : (
+                                    <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
+                                )}
                             </div>
                         </div>
                         <button 
@@ -407,7 +432,7 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
                             disabled={isLoading || !customPrompt.trim() || isUpscaling} 
                             className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                         >
-                           {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}
+                           {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('common.start_render')}
                         </button>
                     </div>
                     {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
@@ -416,28 +441,35 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
             </div>
              <div>
                 <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-lg font-semibold text-text-primary dark:text-white">Kết quả</h3>
+                    <h3 className="text-lg font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                     <div className="flex items-center gap-2">
                         {resultImages.length === 1 && (
                              <>
-                                <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold">Đồng bộ</button>
+                                <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold">{t('int.btn_sync')}</button>
                                 <button onClick={() => setPreviewImage(upscaledImage || resultImages[0])} className="bg-gray-600 text-white p-2 rounded-lg"><span className="material-symbols-outlined">zoom_in</span></button>
-                                <button onClick={handleDownload} disabled={isDownloading} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm flex items-center gap-2">{isDownloading ? <Spinner /> : null}Tải xuống</button>
+                                <button onClick={handleDownload} disabled={isDownloading} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm flex items-center gap-2">{isDownloading ? <Spinner /> : null}{t('common.download')}</button>
                             </>
                         )}
                     </div>
                 </div>
                 <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                    {isLoading && (
+                    {isLoading ? (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
                         </div>
+                    ) : resultImages.length > 0 ? (
+                        resultImages.length === 1 ? (
+                            <ImageComparator 
+                                originalImage={sourceImage?.objectURL || ''} 
+                                resultImage={upscaledImage || resultImages[0]} 
+                            />
+                        ) : (
+                            <ResultGrid images={resultImages} toolName="landscape-render" onSendToViewSync={handleSendImageToSync} />
+                        )
+                    ) : (
+                        <p className="text-text-secondary dark:text-gray-400">{t('msg.no_result_render')}</p>
                     )}
-                    {!isLoading && upscaledImage && resultImages.length === 1 && <ImageComparator originalImage={resultImages[0]} resultImage={upscaledImage} />}
-                    {!isLoading && !upscaledImage && resultImages.length === 1 && sourceImage && <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />}
-                    {!isLoading && !upscaledImage && resultImages.length === 1 && !sourceImage && <img src={resultImages[0]} className="w-full h-full object-contain" />}
-                    {!isLoading && resultImages.length > 1 && <ResultGrid images={resultImages} toolName="landscape-render" onSendToViewSync={handleSendImageToSync} />}
                 </div>
               </div>
         </div>

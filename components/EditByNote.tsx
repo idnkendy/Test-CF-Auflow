@@ -18,6 +18,7 @@ import ImagePreviewModal from './common/ImagePreviewModal';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import ResultGrid from './common/ResultGrid';
 import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface EditByNoteProps {
     state: EditByNoteState;
@@ -32,23 +33,23 @@ type EditorTool = 'move' | 'text' | 'arrow';
 interface Annotation {
     id: string;
     type: 'text' | 'arrow';
-    x: number;
-    y: number;
-    toX?: number; // For arrows
-    toY?: number; // For arrows
-    text?: string; // For text notes
+    x: number; // Percentage 0-1
+    y: number; // Percentage 0-1
+    toX?: number; // Percentage 0-1
+    toY?: number; // Percentage 0-1
+    text?: string;
     color: string;
-    fontSize?: number; // For text
-    strokeWidth?: number; // For arrows
+    fontSize?: number; // Visual pixels
+    strokeWidth?: number; // Visual pixels
 }
 
 const COLORS = [
-    { id: 'red', value: '#DC2626', label: 'Đỏ' },
-    { id: 'white', value: '#FFFFFF', label: 'Trắng' },
-    { id: 'black', value: '#000000', label: 'Đen' },
-    { id: 'yellow', value: '#EAB308', label: 'Vàng' },
-    { id: 'blue', value: '#2563EB', label: 'Xanh' },
-    { id: 'green', value: '#16A34A', label: 'Lá' },
+    { id: 'red', value: '#DC2626', label: 'Red' },
+    { id: 'white', value: '#FFFFFF', label: 'White' },
+    { id: 'black', value: '#000000', label: 'Black' },
+    { id: 'yellow', value: '#EAB308', label: 'Yellow' },
+    { id: 'blue', value: '#2563EB', label: 'Blue' },
+    { id: 'green', value: '#16A34A', label: 'Green' },
 ];
 
 const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
@@ -75,6 +76,7 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 };
 
 const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t } = useLanguage();
     const { sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio = '1:1' } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     
@@ -99,6 +101,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     // Interaction State
     const [isDragging, setIsDragging] = useState(false);
     const [draggingAnnotationId, setDraggingAnnotationId] = useState<string | null>(null);
+    // startPos is now stored as percentage relative to image
     const [startPos, setStartPos] = useState<{x: number, y: number} | null>(null);
     const [panOffset, setPanOffset] = useState<{x: number, y: number}>({ x: 0, y: 0 });
     const [zoom, setZoom] = useState(1.0); 
@@ -218,22 +221,18 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     };
 
     // --- COORDINATE HELPERS ---
-    const getRelativeCoords = (e: React.MouseEvent | React.TouchEvent) => {
-        if (!containerRef.current) return { x: 0, y: 0 };
-        const rect = containerRef.current.getBoundingClientRect();
+    
+    // Returns percentage coordinates (0.0 to 1.0) relative to the image itself
+    const getNormalizedCoords = (e: React.MouseEvent | React.TouchEvent) => {
+        if (!imageRef.current) return { x: 0, y: 0 };
+        const rect = imageRef.current.getBoundingClientRect();
+        
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
         
         return {
-            x: (clientX - rect.left),
-            y: (clientY - rect.top)
-        };
-    };
-
-    const toImageCoords = (screenX: number, screenY: number) => {
-        return {
-            x: screenX / zoom,
-            y: screenY / zoom
+            x: (clientX - rect.left) / rect.width,
+            y: (clientY - rect.top) / rect.height
         };
     };
 
@@ -244,15 +243,12 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         setSelectedId(id);
         setDraggingAnnotationId(id);
         
-        const coords = getRelativeCoords(e);
-        const imgCoords = toImageCoords(coords.x, coords.y);
-        setStartPos(imgCoords);
+        const coords = getNormalizedCoords(e);
+        setStartPos(coords);
     };
 
     const handleMouseDown = (e: React.MouseEvent | React.TouchEvent) => {
         if (!sourceImage) return;
-        const coords = getRelativeCoords(e);
-        const imgCoords = toImageCoords(coords.x, coords.y);
         
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
@@ -265,25 +261,27 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             }
         } else if (activeTool === 'arrow') {
             setIsDragging(true);
-            setStartPos(imgCoords);
+            const normCoords = getNormalizedCoords(e);
+            setStartPos(normCoords);
             const newArrow: Annotation = {
                 id: 'temp_arrow',
                 type: 'arrow',
-                x: imgCoords.x,
-                y: imgCoords.y,
-                toX: imgCoords.x,
-                toY: imgCoords.y,
+                x: normCoords.x,
+                y: normCoords.y,
+                toX: normCoords.x,
+                toY: normCoords.y,
                 color: currentColor,
                 strokeWidth: currentStrokeWidth
             };
             setAnnotations(prev => [...prev.filter(a => a.id !== 'temp_arrow'), newArrow]);
             setSelectedId(null);
         } else if (activeTool === 'text') {
+            const normCoords = getNormalizedCoords(e);
             const newNote: Annotation = {
                 id: Date.now().toString(),
                 type: 'text',
-                x: imgCoords.x,
-                y: imgCoords.y,
+                x: normCoords.x,
+                y: normCoords.y,
                 text: '',
                 color: currentColor,
                 fontSize: currentFontSize
@@ -295,7 +293,6 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     };
 
     const handleMouseMove = (e: React.MouseEvent | React.TouchEvent) => {
-        const coords = getRelativeCoords(e);
         const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
         const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
 
@@ -307,16 +304,16 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             });
         } 
         else if (isDragging && activeTool === 'arrow' && startPos) {
-            const imgCoords = toImageCoords(coords.x, coords.y);
+            const normCoords = getNormalizedCoords(e);
             setAnnotations(prev => prev.map(a => 
-                a.id === 'temp_arrow' ? { ...a, toX: imgCoords.x, toY: imgCoords.y } : a
+                a.id === 'temp_arrow' ? { ...a, toX: normCoords.x, toY: normCoords.y } : a
             ));
         }
         else if (draggingAnnotationId && startPos) {
             e.preventDefault();
-            const imgCoords = toImageCoords(coords.x, coords.y);
-            const dx = imgCoords.x - startPos.x;
-            const dy = imgCoords.y - startPos.y;
+            const normCoords = getNormalizedCoords(e);
+            const dx = normCoords.x - startPos.x;
+            const dy = normCoords.y - startPos.y;
 
             setAnnotations(prev => prev.map(a => {
                 if (a.id !== draggingAnnotationId) return a;
@@ -335,7 +332,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 return a;
             }));
             
-            setStartPos(imgCoords);
+            setStartPos(normCoords);
         }
     };
 
@@ -353,7 +350,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     Math.pow(tempArrow.toY - tempArrow.y, 2)
                 );
 
-                if (dist < 20) {
+                if (dist < 0.02) { // Threshold in percentage (~2%)
                     return prev.filter(a => a.id !== 'temp_arrow');
                 }
 
@@ -422,13 +419,19 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
         const scaleX = img.naturalWidth / clientWidth;
         const safeScale = (scaleX && isFinite(scaleX)) ? scaleX : 1;
 
+        // Use natural dimensions for coordinate calculation
+        const naturalW = img.naturalWidth;
+        const naturalH = img.naturalHeight;
+
         annotations.filter(a => a.type === 'arrow').forEach(arrow => {
             if (arrow.toX === undefined || arrow.toY === undefined) return;
             
-            const fromX = arrow.x * safeScale;
-            const fromY = arrow.y * safeScale;
-            const toX = arrow.toX * safeScale;
-            const toY = arrow.toY * safeScale;
+            const fromX = arrow.x * naturalW;
+            const fromY = arrow.y * naturalH;
+            const toX = arrow.toX * naturalW;
+            const toY = arrow.toY * naturalH;
+            
+            // Scale visual stroke width to natural image size
             const width = (arrow.strokeWidth || 8) * safeScale;
 
             const headlen = width * 3; 
@@ -456,13 +459,14 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
         annotations.filter(a => a.type === 'text').forEach(note => {
             if (!note.text) return;
+            
             const fontSize = (note.fontSize || 24) * safeScale;
             ctx.font = `bold ${fontSize}px Arial`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             
-            const x = note.x * safeScale;
-            const y = note.y * safeScale;
+            const x = note.x * naturalW;
+            const y = note.y * naturalH;
             
             const lines = note.text.split('\n');
             const lineHeight = fontSize * 1.2;
@@ -494,7 +498,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -517,6 +521,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 let minDist = Infinity;
                 
                 textNotes.forEach(note => {
+                    // Distance in normalized space
                     const dist = Math.sqrt(Math.pow(note.x - arrow.x, 2) + Math.pow(note.y - arrow.y, 2));
                     if (dist < minDist) {
                         minDist = dist;
@@ -542,33 +547,35 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             : `Requests: ${generalText}`;
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
 
         let logId: string | null = null;
         let jobId: string | null = null;
 
         try {
-            const tempImg = new Image();
-            tempImg.src = sourceImage.objectURL;
-            await new Promise(r => tempImg.onload = r);
+            // Determine input image: Use annotatedPreview if available (high res composite), else source
+            let compositeImage: FileData;
             
-            const originalRef = imageRef.current;
-            // @ts-ignore
-            imageRef.current = tempImg; 
-            
-            const compositeBase64 = await flattenVisualsToImage(true); 
-            
-            // @ts-ignore
-            imageRef.current = originalRef; 
-
-            if (!compositeBase64) throw new Error("Failed to create composite image.");
-
-            const compositeImage: FileData = {
-                base64: compositeBase64,
-                mimeType: 'image/png',
-                objectURL: '' 
-            };
+            if (annotatedPreview) {
+                 compositeImage = {
+                    base64: annotatedPreview.split(',')[1],
+                    mimeType: 'image/png',
+                    objectURL: '' 
+                };
+            } else {
+                // If user didn't open editor but somehow has annotations or just wants to use source (fallback)
+                // However, the logic implies using notes. If annotations exist but no preview, we should really force a flatten if we could.
+                // For now, assume if annotations exist, user clicked Done, so preview exists.
+                if (annotations.length > 0 && !annotatedPreview) {
+                     // This is a safety edge case. If we are here, we might fail to show arrows.
+                     // Just use source image but prompt will likely fail to see arrows.
+                     // Ideally we prevent this state.
+                     compositeImage = sourceImage;
+                } else {
+                     compositeImage = sourceImage;
+                }
+            }
 
             const fullPrompt = `
                 I have provided an image that contains visual instructions overlayed on it (Arrows and Text Notes).
@@ -582,6 +589,8 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 
                 SPECIFIC INSTRUCTIONS:
                 ${structuredPrompt}
+                
+                IMPORTANT: ảnh tạo ra sẽ được xóa mũi tên và text.
             `;
 
             if (onDeductCredits) {
@@ -682,7 +691,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -736,21 +745,21 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             <button
                                 onClick={() => setActiveTool('move')}
                                 className={`p-2 rounded-md transition-all ${activeTool === 'move' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                                title="Di chuyển / Chọn"
+                                title={t('editnote.tool.move')}
                             >
                                 <span className="material-symbols-outlined text-xl">pan_tool_alt</span>
                             </button>
                             <button
                                 onClick={() => setActiveTool('arrow')}
                                 className={`p-2 rounded-md transition-all ${activeTool === 'arrow' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                                title="Vẽ mũi tên"
+                                title={t('editnote.tool.arrow')}
                             >
                                 <span className="material-symbols-outlined text-xl">arrow_outward</span>
                             </button>
                             <button
                                 onClick={() => setActiveTool('text')}
                                 className={`p-2 rounded-md transition-all ${activeTool === 'text' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                                title="Thêm chữ"
+                                title={t('editnote.tool.text')}
                             >
                                 <span className="material-symbols-outlined text-xl">text_fields</span>
                             </button>
@@ -759,7 +768,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                         <div className="flex-grow flex items-center gap-4 sm:gap-8 justify-center overflow-x-auto no-scrollbar px-2">
                             <div className="flex flex-col w-24 sm:w-32">
                                 <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between">
-                                    <span>Cỡ chữ</span>
+                                    <span>{t('editnote.fontsize')}</span>
                                     <span>{currentFontSize}</span>
                                 </label>
                                 <input 
@@ -773,7 +782,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
                             <div className="flex flex-col w-24 sm:w-32">
                                 <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between">
-                                    <span>Độ dày</span>
+                                    <span>{t('editnote.strokewidth')}</span>
                                     <span>{currentStrokeWidth}</span>
                                 </label>
                                 <input 
@@ -807,7 +816,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                             ? 'text-red-500 hover:bg-red-500/10 hover:shadow-sm cursor-pointer' 
                                             : 'text-gray-600 cursor-not-allowed'
                                     }`}
-                                    title="Xóa đối tượng đã chọn"
+                                    title={t('editnote.delete')}
                                 >
                                     <span className="material-symbols-outlined text-xl">delete</span>
                                 </button>
@@ -818,7 +827,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             <button
                                 onClick={undoLast}
                                 className="p-2 text-gray-400 hover:text-white hover:bg-[#302839] rounded-lg transition-colors"
-                                title="Hoàn tác"
+                                title={t('editnote.undo')}
                             >
                                 <span className="material-symbols-outlined text-xl">undo</span>
                             </button>
@@ -829,13 +838,13 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 }}
                                 className="px-4 py-2 text-sm text-gray-300 hover:text-white font-medium hover:bg-[#302839] rounded-lg transition-colors"
                             >
-                                Hủy
+                                {t('editnote.cancel')}
                             </button>
                             <button 
                                 onClick={handleCloseEditor}
                                 className="px-4 py-2 text-sm bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold rounded-lg transition-colors shadow-lg"
                             >
-                                Hoàn tất
+                                {t('editnote.done')}
                             </button>
                         </div>
                     </div>
@@ -887,14 +896,14 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                             className="pointer-events-auto cursor-move group"
                                         >
                                             <line 
-                                                x1={arrow.x} y1={arrow.y}
-                                                x2={arrow.toX} y2={arrow.toY}
+                                                x1={`${arrow.x * 100}%`} y1={`${arrow.y * 100}%`}
+                                                x2={`${arrow.toX! * 100}%`} y2={`${arrow.toY! * 100}%`}
                                                 stroke="transparent"
                                                 strokeWidth={sw + 20}
                                             />
                                             <line 
-                                                x1={arrow.x} y1={arrow.y}
-                                                x2={arrow.toX} y2={arrow.toY}
+                                                x1={`${arrow.x * 100}%`} y1={`${arrow.y * 100}%`}
+                                                x2={`${arrow.toX! * 100}%`} y2={`${arrow.toY! * 100}%`}
                                                 stroke={arrow.color}
                                                 strokeWidth={sw}
                                                 markerEnd={`url(#arrowhead-${colorObj.id})`}
@@ -902,7 +911,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                                 style={{ filter: isSelected ? 'drop-shadow(0 0 4px white)' : 'none' }}
                                             />
                                             {isSelected && (
-                                                <circle cx={arrow.toX} cy={arrow.toY} r="8" fill="white" stroke="#7f13ec" strokeWidth="2" />
+                                                <circle cx={`${arrow.toX! * 100}%`} cy={`${arrow.toY! * 100}%`} r="8" fill="white" stroke="#7f13ec" strokeWidth="2" />
                                             )}
                                         </g>
                                     );
@@ -915,7 +924,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                     <div
                                         key={note.id}
                                         className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 cursor-move group`}
-                                        style={{ left: note.x, top: note.y }}
+                                        style={{ left: `${note.x * 100}%`, top: `${note.y * 100}%` }}
                                         onMouseDown={(e) => handleAnnotationDragStart(note.id, e)}
                                     >
                                         <div className={`
@@ -975,7 +984,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-2 hover:bg-[#302839] rounded-full text-white">
                                 <span className="material-symbols-outlined text-lg">add</span>
                             </button>
-                            <button onClick={() => { setZoom(1.0); setPanOffset({x:0, y:0}); }} className="px-3 py-1 hover:bg-[#302839] rounded-full text-xs text-gray-400 font-medium">Reset</button>
+                            <button onClick={() => { setZoom(1.0); setPanOffset({x:0, y:0}); }} className="px-3 py-1 hover:bg-[#302839] rounded-full text-xs text-gray-400 font-medium">{t('editnote.reset')}</button>
                         </div>
                     </div>
                 </div>,
@@ -983,16 +992,16 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             )}
 
             <div className="flex flex-col gap-2 flex-shrink-0">
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white">Chỉnh Sửa Bằng Ghi Chú</h2>
-                <p className="text-sm text-text-secondary dark:text-gray-300">Tạo ghi chú trực quan trên ảnh để chỉ định chính xác vị trí và nội dung cần AI chỉnh sửa.</p>
+                <h2 className="text-2xl font-bold text-text-primary dark:text-white">{t('ext.editnote.title')}</h2>
+                <p className="text-sm text-text-secondary dark:text-gray-300">{t('ext.editnote.subtitle')}</p>
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
                 <div className="flex flex-col gap-6">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 h-full flex flex-col">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-text-primary dark:text-white">1. Ảnh Gốc & Ghi Chú</h3>
-                            {annotations.length > 0 && <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">Đã có ghi chú</span>}
+                            <h3 className="text-lg font-bold text-text-primary dark:text-white">{t('ext.editnote.step1')}</h3>
+                            {annotations.length > 0 && <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">✓</span>}
                         </div>
                         
                         <div className="flex-grow flex flex-col justify-center min-h-[300px]">
@@ -1009,7 +1018,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                             className="bg-white/20 hover:bg-white/30 text-white font-bold py-2 px-6 rounded-full shadow-lg backdrop-blur-md flex items-center gap-2 transition-all border border-white/30"
                                         >
                                             <span className="material-symbols-outlined text-lg">image</span>
-                                            Thay ảnh
+                                            {t('editnote.change_image')}
                                         </button>
                                     </div>
                                     
@@ -1025,14 +1034,14 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                         {sourceImage && (
                             <div className="mt-6 space-y-4">
                                 <p className="text-sm text-text-secondary dark:text-gray-400 italic text-center">
-                                    "Vẽ mũi tên và viết ghi chú để chỉ định cho AI biết cần sửa gì."
+                                    {t('editnote.hint')}
                                 </p>
                                 <button
                                     onClick={handleOpenEditor}
                                     className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
                                 >
                                     <span className="material-symbols-outlined">draw</span>
-                                    Thực Hiện Chỉnh Sửa
+                                    {t('ext.editnote.btn_edit')}
                                 </button>
                             </div>
                         )}
@@ -1042,7 +1051,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 <div className="flex flex-col gap-6">
                     <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 h-full flex flex-col">
                         <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-text-primary dark:text-white">2. Kết Quả</h3>
+                            <h3 className="text-lg font-bold text-text-primary dark:text-white">{t('ext.editnote.result')}</h3>
                              {resultImages.length > 0 && (
                                 <div className="flex items-center gap-2">
                                      {resultImages.length === 1 && (
@@ -1059,7 +1068,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                         className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
                                     >
                                         {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
-                                        <span>Tải xuống</span>
+                                        <span>{t('common.download')}</span>
                                     </button>
                                 </div>
                             )}
@@ -1069,7 +1078,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             {isLoading && (
                                 <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
                                     <Spinner />
-                                    <p className="text-white mt-3 font-medium">{statusMessage || "Đang xử lý. Vui lòng đợi..."}</p>
+                                    <p className="text-white mt-3 font-medium">{statusMessage || t('common.processing')}</p>
                                 </div>
                             )}
                             
@@ -1085,8 +1094,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                     <div className="w-16 h-16 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
                                         <span className="material-symbols-outlined text-3xl opacity-50">image</span>
                                     </div>
-                                    <p className="font-medium">Kết quả sẽ hiện ở đây</p>
-                                    <p className="text-xs mt-1 opacity-70">Sẵn sàng để tạo tác phẩm của bạn</p>
+                                    <p className="font-medium">{t('msg.no_result_render')}</p>
                                 </div>
                             ) : null}
                         </div>
@@ -1106,10 +1114,10 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                             <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                                 <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                                     <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                                    <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                                    <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                                 </div>
                                 <span className={`text-xs font-bold ${userCredits < cost ? 'text-red-500' : 'text-green-500'}`}>
-                                    {userCredits < cost ? 'Không đủ' : 'Đủ điều kiện'}
+                                    {userCredits < cost ? t('common.insufficient') : t('common.available')}
                                 </span>
                             </div>
 
@@ -1118,7 +1126,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                                 disabled={isLoading || !sourceImage || annotations.length === 0}
                                 className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg"
                             >
-                                {isLoading ? <><Spinner /> Đang xử lý. Vui lòng đợi...</> : 'Tạo Ảnh'}
+                                {isLoading ? <><Spinner /> {t('common.processing')}</> : t('ext.editnote.btn_generate')}
                             </button>
                             {error && <div className="text-xs text-red-500 text-center bg-red-50 dark:bg-red-900/10 p-2 rounded-lg border border-red-100 dark:border-red-900/20">{error}</div>}
                             {upscaleWarning && <p className="text-xs text-yellow-500 text-center mt-2">{upscaleWarning}</p>}

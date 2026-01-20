@@ -1,5 +1,6 @@
 
 import React from 'react';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface NumberOfImagesSelectorProps {
   value: number;
@@ -10,9 +11,11 @@ interface NumberOfImagesSelectorProps {
 const options = [1, 2, 3, 4];
 
 const NumberOfImagesSelector: React.FC<NumberOfImagesSelectorProps> = ({ value, onChange, disabled }) => {
+  const { t } = useLanguage();
+  
   return (
     <div>
-        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Số lượng ảnh</label>
+        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('opt.num_images')}</label>
         <div className="grid grid-cols-4 gap-2 bg-gray-100 dark:bg-[#1A1A1A] border border-gray-200 dark:border-[#302839] p-1.5 rounded-xl shadow-inner">
             {options.map(option => (
                 <button

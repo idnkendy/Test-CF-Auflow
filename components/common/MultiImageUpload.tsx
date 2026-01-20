@@ -2,6 +2,7 @@
 import React, { useCallback, useState, useRef } from 'react';
 import { FileData } from '../../types';
 import { resizeImage } from './ImageUpload';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface MultiImageUploadProps {
   onFilesChange: (files: FileData[]) => void;
@@ -29,6 +30,7 @@ const XIcon = () => (
 );
 
 const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxFiles = 12, className = "", gridClassName }) => {
+    const { t } = useLanguage();
     const [files, setFiles] = useState<FileData[]>([]);
     const [error, setError] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -154,10 +156,10 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                         )}
                     </div>
                     <p className="text-sm font-semibold text-gray-500 dark:text-gray-300 group-hover:text-accent transition-colors mb-1">
-                        Thêm ảnh tham chiếu
+                        {t('upload.add_more')}
                     </p>
                     <p className="text-xs text-gray-400">
-                        (Kéo thả hoặc nhấp để chọn)
+                        {t('upload.drag_drop_short')}
                     </p>
                 </div>
             ) : (
@@ -171,7 +173,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                             <button
                                 onClick={() => handleRemove(file.objectURL)}
                                 className="absolute top-1 right-1 p-1 bg-red-600 text-white rounded-full transition-all opacity-0 group-hover:opacity-100 hover:bg-red-700 transform hover:scale-110"
-                                title="Xóa ảnh"
+                                title={t('upload.remove')}
                             >
                                 <XIcon />
                             </button>
@@ -190,7 +192,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                             ) : (
                                 <>
                                     <PlusIcon />
-                                    <p className="text-[10px] text-text-secondary dark:text-gray-400 group-hover:text-accent font-medium mt-1">Thêm ảnh</p>
+                                    <p className="text-[10px] text-text-secondary dark:text-gray-400 group-hover:text-accent font-medium mt-1">{t('upload.add_image')}</p>
                                 </>
                             )}
                         </div>
@@ -212,7 +214,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
             {isDragging && files.length > 0 && (
                 <div className="absolute inset-0 bg-accent/20 border-2 border-accent border-dashed rounded-xl flex items-center justify-center pointer-events-none z-10 backdrop-blur-[1px]">
                     <div className="bg-surface dark:bg-[#191919] px-6 py-3 rounded-xl shadow-2xl text-accent font-bold animate-bounce text-lg border border-accent/20">
-                        Thả để thêm ảnh
+                        {t('upload.drag')}
                     </div>
                 </div>
             )}

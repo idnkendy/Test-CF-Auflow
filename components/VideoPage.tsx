@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { User } from '@supabase/supabase-js';
 import { UserStatus, Tool, FileData } from '../types';
 import Header from './Header';
@@ -10,9 +10,10 @@ import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
 import { refundCredits } from '../services/paymentService';
 import { supabase } from '../services/supabaseClient';
+import { useLanguage } from '../hooks/useLanguage';
 
 // NEW COMPONENTS
-import VideoSidebar, { sidebarItems } from './video/VideoSidebar';
+import VideoSidebar, { useSidebarItems } from './video/VideoSidebar';
 import ArchFilmInput from './video/ArchFilmInput';
 import VideoContextList from './video/VideoContextList';
 import SingleVideoInput from './video/SingleVideoInput';
@@ -27,16 +28,6 @@ const DUMMY_FILE: FileData = {
     objectURL: 'https://placehold.co/600x400/1a1a1a/FFF?text=Text+To+Video'
 };
 
-const loadingMessages = [
-    "Đang kết nối với máy chủ Veo...",
-    "Đang gửi yêu cầu đến Worker...",
-    "AI đang khởi tạo các photon ánh sáng...",
-    "Đang tổng hợp từng khung hình...",
-    "Vui lòng không tắt tab này...",
-    "Quá trình có thể mất 3-6 phút...",
-    "Nếu quá lâu, hệ thống sẽ tự động thử lại...",
-];
-
 interface ConfirmationModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -46,6 +37,7 @@ interface ConfirmationModalProps {
 }
 
 const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, onConfirm, title, message }) => {
+    const { t } = useLanguage();
     if (!isOpen) return null;
 
     return (
@@ -66,13 +58,13 @@ const ConfirmationModal: React.FC<ConfirmationModalProps> = ({ isOpen, onClose, 
                             onClick={onClose}
                             className="flex-1 py-2.5 px-4 rounded-xl bg-gray-200 dark:bg-gray-800 hover:bg-gray-300 dark:hover:bg-gray-700 text-gray-800 dark:text-gray-300 font-medium transition-colors border border-gray-300 dark:border-gray-700"
                         >
-                            <span>Hủy bỏ</span>
+                            <span>{t('video.modal.cancel')}</span>
                         </button>
                         <button 
                             onClick={onConfirm}
                             className="flex-1 py-2.5 px-4 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors shadow-lg shadow-red-900/20"
                         >
-                            <span>Xóa ngay</span>
+                            <span>{t('video.modal.delete_now')}</span>
                         </button>
                     </div>
                 </div>
@@ -98,11 +90,25 @@ interface VideoPageProps {
 }
 
 const VideoPage: React.FC<VideoPageProps> = (props) => {
+    const { t } = useLanguage();
+    const sidebarItems = useSidebarItems();
+
+    const loadingMessages = useMemo(() => [
+        t('video.loading.1'),
+        t('video.loading.2'),
+        t('video.loading.3'),
+        t('video.loading.4'),
+        t('video.loading.5'),
+        t('video.loading.6'),
+        t('video.loading.7'),
+    ], [t]);
+
     // --- STATE ---
     const [activeItem, setActiveItem] = useState('arch-film');
     const [videoState, setVideoState] = useState<VideoGeneratorState>({
         ...initialToolStates[Tool.VideoGeneration],
-        aspectRatio: '16:9'
+        aspectRatio: '16:9',
+        loadingMessage: loadingMessages[0]
     });
     const [isGeneratingPrompts, setIsGeneratingPrompts] = useState(false);
     
@@ -111,7 +117,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const [singleEndImage, setSingleEndImage] = useState<FileData | null>(null);
     const [singlePrompt, setSinglePrompt] = useState('');
     const [isSingleGenerating, setIsSingleGenerating] = useState(false);
-    const [singleResultUrl, setSingleResultUrl] = useState<string | null>(null); // NEW: Separate result state
+    const [singleResultUrl, setSingleResultUrl] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
 
@@ -146,7 +152,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         if (defaultItem) {
             setSinglePrompt(defaultItem.prompt);
         }
-    }, [activeItem]);
+    }, [activeItem, sidebarItems]); // Add sidebarItems as dep for language switch
 
     // Sync Playback
     useEffect(() => {
@@ -189,7 +195,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         return () => {
             if (interval) clearInterval(interval);
         };
-    }, [videoState.isLoading, isSingleGenerating, videoState.contextItems, videoState.loadingMessage]);
+    }, [videoState.isLoading, isSingleGenerating, videoState.contextItems, videoState.loadingMessage, loadingMessages]);
 
     // --- HANDLERS: TIMELINE & PLAYER ---
     const handleTimeUpdate = () => {
@@ -200,14 +206,12 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         const currentClipDuration = mainVideoRef.current.duration || 1; 
 
         if (timelineItems.length > 0) {
-            // Always calculate global progress if timeline exists, regardless of playing mode
             const segmentSize = 100 / timelineItems.length;
             const currentClipProgressPercent = (currentClipTime / currentClipDuration) * segmentSize;
             const completedSegmentsPercent = currentPlayingIndex * segmentSize;
             const totalProgress = completedSegmentsPercent + currentClipProgressPercent;
             setProgress(Math.min(totalProgress, 100));
         } else {
-            // Single video or no timeline
             setProgress((currentClipTime / currentClipDuration) * 100);
         }
     };
@@ -217,7 +221,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         const totalClips = playableItems.length;
         if (totalClips === 0) return;
 
-        // When seeking, force timeline mode logic for calculation
         const segmentSize = 100 / totalClips;
         let targetIndex = Math.floor(percent / segmentSize);
         if (targetIndex >= totalClips) targetIndex = totalClips - 1; 
@@ -244,9 +247,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     const handleSeek = (val: number) => {
         const timelineItems = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         if (timelineItems.length > 0) {
-             // If seeking on a timeline, ensure we are in 'All' mode context (even if paused) to show correct clip
              if (!isPlayingAll) setIsPlayingAll(true);
-             setIsPlaying(false); // Pause while dragging
+             setIsPlaying(false);
              seekToPercent(val);
         } else {
              if (mainVideoRef.current) {
@@ -265,7 +267,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     };
 
     const togglePlayPause = () => {
-        // If there are timeline items, togglePlayPause should default to "Play All" if not already playing a specific item
         const items = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         if (items.length > 0 && !isPlaying) {
             handleTogglePlayAll();
@@ -279,11 +280,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         if (items.length === 0) return;
 
         if (isPlayingAll) {
-            // Already in Play All mode, toggle pause/play
             if (isPlaying) {
                 setIsPlaying(false);
             } else {
-                // If reached end, restart
                 if (progress >= 99.9) {
                     setCurrentPlayingIndex(0);
                     setProgress(0);
@@ -291,7 +290,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 setIsPlaying(true);
             }
         } else {
-            // Start Playing All
             setIsPlayingAll(true);
             setIsPlaying(true);
             if (progress >= 99.9) {
@@ -328,8 +326,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         setSingleSourceImage(null);
         setSingleEndImage(null);
         setIsSingleGenerating(false);
-        // Note: We intentionally don't clear generatedVideoUrl here to allow persisting Arch Film state, 
-        // but we separate Single Video Result state to avoid crossover.
     };
 
     const handleAspectRatioChange = async (newRatio: '16:9' | '9:16' | 'default') => {
@@ -338,7 +334,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         if (videoState.contextItems.length > 0) {
             const updatedItems = await Promise.all(videoState.contextItems.map(async (item) => {
                 if (item.isUploaded) return item; 
-                // Using 'contain' mode for video context items
                 const croppedBase64 = await externalVideoService.resizeAndCropImage(item.originalFile, newRatio, 'pro', 'contain');
                 const croppedFile: FileData = { base64: croppedBase64.split(',')[1], mimeType: 'image/jpeg', objectURL: croppedBase64 };
                 return { ...item, file: croppedFile };
@@ -351,7 +346,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         const newItemsPromises = files
             .filter(f => !videoState.contextItems.some(item => item.originalFile.objectURL === f.objectURL))
             .map(async (f) => {
-                // Using 'contain' mode for new video context items
                 const croppedBase64 = await externalVideoService.resizeAndCropImage(f, videoState.aspectRatio, 'pro', 'contain');
                 const croppedFile: FileData = { base64: croppedBase64.split(',')[1], mimeType: 'image/jpeg', objectURL: croppedBase64 };
                 return {
@@ -426,11 +420,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
              return;
         }
         if (!item.prompt) {
-            setVideoState(prev => ({ ...prev, error: 'Vui lòng nhập prompt.' }));
+            setVideoState(prev => ({ ...prev, error: t('video.msg.prompt_required') }));
             return;
         }
         if (item.useCharacter && !videoState.characterImage) {
-            setVideoState(prev => ({ ...prev, error: 'Vui lòng tải lên ảnh nhân vật trước khi tạo video có nhân vật.' }));
+            setVideoState(prev => ({ ...prev, error: t('video.msg.char_required') }));
             return;
         }
         setVideoState(prev => ({
@@ -471,18 +465,17 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+                friendlyMsg = t('msg.safety_violation');
             }
 
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
                 await props.onRefreshCredits(); 
-                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") {
-                     friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== t('msg.safety_violation')) {
+                     friendlyMsg += t('video.msg.refund');
                 }
             }
             localStorage.removeItem('opzen_pending_tx');
@@ -515,7 +508,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     
     // --- SAFE DOWNLOAD HELPER ---
     const downloadBlob = async (url: string, filename: string) => {
-        // FIX: If it is a local uploaded file (blob:...), download directly without proxy
         if (url.startsWith('blob:')) {
             const link = document.createElement('a');
             link.href = url;
@@ -544,7 +536,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         }
     };
 
-    // New Force Download Handler for Single Video
     const handleForceDownload = async (url?: string) => {
         const targetUrl = url || (activeItem === 'img-to-video' ? singleResultUrl : videoState.generatedVideoUrl);
         if (!targetUrl) return;
@@ -581,83 +572,71 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const item = items[i];
             if (item.videoUrl) {
                 await downloadBlob(item.videoUrl, `scene-${i + 1}-export.mp4`);
-                await new Promise(r => setTimeout(r, 1000)); // Delay prevents blocking
+                await new Promise(r => setTimeout(r, 1000));
             }
         }
         setIsDownloading(false);
     };
 
     const handleExtendClip = async (item: VideoContextItem) => {
-        alert("Tính năng nối tiếp (Extend) đang được cập nhật.");
+        alert(t('video.maintenance.desc'));
     };
     
     // --- REAL MERGE FUNCTION ---
     const handleMergeAndExport = async () => {
         const items = videoState.contextItems.filter(i => i.videoUrl && i.isInTimeline);
         if (items.length < 1) {
-            setVideoState(prev => ({ ...prev, error: "Cần ít nhất 1 clip trong timeline để xuất." }));
+            setVideoState(prev => ({ ...prev, error: t('video.msg.merge_error') }));
             return;
         }
 
         setIsExporting(true);
         setExportProgress(0);
 
-        // Initialize AudioContext
         // @ts-ignore
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         const audioCtx = new AudioContext();
 
         try {
-            // Ensure context is running (needed for some browsers)
             await audioCtx.resume();
 
-            // 1. PREPARE RESOURCES
             const canvas = document.createElement('canvas');
             const ctx = canvas.getContext('2d');
             const videoPlayer = document.createElement('video');
             
-            // CRITICAL FIX: 
-            // 1. videoPlayer.muted MUST be false for createMediaElementSource to capture audio.
-            // 2. Creating the MediaElementSource automatically disconnects the video from the speakers, 
-            //    so we don't hear double audio during export.
             videoPlayer.muted = false; 
             videoPlayer.playsInline = true;
             videoPlayer.crossOrigin = "anonymous";
 
             const destination = audioCtx.createMediaStreamDestination();
 
-            // Connect Video Audio (Source) to Destination
             const videoSource = audioCtx.createMediaElementSource(videoPlayer);
             const videoGain = audioCtx.createGain();
             videoGain.gain.value = isVideoMuted ? 0 : 1;
             videoSource.connect(videoGain).connect(destination);
 
-            // Connect Background Music (if any)
             let bgMusicPlayer: HTMLAudioElement | null = null;
             
             if (audioUrl && !isMusicMuted) {
                 bgMusicPlayer = document.createElement('audio');
                 bgMusicPlayer.src = audioUrl;
                 bgMusicPlayer.crossOrigin = "anonymous";
-                // Determine loop behavior based on song vs video length if needed, default to loop for safety
                 bgMusicPlayer.loop = true; 
                 
                 const bgMusicSource = audioCtx.createMediaElementSource(bgMusicPlayer);
                 const bgGain = audioCtx.createGain();
-                bgGain.gain.value = 0.5; // Default lower volume for BG music
+                bgGain.gain.value = 0.5; 
                 bgMusicSource.connect(bgGain).connect(destination);
             }
 
-            // 2. FETCH CLIPS AS BLOBS (Crucial for CORS & smoothness)
             const clips: string[] = [];
             for (let i = 0; i < items.length; i++) {
-                setExportProgress((i / items.length) * 30); // 0-30% progress for loading
+                setExportProgress((i / items.length) * 30);
                 const item = items[i];
                 if (!item.videoUrl) continue;
                 
                 try {
                     let blobUrl = item.videoUrl;
-                    // If remote URL, fetch via proxy to get a local blob
                     if (!blobUrl.startsWith('blob:')) {
                         const blob = await externalVideoService.proxyDownload(blobUrl);
                         blobUrl = URL.createObjectURL(blob);
@@ -668,10 +647,8 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 }
             }
 
-            if (clips.length === 0) throw new Error("Không thể tải video để ghép.");
+            if (clips.length === 0) throw new Error(t('video.msg.export_error'));
 
-            // 3. SETUP CANVAS & RECORDER
-            // Set canvas size based on first video (default 1080p landscape if fails)
             await new Promise((resolve) => {
                 videoPlayer.src = clips[0];
                 videoPlayer.onloadedmetadata = () => {
@@ -682,22 +659,19 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 videoPlayer.onerror = () => resolve(null);
             });
 
-            // Create Stream: Canvas Video + Mixed Audio
-            const stream = canvas.captureStream(30); // 30 FPS
+            const stream = canvas.captureStream(30); 
             const audioTrack = destination.stream.getAudioTracks()[0];
             if (audioTrack) {
                 stream.addTrack(audioTrack);
-            } else {
-                console.warn("Audio track missing from destination node.");
             }
 
             const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9') 
                 ? 'video/webm;codecs=vp9' 
-                : 'video/webm'; // Fallback
+                : 'video/webm'; 
 
             const recorder = new MediaRecorder(stream, { 
                 mimeType, 
-                videoBitsPerSecond: 8000000 // 8Mbps high quality
+                videoBitsPerSecond: 8000000 
             });
             
             const chunks: Blob[] = [];
@@ -705,13 +679,10 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
             recorder.start();
             
-            // Start BG Music Recording
             if (bgMusicPlayer) {
-                // Ensure music starts playing for the recorder
                 await bgMusicPlayer.play().catch(e => console.warn("BG Music play fail", e));
             }
 
-            // 4. SEQUENTIAL PLAYBACK & RECORDING
             for (let i = 0; i < clips.length; i++) {
                 const src = clips[i];
                 await new Promise((resolve) => {
@@ -743,11 +714,9 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                     };
                 });
                 
-                // Update Progress: 30% -> 90%
                 setExportProgress(30 + ((i + 1) / clips.length) * 60);
             }
 
-            // 5. FINISH & DOWNLOAD
             recorder.stop();
             if (bgMusicPlayer) bgMusicPlayer.pause();
             
@@ -758,15 +727,13 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             
             setExportProgress(100);
             
-            // Trigger Download
             const link = document.createElement('a');
             link.href = finalUrl;
-            link.download = `opzen-movie-${Date.now()}.webm`; // Using .webm is safer for browser generated files
+            link.download = `opzen-movie-${Date.now()}.webm`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
 
-            // Cleanup
             setTimeout(() => {
                 URL.revokeObjectURL(finalUrl);
                 if (audioCtx.state !== 'closed') audioCtx.close();
@@ -774,7 +741,7 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
 
         } catch (e: any) {
             console.error(e);
-            setVideoState(prev => ({ ...prev, error: `Lỗi xuất video: ${e.message}` }));
+            setVideoState(prev => ({ ...prev, error: `${t('video.msg.export_error')} ${e.message}` }));
             if (audioCtx.state !== 'closed') audioCtx.close();
         } finally {
             setIsExporting(false);
@@ -814,15 +781,14 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
              return;
         }
         if (!singlePrompt) {
-            setVideoState(prev => ({ ...prev, error: 'Vui lòng nhập prompt.' }));
+            setVideoState(prev => ({ ...prev, error: t('video.msg.prompt_required') }));
             return;
         }
         if (activeItem === 'img-to-video' && !singleSourceImage) {
-            setVideoState(prev => ({ ...prev, error: 'Vui lòng tải lên ảnh bắt đầu.' }));
+            setVideoState(prev => ({ ...prev, error: t('video.msg.start_img_required') }));
             return;
         }
         setIsSingleGenerating(true);
-        // Clear both main and single result URLs at start to avoid stale state
         setVideoState(prev => ({ ...prev, error: null, generatedVideoUrl: null, loadingMessage: loadingMessages[0] }));
         setSingleResultUrl(null);
         
@@ -851,18 +817,15 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 endImageToUse = undefined;
             } else {
                 if (singleSourceImage) {
-                    // Force 'contain' mode for single video generation
                     const croppedBase64 = await externalVideoService.resizeAndCropImage(singleSourceImage, videoState.aspectRatio, 'pro', 'contain');
                     startImageToUse = { base64: croppedBase64.split(',')[1], mimeType: 'image/jpeg', objectURL: croppedBase64 };
                 }
                 if (singleEndImage) {
-                    // Force 'contain' mode for end image
                     const croppedBase64End = await externalVideoService.resizeAndCropImage(singleEndImage, videoState.aspectRatio, 'pro', 'contain');
                     endImageToUse = { base64: croppedBase64End.split(',')[1], mimeType: 'image/jpeg', objectURL: croppedBase64End };
                 }
             }
             
-            // Note: externalVideoService needs update to accept endImage
             const result = await externalVideoService.generateVideoExternal(
                 singlePrompt, 
                 startImageToUse || undefined, 
@@ -870,7 +833,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 endImageToUse || undefined 
             );
             
-            // Use local state for single result
             setSingleResultUrl(result.videoUrl);
             
             if (jobId) await jobService.updateJobStatus(jobId, 'completed', result.videoUrl);
@@ -879,18 +841,17 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
             
-            // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+                friendlyMsg = t('msg.safety_violation');
             }
 
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
                 await props.onRefreshCredits();
-                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") {
-                     friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== t('msg.safety_violation')) {
+                     friendlyMsg += t('video.msg.refund');
                 }
             }
             localStorage.removeItem('opzen_pending_tx');
@@ -902,9 +863,6 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
     };
 
     const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
-    // Explicitly fallback to null to ensure strict typing
-    // UPDATED: Now activeMainVideoUrl ONLY looks at timeline items or the general generatedVideoUrl (used by Arch Film context items on click)
-    // It DOES NOT look at singleResultUrl
     const activeMainVideoUrl = ((timelineItems.length > 0 || isPlayingAll) 
         ? timelineItems[currentPlayingIndex]?.videoUrl 
         : (videoState.generatedVideoUrl || timelineItems.find(i => i.videoUrl)?.videoUrl)) || null;
@@ -1026,7 +984,10 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                                 </div>
                             </div>
                         ) : (
-                            <MaintenanceView title={activeItem === 'text-to-video' ? 'Tạo video từ text' : activeItem === 'transition' ? 'Video chuyển cảnh' : 'Mở rộng video'} />
+                            <MaintenanceView title={
+                                activeItem === 'text-to-video' ? t('video.sidebar.text_to_video') : 
+                                activeItem === 'transition' ? t('video.sidebar.transition') : t('video.sidebar.extend')
+                            } />
                         )}
                     </div>
                 </main>
@@ -1036,11 +997,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
                 isOpen={deleteModalState.isOpen}
                 onClose={() => setDeleteModalState({ isOpen: false, itemId: null })}
                 onConfirm={executeDelete}
-                title="Xác nhận xóa"
-                message="Bạn có chắc chắn muốn xóa clip này khỏi danh sách không? Hành động này không thể hoàn tác."
+                title={t('video.modal.confirm_delete')}
+                message={t('video.modal.delete_msg')}
             />
 
-            {videoState.error && <div className="fixed bottom-4 right-4 bg-red-900/90 border border-red-500/50 text-red-200 p-4 rounded-xl backdrop-blur-md text-sm z-50 shadow-xl max-w-sm animate-bounce font-medium">{videoState.error} <button onClick={() => setVideoState(p => ({...p, error: null}))} className="ml-2 underline text-white/80 hover:text-white">Đóng</button></div>}
+            {videoState.error && <div className="fixed bottom-4 right-4 bg-red-900/90 border border-red-500/50 text-red-200 p-4 rounded-xl backdrop-blur-md text-sm z-50 shadow-xl max-w-sm animate-bounce font-medium">{videoState.error} <button onClick={() => setVideoState(p => ({...p, error: null}))} className="ml-2 underline text-white/80 hover:text-white">{t('common.close')}</button></div>}
         </div>
     );
 };

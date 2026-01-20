@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
@@ -16,6 +16,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import { useLanguage } from '../hooks/useLanguage';
 
 interface MoodboardGeneratorProps {
     state: MoodboardGeneratorState;
@@ -26,6 +27,7 @@ interface MoodboardGeneratorProps {
 }
 
 const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, aspectRatio, mode, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
@@ -33,6 +35,17 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
     
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Một phòng khách hiện đại và rộng rãi.';
+        const enDefault = 'A modern and spacious living room.';
+        
+        // If current prompt is empty or matches one of the defaults, update it
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
+
     const getCostPerImage = () => {
         switch (resolution) {
             case 'Standard': return 5;
@@ -50,7 +63,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: `Bạn không đủ credits. Cần ${cost} credits.` });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -60,7 +73,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage('Đang phân tích...');
+        setStatusMessage(t('ext.floorplan.analyzing'));
         setUpscaleWarning(null);
 
         let logId: string | null = null;
@@ -104,7 +117,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
                 const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                     try {
-                        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                        setStatusMessage(t('common.processing'));
                         
                         const result = await externalVideoService.generateFlowImage(
                             fullPrompt,
@@ -112,7 +125,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                             aspectRatio, // Pass raw ratio
                             1,
                             modelName,
-                            (msg) => setStatusMessage('Đang xử lý. Vui lòng đợi...')
+                            (msg) => setStatusMessage(t('common.processing'))
                         );
 
                         if (result.imageUrls && result.imageUrls.length > 0) {
@@ -172,7 +185,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
             } else {
                 // Fallback (Not reached if useFlow=true)
-                setStatusMessage('Đang xử lý. Vui lòng đợi...');
+                setStatusMessage(t('common.processing'));
                 const promises = Array.from({ length: numberOfImages }).map(async () => {
                     const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
                     return images[0];
@@ -194,7 +207,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
             // --- SAFETY MODAL TRIGGER ---
             if (errorMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 if (logId) errorMsg += " (Credits đã được hoàn lại)";
                 onStateChange({ error: errorMsg });
@@ -223,16 +236,16 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
         <div className="flex flex-col gap-8">
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <h2 className="text-2xl font-bold">AI Moodboard</h2>
+            <h2 className="text-2xl font-bold">{t('ext.moodboard.title')}</h2>
             <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border space-y-6">
                 <div className="grid grid-cols-2 gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-                    <button onClick={() => onStateChange({ mode: 'moodboardToScene', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'moodboardToScene' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Moodboard &rarr; Không gian</button>
-                    <button onClick={() => onStateChange({ mode: 'sceneToMoodboard', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'sceneToMoodboard' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>Không gian &rarr; Moodboard</button>
+                    <button onClick={() => onStateChange({ mode: 'moodboardToScene', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'moodboardToScene' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>{t('ext.moodboard.mode1')}</button>
+                    <button onClick={() => onStateChange({ mode: 'sceneToMoodboard', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'sceneToMoodboard' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>{t('ext.moodboard.mode2')}</button>
                 </div>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                     <ImageUpload onFileSelect={(f) => onStateChange({ sourceImage: f, resultImages: [] })} previewUrl={sourceImage?.objectURL} />
                     <div className="space-y-4">
-                        <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder="Mô tả..." value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
+                        <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder={t('int.prompt_placeholder')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                         <div className="grid grid-cols-2 gap-4">
                             <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
                             <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
@@ -242,19 +255,19 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                         <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                                 <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                                <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                                <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                             </div>
                             <div className="text-xs">
                                 {userCredits < cost ? (
-                                    <span className="text-red-500 font-semibold">Không đủ (Có: {userCredits})</span>
+                                    <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
                                 ) : (
-                                    <span className="text-green-600 dark:text-green-400">Khả dụng: {userCredits}</span>
+                                    <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
                                 )}
                             </div>
                         </div>
 
                         <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg transition-colors">
-                            {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Tạo Moodboard'}
+                            {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.moodboard.btn_generate')}
                         </button>
                         {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                         {upscaleWarning && <p className="text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
@@ -265,7 +278,7 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                 {isLoading ? (
                     <div className="flex flex-col items-center">
                         <Spinner />
-                        <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
+                        <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
                     </div>
                 ) : resultImages.length > 0 ? (
                     <>
@@ -277,11 +290,11 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
                                 className="bg-gray-600/80 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow flex items-center gap-2"
                             >
                                 {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
-                                Tải xuống
+                                {t('common.download')}
                             </button>
                         </div>
                     </>
-                ) : <p className="text-gray-400">Kết quả sẽ hiển thị ở đây</p>}
+                ) : <p className="text-gray-400">{t('msg.no_result_render')}</p>}
             </div>
         </div>
     );

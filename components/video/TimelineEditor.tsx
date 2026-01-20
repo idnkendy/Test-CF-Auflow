@@ -2,6 +2,7 @@
 import React, { useRef } from 'react';
 import { VideoContextItem, VideoGeneratorState } from '../../state/toolState';
 import Spinner from '../Spinner';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface TimelineEditorProps {
     videoState: VideoGeneratorState;
@@ -52,9 +53,7 @@ interface TimelineEditorProps {
 }
 
 // Layout Constants
-// The track consists of [Icon(56px)] [Clips(Rest)]
-// We remove gaps/padding in the clips area to ensure 0-100% mapping is mathematically perfect.
-const ICON_WIDTH = 56; // w-14 = 56px
+const ICON_WIDTH = 56; 
 const LEFT_OFFSET = ICON_WIDTH; 
 const RIGHT_OFFSET = 0; 
 
@@ -67,39 +66,36 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
     onItemClick, onDragStart, onDragOver, onDrop, onDownloadSingle, onExtendClip, onRemoveFromTimeline,
     onGenerateSingle, onDownloadSimple
 }) => {
-    
+    const { t } = useLanguage();
     const timelineItems = videoState.contextItems.filter(item => item.videoUrl && item.isInTimeline);
 
     // Determine button label/icon for Play All
-    let playAllLabel = 'Phát tất cả';
+    let playAllLabel = t('video.timeline.play_all');
     let playAllIcon = 'play_arrow';
     let playAllClass = 'bg-gray-500 dark:bg-[#353535] hover:bg-gray-600 dark:hover:bg-[#404040]';
 
     if (isPlayingAll) {
         if (isPlaying) {
-            playAllLabel = 'Tạm dừng';
+            playAllLabel = t('video.timeline.pause');
             playAllIcon = 'pause';
             playAllClass = 'bg-yellow-600 hover:bg-yellow-700';
         } else {
-            playAllLabel = 'Phát tiếp';
+            playAllLabel = t('video.timeline.resume');
             playAllIcon = 'play_arrow';
             playAllClass = 'bg-green-600 hover:bg-green-700';
         }
     }
 
-    // Custom click handler to account for the offset layout
     const handleContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
         if (!timelineContainerRef.current) return;
         const rect = timelineContainerRef.current.getBoundingClientRect();
         const x = e.clientX - rect.left;
         
-        // Adjust coordinate system to ignore the header (icon) part
         const effectiveX = x - LEFT_OFFSET;
         const effectiveWidth = rect.width - LEFT_OFFSET - RIGHT_OFFSET;
         
-        if (effectiveWidth <= 0) return; // Prevent divide by zero
+        if (effectiveWidth <= 0) return; 
         
-        // Clamp percentage between 0 and 100
         const percent = Math.max(0, Math.min(100, (effectiveX / effectiveWidth) * 100));
         onSeek(percent);
     };
@@ -112,7 +108,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     <span className="material-symbols-outlined text-[#7f13ec] notranslate">
                         view_timeline
                     </span>
-                    <span className="hidden sm:inline">Timeline & Kết quả</span>
+                    <span className="hidden sm:inline">{t('video.timeline.title')}</span>
                 </h3>
                 
                 {/* Controls - Scrollable container to prevent overflow */}
@@ -120,19 +116,19 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     <input type="file" ref={videoInputRef} className="hidden" accept="video/mp4,video/quicktime" onChange={onVideoUpload} />
                     <button onClick={() => videoInputRef.current?.click()} className="flex-shrink-0 flex items-center gap-1 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] text-text-primary dark:text-gray-300 text-xs px-3 py-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors font-medium">
                         <span className="material-symbols-outlined text-sm notranslate">upload</span> 
-                        <span className="hidden sm:inline">Nhập</span>
+                        <span className="hidden sm:inline">{t('video.timeline.import')}</span>
                     </button>
                     <button onClick={onDownloadAll} className="flex-shrink-0 flex items-center gap-1 bg-gray-100 dark:bg-[#2A2A2A] hover:bg-gray-200 dark:hover:bg-[#353535] text-text-primary dark:text-gray-300 text-xs px-3 py-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors font-medium">
                         <span className="material-symbols-outlined text-sm notranslate">download_for_offline</span> 
-                        <span className="hidden sm:inline">Tải tất cả</span>
+                        <span className="hidden sm:inline">{t('video.timeline.download_all')}</span>
                     </button>
                     
                     <div className="w-[1px] h-6 bg-gray-300 dark:bg-[#302839] mx-1 flex-shrink-0"></div>
                     
-                    <button onClick={onToggleVideoMute} className={`flex-shrink-0 p-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors ${isVideoMuted ? 'bg-red-100 dark:bg-red-500/20 text-red-500 dark:text-red-400' : 'bg-gray-100 dark:bg-[#2A2A2A] text-text-secondary dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#353535]'}`} title={isVideoMuted ? "Bật âm thanh video" : "Tắt âm thanh video"}>
+                    <button onClick={onToggleVideoMute} className={`flex-shrink-0 p-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors ${isVideoMuted ? 'bg-red-100 dark:bg-red-500/20 text-red-500 dark:text-red-400' : 'bg-gray-100 dark:bg-[#2A2A2A] text-text-secondary dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#353535]'}`} title={isVideoMuted ? t('video.timeline.unmute_video') : t('video.timeline.mute_video')}>
                         <span className="material-symbols-outlined text-sm notranslate">{isVideoMuted ? 'videocam_off' : 'videocam'}</span>
                     </button>
-                    <button onClick={onToggleMusicMute} className={`flex-shrink-0 p-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors ${isMusicMuted ? 'bg-red-100 dark:bg-red-500/20 text-red-500 dark:text-red-400' : 'bg-gray-100 dark:bg-[#2A2A2A] text-text-secondary dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#353535]'}`} title={isMusicMuted ? "Bật nhạc nền" : "Tắt nhạc nền"}>
+                    <button onClick={onToggleMusicMute} className={`flex-shrink-0 p-1.5 rounded-lg border border-border-color dark:border-[#302839] transition-colors ${isMusicMuted ? 'bg-red-100 dark:bg-red-500/20 text-red-500 dark:text-red-400' : 'bg-gray-100 dark:bg-[#2A2A2A] text-text-secondary dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-[#353535]'}`} title={isMusicMuted ? t('video.timeline.unmute_music') : t('video.timeline.mute_music')}>
                         <span className="material-symbols-outlined text-sm notranslate">{isMusicMuted ? 'music_off' : 'music_note'}</span>
                     </button>
 
@@ -141,18 +137,18 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                         <span className="whitespace-nowrap">{playAllLabel}</span>
                     </button>
                     <button onClick={onMergeAndExport} disabled={isExporting} className="flex-shrink-0 flex items-center gap-1 bg-[#7f13ec] hover:bg-[#690fca] text-white text-xs px-3 py-1.5 rounded-lg transition-colors ml-2 shadow-lg disabled:opacity-50 font-bold">
-                        <span className="whitespace-nowrap">{isExporting ? `Đang xuất ${Math.round(exportProgress)}%` : 'Ghép & Xuất'}</span>
+                        <span className="whitespace-nowrap">{isExporting ? `${t('video.timeline.exporting')} ${Math.round(exportProgress)}%` : t('video.timeline.merge_export')}</span>
                     </button>
                 </div>
             </div>
 
-            {/* PREVIEW AREA - Use Flex 1 to fill available space */}
+            {/* PREVIEW AREA */}
             <div className="flex-1 bg-gray-50 dark:bg-[#121212] relative flex flex-col items-center justify-center border-b border-border-color dark:border-[#302839] min-h-0 overflow-hidden">
                 <div className="relative w-full h-full flex items-center justify-center bg-black">
                     {isSingleGenerating ? (
                          <div className="flex flex-col items-center justify-center text-gray-400 gap-3">
                             <Spinner />
-                            <span className="animate-pulse text-sm">{videoState.loadingMessage || 'Đang khởi tạo video...'}</span>
+                            <span className="animate-pulse text-sm">{videoState.loadingMessage || t('video.timeline.initializing')}</span>
                         </div>
                     ) : activeMainVideoUrl ? (
                         <video 
@@ -167,7 +163,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     ) : (
                         <div className="flex flex-col items-center opacity-30 select-none">
                             <span className="material-symbols-outlined text-6xl mb-2 text-white/50 notranslate">movie</span>
-                            <span className="text-gray-400 text-sm">Chưa có video nào.</span>
+                            <span className="text-gray-400 text-sm">{t('video.timeline.no_video')}</span>
                         </div>
                     )}
                     {audioUrl && <audio ref={audioRef} src={audioUrl} className="hidden" />}
@@ -178,7 +174,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                     <button 
                         onClick={timelineItems.length > 0 ? onTogglePlayAll : onTogglePlayPause} 
                         className="text-text-primary dark:text-white hover:text-[#7f13ec] transition-colors"
-                        title="Phát / Tạm dừng"
+                        title={isPlaying ? t('video.timeline.pause') : t('video.timeline.play_all')}
                     >
                         <span className="material-symbols-outlined notranslate text-2xl">{isPlaying ? 'pause' : 'play_arrow'}</span>
                     </button>
@@ -193,7 +189,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                 </div>
             </div>
 
-            {/* TIMELINE TRACKS - Fixed height at bottom */}
+            {/* TIMELINE TRACKS */}
             <div className="h-[140px] bg-gray-100 dark:bg-[#161616] flex flex-col relative overflow-hidden transition-colors duration-300 select-none flex-shrink-0 border-t border-[#302839]">
                 <div className="flex-1 p-2 w-full">
                     <div className="relative w-full h-full flex flex-col gap-2" ref={timelineContainerRef} onClick={handleContainerClick}>
@@ -235,16 +231,16 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                             muted
                                         />
                                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1">
-                                            <button onClick={(e) => {e.stopPropagation(); onDownloadSingle(item.videoUrl!, index)}} className="p-1.5 bg-black/60 text-white rounded-full hover:bg-[#7f13ec] transition-colors" title="Tải xuống"><span className="material-symbols-outlined text-[14px] notranslate">download</span></button>
-                                            <button onClick={(e) => {e.stopPropagation(); onExtendClip(item)}} className="p-1.5 bg-black/60 text-white rounded-full hover:bg-blue-600 transition-colors" title="Mở rộng"><span className="material-symbols-outlined text-[14px] notranslate">playlist_add</span></button>
-                                            <button onClick={(e) => {e.stopPropagation(); onRemoveFromTimeline(item.id)}} className="p-1.5 bg-black/60 text-white rounded-full hover:bg-red-600 transition-colors" title="Xóa khỏi Timeline"><span className="material-symbols-outlined text-[14px] notranslate">close</span></button>
+                                            <button onClick={(e) => {e.stopPropagation(); onDownloadSingle(item.videoUrl!, index)}} className="p-1.5 bg-black/60 text-white rounded-full hover:bg-[#7f13ec] transition-colors" title={t('video.list.download')}><span className="material-symbols-outlined text-[14px] notranslate">download</span></button>
+                                            <button onClick={(e) => {e.stopPropagation(); onExtendClip(item)}} className="p-1.5 bg-black/60 text-white rounded-full hover:bg-blue-600 transition-colors" title={t('video.list.extend')}><span className="material-symbols-outlined text-[14px] notranslate">playlist_add</span></button>
+                                            <button onClick={(e) => {e.stopPropagation(); onRemoveFromTimeline(item.id)}} className="p-1.5 bg-black/60 text-white rounded-full hover:bg-red-600 transition-colors" title={t('video.timeline.remove_timeline')}><span className="material-symbols-outlined text-[14px] notranslate">close</span></button>
                                         </div>
                                     </div>
                                 )) : (
                                     <div className="w-full h-full flex items-center justify-start pl-4">
                                         <span className="text-text-secondary dark:text-gray-600 text-xs italic flex items-center gap-2">
                                             <span className="material-symbols-outlined text-sm">video_library</span>
-                                            Kéo clip vào đây...
+                                            {t('video.timeline.drag_hint')}
                                         </span>
                                     </div>
                                 )}
@@ -269,7 +265,7 @@ const TimelineEditor: React.FC<TimelineEditorProps> = ({
                                 ) : (
                                     <div className="flex-1 h-8 border-2 border-dashed border-gray-300 dark:border-[#302839] rounded-md flex items-center justify-center hover:bg-gray-50 dark:hover:bg-[#252525] hover:border-[#7f13ec]/50 transition-all relative cursor-pointer group">
                                         <div className="flex items-center gap-2 text-text-secondary dark:text-gray-500 group-hover:text-[#7f13ec] transition-colors">
-                                            <span className="text-[10px] font-medium">Kéo thả nhạc (.mp3)</span>
+                                            <span className="text-[10px] font-medium">{t('video.timeline.drag_music')}</span>
                                         </div>
                                         <input type="file" accept=".mp3,audio/mpeg" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => {if(e.target.files?.[0]) onAudioFileSelect(e.target.files[0]); }} />
                                     </div>

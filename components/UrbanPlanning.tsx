@@ -1,5 +1,5 @@
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
@@ -19,31 +19,7 @@ import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import SafetyWarningModal from './common/SafetyWarningModal';
-
-const viewTypeOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'phối cảnh mắt chim (bird\'s-eye view)', label: 'Phối cảnh mắt chim' },
-    { value: 'phối cảnh từ trên cao góc 45 độ (aerial 45-degree view)', label: 'Phối cảnh 45°' },
-    { value: 'phối cảnh tầm mắt người đi bộ (street-level perspective)', label: 'Góc nhìn người' },
-    { value: 'phối cảnh ven sông/ven biển (waterfront view)', label: 'Ven sông/biển' },
-];
-
-const densityOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'khu dân cư ngoại ô mật độ thấp', label: 'Ngoại ô thấp tầng' },
-    { value: 'khu phức hợp mật độ trung bình', label: 'Phức hợp vừa' },
-    { value: 'lõi đô thị mật độ cao', label: 'Đô thị cao tầng' },
-    { value: 'khu công viên và cây xanh', label: 'Công viên cây xanh' },
-];
-
-const lightingOptions = [
-    { value: 'none', label: 'Tự động' },
-    { value: 'bình minh dịu nhẹ', label: 'Bình minh' },
-    { value: 'buổi trưa, trời xanh trong', label: 'Ban ngày' },
-    { value: 'nắng chiều, nắng vàng cam', label: 'Hoàng hôn' },
-    { value: 'buổi tối, đèn đô thị sáng rực', label: 'Ban đêm' },
-    { value: 'khung cảnh u ám, có mây', label: 'Trời u ám' },
-];
+import { useLanguage } from '../hooks/useLanguage';
 
 interface UrbanPlanningProps {
   state: UrbanPlanningState;
@@ -55,6 +31,7 @@ interface UrbanPlanningProps {
 }
 
 const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t, language } = useLanguage();
     const { 
         viewType, density, lighting, customPrompt, referenceImages, 
         sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
@@ -67,6 +44,43 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
 
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Render một khu đô thị ven sông, có nhiều cây xanh, các toà nhà hiện đại và một cây cầu đi bộ.';
+        const enDefault = 'Render a riverside urban area with plenty of greenery, modern buildings, and a pedestrian bridge.';
+        
+        // If current prompt is empty or matches one of the defaults, update it
+        if (!customPrompt || customPrompt === viDefault || customPrompt === enDefault) {
+             onStateChange({ customPrompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
+
+    // Using English values for prompting efficiency, labels change based on lang
+    const viewTypeOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'birds-eye view', label: language === 'vi' ? 'Phối cảnh mắt chim' : "Bird's eye view" },
+        { value: 'aerial 45-degree view', label: language === 'vi' ? 'Phối cảnh 45°' : 'Aerial 45°' },
+        { value: 'street-level perspective', label: language === 'vi' ? 'Góc nhìn người' : 'Street level' },
+        { value: 'waterfront view', label: language === 'vi' ? 'Ven sông/biển' : 'Waterfront' },
+    ], [t, language]);
+
+    const densityOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'low density suburban', label: language === 'vi' ? 'Ngoại ô thấp tầng' : 'Low density suburban' },
+        { value: 'medium density mixed-use', label: language === 'vi' ? 'Phức hợp vừa' : 'Medium density mixed-use' },
+        { value: 'high density urban core', label: language === 'vi' ? 'Đô thị cao tầng' : 'High density urban core' },
+        { value: 'park and green space', label: language === 'vi' ? 'Công viên cây xanh' : 'Park and green space' },
+    ], [t, language]);
+
+    const lightingOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'soft sunrise', label: language === 'vi' ? 'Bình minh' : 'Sunrise' },
+        { value: 'clear daytime', label: language === 'vi' ? 'Ban ngày' : 'Daytime' },
+        { value: 'golden hour sunset', label: language === 'vi' ? 'Hoàng hôn' : 'Sunset' },
+        { value: 'night city lights', label: language === 'vi' ? 'Ban đêm' : 'Night' },
+        { value: 'overcast', label: language === 'vi' ? 'Trời u ám' : 'Overcast' },
+    ], [t, language]);
+
     const escapeRegExp = (string: string) => {
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     };
@@ -74,10 +88,11 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
     const updatePrompt = useCallback((type: 'viewType' | 'density' | 'lighting', newValue: string, oldValue: string) => {
         const getPromptPart = (partType: string, value: string): string => {
             if (value === 'none' || !value) return '';
+            // Always construct English phrase parts since values are English now
             switch (partType) {
-                case 'viewType': return `tạo ra một ${value}`;
-                case 'density': return `mô phỏng một ${value}`;
-                case 'lighting': return `với ánh sáng ${value}`;
+                case 'viewType': return `create a ${value}`;
+                case 'density': return `simulate a ${value}`;
+                case 'lighting': return `with ${value} lighting`;
                 default: return '';
             }
         };
@@ -89,10 +104,12 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
 
         if (oldPart && nextPrompt.includes(oldPart)) {
              const escapedOldPart = escapeRegExp(oldPart);
+             // Replace old part with new part, or remove if new is empty/none
              nextPrompt = newPart 
                 ? nextPrompt.replace(oldPart, newPart) 
                 : nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), '');
         } else if (newPart) {
+            // Append new part if old didn't exist
             nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart;
         }
 
@@ -176,7 +193,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
              if (onInsufficientCredits) {
                  onInsufficientCredits();
              } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
+                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
              }
              return;
         }
@@ -186,7 +203,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
-        setStatusMessage('Đang xử lý. Vui lòng đợi...');
+        setStatusMessage(t('common.processing'));
         setUpscaleWarning(null);
         
         let logId: string | null = null;
@@ -270,9 +287,12 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                    });
+                    const errorMsg = t('msg.refund_success')
+                        .replace('{success}', successfulUrls.length.toString())
+                        .replace('{total}', numberOfImages.toString())
+                        .replace('{amount}', refundAmount.toString())
+                        .replace('{failed}', failedCount.toString());
+                    onStateChange({ error: errorMsg });
                 }
             } else {
                 if (lastError) throw lastError;
@@ -286,7 +306,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             // --- SAFETY MODAL TRIGGER ---
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: "Ảnh bị từ chối do vi phạm chính sách an toàn." });
+                onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: friendlyMsg });
             }
@@ -340,27 +360,27 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             <div>
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">AI Render Quy Hoạch Đô Thị</h2>
+                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.urban.title')}</h2>
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                         <div className="space-y-6">
                             <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Tải Lên Bản Vẽ/Ảnh Hiện Trạng</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.urban.step1')}</label>
                                 <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
                             </div>
                              <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Ảnh Tham Chiếu</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.ref_images')}</label>
                                 {resolution === 'Standard' ? (
                                     <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
                                         <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
                                         <p className="text-sm text-text-secondary dark:text-gray-400">
-                                            Ảnh tham chiếu chỉ hoạt động ở các bản <span className="font-bold text-text-primary dark:text-white">Nano Pro</span> (1K trở lên).
+                                            {t('img_gen.ref_lock')}
                                         </p>
                                         <button 
                                             onClick={() => handleResolutionChange('1K')}
                                             className="text-xs text-[#7f13ec] hover:underline font-semibold"
                                         >
-                                            Nâng cao chất lượng ảnh ngay
+                                            {t('img_gen.upgrade')}
                                         </button>
                                     </div>
                                 ) : (
@@ -370,16 +390,16 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                         </div>
                          <div className="space-y-4 flex flex-col">
                              <div>
-                                <label htmlFor="custom-prompt-urban" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả ý tưởng</label>
-                                <textarea id="custom-prompt-urban" rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none" placeholder="Mô tả dự án..." value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
+                                <label htmlFor="custom-prompt-urban" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.urban.step2')}</label>
+                                <textarea id="custom-prompt-urban" rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none" placeholder={t('ext.urban.prompt_ph')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
                              </div>
                             <div className="pt-2">
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">3. Tinh chỉnh</label>
+                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.urban.step3')}</label>
                                 <div className="space-y-4">
-                                    <OptionSelector id="view-type-selector" label="Góc nhìn" options={viewTypeOptions} value={viewType} onChange={handleViewTypeChange} disabled={isLoading} variant="grid" />
+                                    <OptionSelector id="view-type-selector" label={t('ext.urban.view_type')} options={viewTypeOptions} value={viewType} onChange={handleViewTypeChange} disabled={isLoading} variant="grid" />
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <OptionSelector id="density-selector" label="Mật độ" options={densityOptions} value={density} onChange={handleDensityChange} disabled={isLoading} variant="select" />
-                                        <OptionSelector id="lighting-selector-urban" label="Ánh sáng" options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="density-selector" label={t('ext.urban.density')} options={densityOptions} value={density} onChange={handleDensityChange} disabled={isLoading} variant="select" />
+                                        <OptionSelector id="lighting-selector-urban" label={t('ext.urban.lighting')} options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
                                     </div>
                                 </div>
                             </div>
@@ -396,10 +416,14 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                          <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-3 border border-gray-200 dark:border-gray-700">
                             <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                <span>Chi phí: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                                <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                             </div>
                             <div className="text-xs">
-                                {userCredits < cost ? <span className="text-red-500 font-semibold">Không đủ</span> : <span className="text-green-600">Khả dụng: {userCredits}</span>}
+                                {userCredits < cost ? (
+                                    <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
+                                ) : (
+                                    <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
+                                )}
                             </div>
                         </div>
                         <button 
@@ -407,7 +431,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                             disabled={isLoading || !customPrompt.trim() || isUpscaling} 
                             className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
                         >
-                           {isLoading ? <><Spinner /> {statusMessage || 'Đang xử lý. Vui lòng đợi...'}</> : 'Bắt đầu Render'}
+                           {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('common.start_render')}
                         </button>
                     </div>
                     {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
@@ -416,28 +440,35 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
             </div>
              <div>
                 <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-lg font-semibold text-text-primary dark:text-white">Kết quả</h3>
+                    <h3 className="text-lg font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
                     <div className="flex items-center gap-2">
                         {resultImages.length === 1 && (
                              <>
-                                <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold">Đồng bộ</button>
+                                <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold">{t('int.btn_sync')}</button>
                                 <button onClick={() => setPreviewImage(upscaledImage || resultImages[0])} className="bg-gray-600 text-white p-2 rounded-lg"><span className="material-symbols-outlined">zoom_in</span></button>
-                                <button onClick={handleDownload} disabled={isDownloading} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm flex items-center gap-2">{isDownloading ? <Spinner /> : null}Tải xuống</button>
+                                <button onClick={handleDownload} disabled={isDownloading} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm flex items-center gap-2">{isDownloading ? <Spinner /> : null}{t('common.download')}</button>
                             </>
                         )}
                     </div>
                 </div>
                 <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                    {isLoading && (
+                    {isLoading ? (
                         <div className="flex flex-col items-center">
                             <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || 'Đang xử lý. Vui lòng đợi...'}</p>
+                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
                         </div>
+                    ) : resultImages.length > 0 ? (
+                        resultImages.length === 1 ? (
+                            <ImageComparator 
+                                originalImage={sourceImage?.objectURL || ''} 
+                                resultImage={upscaledImage || resultImages[0]} 
+                            />
+                        ) : (
+                            <ResultGrid images={resultImages} toolName="urban-render" onSendToViewSync={handleSendImageToSync} />
+                        )
+                    ) : (
+                        <p className="text-text-secondary dark:text-gray-400">{t('msg.no_result_render')}</p>
                     )}
-                    {!isLoading && upscaledImage && resultImages.length === 1 && <ImageComparator originalImage={resultImages[0]} resultImage={upscaledImage} />}
-                    {!isLoading && !upscaledImage && resultImages.length === 1 && sourceImage && <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />}
-                    {!isLoading && !upscaledImage && resultImages.length === 1 && !sourceImage && <img src={resultImages[0]} className="w-full h-full object-contain" />}
-                    {!isLoading && resultImages.length > 1 && <ResultGrid images={resultImages} toolName="urban-render" onSendToViewSync={handleSendImageToSync} />}
                 </div>
               </div>
         </div>

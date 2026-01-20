@@ -4,6 +4,7 @@ import { Session } from '@supabase/supabase-js';
 import { Transaction } from '../types';
 import * as paymentService from '../services/paymentService';
 import Spinner from './Spinner';
+import { useLanguage } from '../hooks/useLanguage';
 
 const UserIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-16 w-16 md:h-20 md:w-20 text-gray-400 bg-gray-200 rounded-full p-2" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -32,6 +33,7 @@ interface UserProfileProps {
 }
 
 const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profile', onTabChange, onPurchaseSuccess }) => {
+    const { t, language } = useLanguage();
     const [activeTab, setActiveTab] = useState<'profile' | 'history'>(initialTab);
     
     // History State
@@ -91,7 +93,9 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
             const creditsAdded = await paymentService.redeemGiftCode(session.user.id, giftCode);
             setRedeemStatus({
                 type: 'success',
-                msg: `Thành công! Bạn đã nhận được ${creditsAdded} credits.`
+                msg: language === 'vi' 
+                    ? `Thành công! Bạn đã nhận được ${creditsAdded} credits.`
+                    : `Success! You received ${creditsAdded} credits.`
             });
             setGiftCode('');
             // Update expiration date locally if giftcode extended it
@@ -102,7 +106,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
         } catch (err: any) {
             setRedeemStatus({
                 type: 'error',
-                msg: err.message || "Mã không hợp lệ hoặc lỗi hệ thống."
+                msg: err.message || (language === 'vi' ? "Mã không hợp lệ hoặc lỗi hệ thống." : "Invalid code or system error.")
             });
         } finally {
             setIsRedeeming(false);
@@ -111,16 +115,18 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
 
     // Profile Data
     const userEmail = session.user.email;
-    const userName = session.user.user_metadata?.full_name || "Người dùng OPZEN AI";
+    const userName = session.user.user_metadata?.full_name || t('header.account');
     
     let joinDate = 'N/A';
     try {
-        joinDate = new Date(session.user.created_at).toLocaleDateString('vi-VN');
+        joinDate = new Date(session.user.created_at).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US');
     } catch (e) {
         console.error("Invalid join date", e);
     }
 
-    const expirationDateString = subscriptionEnd ? new Date(subscriptionEnd).toLocaleDateString('vi-VN') : 'Vĩnh viễn';
+    const expirationDateString = subscriptionEnd 
+        ? new Date(subscriptionEnd).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US') 
+        : t('header.forever');
 
     return (
         <div className="flex flex-col lg:flex-row gap-6 h-full max-h-[calc(100vh-100px)]">
@@ -138,14 +144,14 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                         onClick={() => handleTabClick('profile')}
                         className={`flex-shrink-0 w-auto lg:w-full text-left px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${activeTab === 'profile' ? 'bg-accent text-white' : 'text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                     >
-                        Thông tin tài khoản
+                        {t('profile.tab_info')}
                     </button>
                     
                     <button 
                         onClick={() => handleTabClick('history')}
                         className={`flex-shrink-0 w-auto lg:w-full text-left px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${activeTab === 'history' ? 'bg-accent text-white' : 'text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                     >
-                        Lịch sử giao dịch
+                        {t('profile.tab_history')}
                     </button>
                 </div>
             </div>
@@ -157,22 +163,22 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                 {activeTab === 'profile' && (
                     <div className="space-y-8 animate-fade-in">
                         <div>
-                            <h3 className="text-2xl font-bold text-text-primary dark:text-white mb-4">Thông tin tài khoản</h3>
+                            <h3 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('profile.tab_info')}</h3>
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">Họ và tên</label>
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('profile.label.name')}</label>
                                     <input type="text" value={userName} disabled className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-300 opacity-70" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">Email</label>
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('profile.label.email')}</label>
                                     <input type="email" value={userEmail} disabled className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-300 opacity-70" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">Ngày tham gia</label>
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('profile.label.joined')}</label>
                                     <input type="text" value={joinDate} disabled className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-300 opacity-70" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">Ngày hết hạn</label>
+                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('profile.label.expired')}</label>
                                     <input type="text" value={expirationDateString} disabled className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-300 opacity-70 font-semibold text-purple-600 dark:text-purple-400" />
                                 </div>
                             </div>
@@ -187,7 +193,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                                             <GiftIcon />
                                         </div>
                                     </div>
-                                    <h4 className="font-bold text-lg text-text-primary dark:text-white">Nhập mã quà tặng (Giftcode)</h4>
+                                    <h4 className="font-bold text-lg text-text-primary dark:text-white">{t('profile.gift.title')}</h4>
                                 </div>
                                 
                                 <div className="flex flex-col sm:flex-row gap-3">
@@ -195,7 +201,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                                         type="text" 
                                         value={giftCode}
                                         onChange={(e) => setGiftCode(e.target.value.toUpperCase())}
-                                        placeholder="Nhập mã của bạn"
+                                        placeholder={t('profile.gift.placeholder')}
                                         className="flex-grow bg-white dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-accent focus:outline-none uppercase placeholder:normal-case"
                                         disabled={isRedeeming}
                                     />
@@ -204,7 +210,7 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                                         disabled={!giftCode.trim() || isRedeeming}
                                         className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2 min-w-[120px]"
                                     >
-                                        {isRedeeming ? <Spinner /> : 'Áp dụng'}
+                                        {isRedeeming ? <Spinner /> : t('profile.gift.apply')}
                                     </button>
                                 </div>
                                 
@@ -224,9 +230,9 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                         </div>
 
                         <div className="pt-6 border-t border-border-color dark:border-gray-700">
-                            <h4 className="font-semibold text-text-primary dark:text-white mb-2">Bảo mật</h4>
+                            <h4 className="font-semibold text-text-primary dark:text-white mb-2">{t('profile.security.title')}</h4>
                             <button className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-text-primary dark:text-white rounded-lg transition-colors text-sm">
-                                Đổi mật khẩu
+                                {t('profile.security.change_pass')}
                             </button>
                         </div>
                     </div>
@@ -235,22 +241,22 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                 {/* === TAB: HISTORY === */}
                 {activeTab === 'history' && (
                     <div className="space-y-6 animate-fade-in">
-                        <h3 className="text-2xl font-bold text-text-primary dark:text-white mb-4">Lịch sử giao dịch</h3>
+                        <h3 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('profile.tab_history')}</h3>
                         
                         {isLoadingHistory ? (
                              <div className="flex justify-center py-10"><Spinner /></div>
                         ) : transactionHistory.length === 0 ? (
-                             <p className="text-center text-text-secondary dark:text-gray-400 py-10">Bạn chưa có giao dịch nào.</p>
+                             <p className="text-center text-text-secondary dark:text-gray-400 py-10">{t('profile.history.empty')}</p>
                         ) : (
                             <div className="overflow-x-auto">
                                 <table className="w-full text-sm text-left text-text-secondary dark:text-gray-400">
                                     <thead className="text-xs text-text-primary uppercase bg-gray-100 dark:bg-gray-700 dark:text-gray-200">
                                         <tr>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">Mã giao dịch</th>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">Dịch vụ</th>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">Số tiền</th>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">Ngày</th>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">Trạng thái</th>
+                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.code')}</th>
+                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.service')}</th>
+                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.amount')}</th>
+                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.date')}</th>
+                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.status')}</th>
                                         </tr>
                                     </thead>
                                     <tbody>
@@ -266,14 +272,14 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                                                     )}
                                                 </td>
                                                 <td className="px-6 py-4 whitespace-nowrap">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(tx.amount)}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap">{new Date(tx.created_at).toLocaleDateString('vi-VN')}</td>
+                                                <td className="px-6 py-4 whitespace-nowrap">{new Date(tx.created_at).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US')}</td>
                                                 <td className="px-6 py-4 whitespace-nowrap">
                                                     <span className={`text-xs font-medium px-2.5 py-0.5 rounded ${
                                                         tx.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
                                                         tx.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
                                                         'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
                                                     }`}>
-                                                        {tx.status === 'completed' ? 'Thành công' : tx.status === 'pending' ? 'Đang xử lý' : 'Thất bại'}
+                                                        {tx.status === 'completed' ? t('profile.status.success') : tx.status === 'pending' ? t('profile.status.pending') : t('profile.status.failed')}
                                                     </span>
                                                 </td>
                                             </tr>
