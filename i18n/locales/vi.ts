@@ -21,6 +21,22 @@ export const vi = {
   "common.confirm": "Xác nhận",
   "common.upload_placeholder": "Nhấp để tải ảnh lên",
 
+  // --- MAINTENANCE PAGE ---
+  "maint.page.title": "Hệ thống đang bảo trì",
+  "maint.page.desc": "Chúng tôi đang thực hiện nâng cấp quan trọng để mang đến trải nghiệm tốt hơn cho bạn. Hệ thống sẽ sớm quay trở lại. Xin cảm ơn sự kiên nhẫn của bạn!",
+  "maint.page.reload": "Tải lại trang",
+  "maint.page.status": "Trạng thái máy chủ",
+
+  // --- ERRORS ---
+  "err.upload.type": "Chỉ chấp nhận các tệp JPG, PNG, hoặc WEBP.",
+  "err.upload.size": "Kích thước tệp quá lớn (Max 50MB).",
+  "err.upload.process": "Không thể xử lý ảnh này. Vui lòng thử ảnh khác.",
+  "err.gen.failed": "Không thể tạo ảnh nào sau nhiều lần thử.",
+  "err.gen.general": "Đã xảy ra lỗi khi tạo ảnh.",
+  "err.input.prompt": "Vui lòng nhập mô tả.",
+  "err.input.image": "Vui lòng tải lên ảnh gốc.",
+  "err.input.required": "Vui lòng nhập đầy đủ thông tin.",
+
   // --- UPLOAD COMPONENT ---
   "upload.click": "Nhấp để tải ảnh lên",
   "upload.drag": "hoặc kéo và thả vào đây",

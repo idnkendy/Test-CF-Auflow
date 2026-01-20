@@ -22,6 +22,22 @@ export const en = {
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
 
+  // --- MAINTENANCE PAGE ---
+  "maint.page.title": "System Under Maintenance",
+  "maint.page.desc": "We are performing important upgrades to provide a better experience. The system will be back shortly. Thank you for your patience!",
+  "maint.page.reload": "Reload Page",
+  "maint.page.status": "Server Status",
+
+  // --- ERRORS ---
+  "err.upload.type": "Only JPG, PNG, or WEBP files are accepted.",
+  "err.upload.size": "File size too large (Max 50MB).",
+  "err.upload.process": "Unable to process this image. Please try another.",
+  "err.gen.failed": "Unable to generate any images after multiple attempts.",
+  "err.gen.general": "An error occurred during generation.",
+  "err.input.prompt": "Please enter a description.",
+  "err.input.image": "Please upload a source image.",
+  "err.input.required": "Please fill in all required information.",
+
   // --- UPLOAD COMPONENT ---
   "upload.click": "Click to upload image",
   "upload.drag": "or drag and drop here",

@@ -267,7 +267,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
             } else {
                 if (lastError) throw lastError;
-                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
+                throw new Error(t('err.gen.failed'));
             }
 
         } catch (err: any) {

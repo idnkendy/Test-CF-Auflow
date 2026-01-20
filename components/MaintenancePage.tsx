@@ -1,8 +1,10 @@
 
 import React from 'react';
 import { Logo } from './common/Logo';
+import { useLanguage } from '../hooks/useLanguage';
 
 const MaintenancePage: React.FC = () => {
+  const { t } = useLanguage();
   return (
     <div className="min-h-screen bg-main-bg dark:bg-[#121212] flex flex-col items-center justify-center p-4 text-center font-sans transition-colors duration-300">
       <div className="animate-fade-in flex flex-col items-center max-w-2xl mx-auto">
@@ -12,13 +14,11 @@ const MaintenancePage: React.FC = () => {
         </div>
         
         <h1 className="text-4xl md:text-5xl font-extrabold text-text-primary dark:text-white mb-4 tracking-tight">
-          Hệ thống đang bảo trì
+          {t('maint.page.title')}
         </h1>
         
         <p className="text-text-secondary dark:text-gray-400 text-lg md:text-xl mb-8 leading-relaxed">
-          Chúng tôi đang thực hiện nâng cấp quan trọng để mang đến trải nghiệm tốt hơn cho bạn. 
-          <br className="hidden md:block" />
-          Hệ thống sẽ sớm quay trở lại. Xin cảm ơn sự kiên nhẫn của bạn!
+          {t('maint.page.desc')}
         </p>
 
         <div className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto justify-center">
@@ -29,13 +29,13 @@ const MaintenancePage: React.FC = () => {
                 <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 group-hover:rotate-180 transition-transform duration-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                 </svg>
-                Tải lại trang
+                {t('maint.page.reload')}
             </button>
         </div>
 
         <div className="mt-20 pt-8 border-t border-border-color dark:border-[#302839] w-full max-w-sm">
             <div className="flex justify-center gap-6 text-text-secondary dark:text-gray-500 mb-4">
-                <span className="text-sm">Trạng thái máy chủ</span>
+                <span className="text-sm">{t('maint.page.status')}</span>
                 <span className="flex items-center gap-2 text-sm font-medium text-yellow-500">
                     <span className="relative flex h-2.5 w-2.5">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-yellow-400 opacity-75"></span>

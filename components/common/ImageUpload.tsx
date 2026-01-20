@@ -114,12 +114,12 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
         if (file) {
             // Check for valid types
             if (!['image/jpeg', 'image/png', 'image/webp', 'image/jpg'].includes(file.type)) {
-                setError('Chỉ chấp nhận các tệp JPG, PNG, hoặc WEBP.');
+                setError(t('err.upload.type'));
                 onFileSelect(null);
                 return;
             }
              if (file.size > 50 * 1024 * 1024) { 
-                setError('Kích thước tệp quá lớn (Max 50MB).');
+                setError(t('err.upload.size'));
                 onFileSelect(null);
                 return;
             }
@@ -133,13 +133,13 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
                 onFileSelect(fileData);
             } catch (err) {
                 console.error(err);
-                setError('Không thể xử lý ảnh này. Vui lòng thử ảnh khác.');
+                setError(t('err.upload.process'));
                 onFileSelect(null);
             } finally {
                 setIsProcessing(false);
             }
         }
-    }, [onFileSelect]);
+    }, [onFileSelect, t]);
     
     const handleRemove = (e?: React.MouseEvent) => {
         if (e) e.stopPropagation();
