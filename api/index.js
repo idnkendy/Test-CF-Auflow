@@ -542,7 +542,8 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
 async function sendToLadiPage(data) {
     if (!LADIFLOW_API_KEY) {
         // API Key not configured
-        return;
+        console.warn("[LadiFlow] API Key missing, skipping sync.");
+        return { success: false, message: "Missing API Key" };
     }
 
     try {
@@ -562,9 +563,17 @@ async function sendToLadiPage(data) {
             },
             body: JSON.stringify(payload)
         });
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`LadiFlow API Error (${response.status}): ${errorText}`);
+        }
+        
+        return { success: true, message: "Sync successful" };
 
     } catch (e) {
         console.error("[LadiFlow] Network error:", e);
+        return { success: false, message: e.message || "Network Error" };
     }
 }
 
@@ -698,12 +707,13 @@ async function handleSyncLadiPage(body, env) {
     const { is_new_user, email, full_name } = body;
 
     if (is_new_user) {
-        await sendToLadiPage({
+        const result = await sendToLadiPage({
             email: email,
             name: full_name,
             tags: ["OPZEN_NEW_USER"]
         });
-        return { success: true, message: "Synced new user" };
+        // Important: Return the actual result from LadiFlow to allow frontend debugging
+        return result; 
     }
     
     return { success: true, message: "Skipped sync (not new user)" };

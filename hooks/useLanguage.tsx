@@ -52,7 +52,12 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
             setLanguageState(savedLang);
             // Update URL to match saved preference if currently at root
             if (path === '/' || path === '') {
-                window.history.replaceState({}, '', `/${savedLang}`);
+                // IMPORTANT: Preserve hash and search params for Auth Redirects
+                window.history.replaceState(
+                    {}, 
+                    '', 
+                    `/${savedLang}${window.location.search}${window.location.hash}`
+                );
             }
             setIsInitialized(true);
             return;
@@ -64,7 +69,12 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         localStorage.setItem('opzen_lang', detectedLang);
         // Redirect to detected language path
         if (path === '/' || path === '') {
-            window.history.replaceState({}, '', `/${detectedLang}`);
+            // IMPORTANT: Preserve hash and search params for Auth Redirects
+            window.history.replaceState(
+                {}, 
+                '', 
+                `/${detectedLang}${window.location.search}${window.location.hash}`
+            );
         }
         setIsInitialized(true);
     };
@@ -81,9 +91,13 @@ export const LanguageProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     const cleanPath = path.replace(/^\/(vi|en)/, '');
     const newPath = `/${lang}${cleanPath || ''}`; // If cleanPath is empty, it becomes /lang
     
-    // Use replaceState to keep current history stack clean, or pushState if navigation is intended
-    // Using replaceState ensures we just update the locale in URL without navigating away
-    window.history.replaceState({}, '', newPath);
+    // Use replaceState to keep current history stack clean
+    // IMPORTANT: Preserve hash and search params
+    window.history.replaceState(
+        {}, 
+        '', 
+        `${newPath}${window.location.search}${window.location.hash}`
+    );
   };
 
   const t = (key: string): string => {

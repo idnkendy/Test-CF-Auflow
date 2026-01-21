@@ -16,9 +16,12 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
 
         // NẾU KHÔNG TÌM THẤY DATA -> ĐÂY LÀ USER MỚI (SIGN UP)
         if (!data && email) {
-             // 1. Gửi Webhook sang LadiFlow ngay lập tức (Fire & Forget)
+             console.log("[Auth] New user detected, creating profile...");
+             // 1. Gửi Webhook sang LadiFlow ngay lập tức (Fire & Forget but with logs)
              try {
                  const baseUrl = BACKEND_URL.replace(/\/$/, "");
+                 console.log("[Sync] Triggering LadiPage sync for:", email);
+                 
                  fetch(`${baseUrl}/sync-ladipage`, {
                      method: 'POST',
                      headers: { 'Content-Type': 'application/json' },
@@ -27,9 +30,14 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                          full_name: fullName || email.split('@')[0], 
                          is_new_user: true 
                      })
-                 }).catch(err => console.error("[Sync] Failed to trigger worker:", err));
+                 })
+                 .then(async (res) => {
+                     const json = await res.json();
+                     console.log("[Sync] LadiPage Result:", json);
+                 })
+                 .catch(err => console.error("[Sync] Network failed:", err));
              } catch (e) {
-                 console.error("[Sync] Error:", e);
+                 console.error("[Sync] Exception:", e);
              }
 
              // 2. Tạo hồ sơ mới trong DB
@@ -39,6 +47,7 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
              
              if (insertError) {
                  // Trường hợp Race Condition (đã tạo ở tab khác), thử lấy lại
+                 console.warn("[Auth] Profile insert failed, retrying fetch...", insertError);
                  const { data: retryData, error: retryError } = await supabase
                     .from('profiles')
                     .select('credits, subscription_end')
@@ -62,6 +71,7 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
             isExpired: data?.subscription_end ? new Date(data.subscription_end) < new Date() : false 
         };
     } catch (e) {
+        console.error("[Auth] getUserStatus Error:", e);
         return { credits: 0, subscriptionEnd: null, isExpired: false };
     }
 };

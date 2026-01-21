@@ -10,43 +10,11 @@ const rawKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 const supabaseKey = rawKey ? rawKey.trim() : "";
 // =================================================================================
 
-// Custom fetch with safe timeout implementation
-const fetchWithTimeout = (url: any, options: any) => {
-    // Increased timeout to 30s to handle slow networks better
-    const TIMEOUT_MS = 30000; 
-
-    // 1. Try modern AbortSignal.timeout if available
-    if (typeof AbortSignal !== 'undefined' && 'timeout' in AbortSignal) {
-        try {
-            // @ts-ignore
-            return fetch(url, { ...options, signal: AbortSignal.timeout(TIMEOUT_MS) });
-        } catch (e) {
-            // Fallback
-        }
-    }
-
-    // 2. Fallback to AbortController
-    const controller = new AbortController();
-    const id = setTimeout(() => controller.abort(), TIMEOUT_MS);
-
-    return fetch(url, { ...options, signal: controller.signal })
-        .then(response => {
-            clearTimeout(id);
-            return response;
-        })
-        .catch(error => {
-            clearTimeout(id);
-            throw error;
-        });
-};
-
 export const supabase = createClient(supabaseUrl, supabaseKey, {
     auth: {
         persistSession: true,
         autoRefreshToken: true,
-    },
-    global: {
-        fetch: fetchWithTimeout
+        detectSessionInUrl: true
     }
 });
 

@@ -26,14 +26,23 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   const handleGoogleSignIn = async () => {
     setLoading(true);
     setError(null);
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: window.location.origin
-      }
-    });
-    if (error) {
-        setError(error.message);
+    try {
+        const { error } = await supabase.auth.signInWithOAuth({
+          provider: 'google',
+          options: {
+            redirectTo: window.location.origin,
+            queryParams: {
+                access_type: 'offline',
+                prompt: 'consent',
+            },
+          }
+        });
+        if (error) {
+            setError(error.message);
+            setLoading(false);
+        }
+    } catch (err: any) {
+        setError(err.message || "Lỗi kết nối. Vui lòng thử lại.");
         setLoading(false);
     }
   };
@@ -65,7 +74,11 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                     </div>
                 )}
                 
-                {error && <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-400 rounded-xl text-sm text-left animate-shake">{error}</div>}
+                {error && (
+                    <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-400 rounded-xl text-sm text-left animate-shake">
+                        <strong>Lỗi:</strong> {error}
+                    </div>
+                )}
                 
                 <div className="space-y-4">
                     <button

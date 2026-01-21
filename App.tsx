@@ -61,10 +61,12 @@ const getPathWithoutLocale = () => {
 
 const AppContent: React.FC = () => {
   const { language, t } = useLanguage();
-  const utilityTools = useUtilityTools(); // Use Hook here
+  const utilityTools = useUtilityTools();
   
   const [view, setView] = useState<'homepage' | 'auth' | 'app' | 'pricing' | 'payment' | 'video'>('homepage');
   const [session, setSession] = useState<Session | null>(null);
+  
+  // Initialize loading to true
   const [loadingSession, setLoadingSession] = useState(true);
   
   const [activeTool, setActiveTool] = useState<Tool>(() => {
@@ -83,35 +85,27 @@ const AppContent: React.FC = () => {
   const [showCreditModal, setShowCreditModal] = useState(false); 
   const mainContentRef = useRef<HTMLDivElement>(null);
 
-  // Safe navigation wrapper that respects current language
   const safeHistoryPush = (path: string) => {
       try {
           const fullPath = `/${language}${path === '/' ? '' : path}`;
           window.history.pushState({}, '', fullPath);
-      } catch (e) {
-          console.warn("History push ignored:", e);
-      }
+      } catch (e) { console.warn("History push ignored:", e); }
   };
 
   const safeHistoryReplace = (path: string) => {
       try {
           const fullPath = `/${language}${path === '/' ? '' : path}`;
           window.history.replaceState({}, '', fullPath);
-      } catch (e) {
-          console.warn("History replace ignored:", e);
-      }
+      } catch (e) { console.warn("History replace ignored:", e); }
   };
 
-  // SEO Mapping Function
   const getSeoMetadata = (view: string, activeTool: Tool) => {
-      // Default Metadata
       let meta = {
           title: "OPZEN AI - Kiến tạo không gian với AI", 
           description: "Nền tảng AI hỗ trợ thiết kế kiến trúc, nội thất và quy hoạch.",
           keywords: "AI kiến trúc, thiết kế nhà AI, render nội thất, quy hoạch đô thị, diễn họa kiến trúc, opzen",
           noindex: false
       };
-
       if (view === 'homepage') {
           meta = { 
               title: "OPZEN AI - Phần mềm AI Kiến trúc & Nội thất số 1 Việt Nam", 
@@ -126,9 +120,7 @@ const AppContent: React.FC = () => {
   const seoData = getSeoMetadata(view, activeTool);
 
   useEffect(() => {
-      if (mainContentRef.current) {
-          mainContentRef.current.scrollTo(0, 0);
-      }
+      if (mainContentRef.current) mainContentRef.current.scrollTo(0, 0);
   }, [activeTool]);
 
   useEffect(() => {
@@ -162,87 +154,130 @@ const AppContent: React.FC = () => {
       return () => window.removeEventListener('popstate', handlePopState);
   }, [session]); 
 
+  // --- CRITICAL AUTH LOGIC FIX ---
   useEffect(() => {
     let mounted = true;
+    
+    // Check if we are in the middle of a redirect (Hash exists)
+    // If hash exists, we force loading to stay TRUE until onAuthStateChange fires
+    const isHashRedirect = window.location.hash && window.location.hash.includes('access_token');
+    if (isHashRedirect) {
+        setLoadingSession(true);
+    }
+
+    // Safety timeout: If Supabase takes too long or hash is malformed, stop loading after 5s
+    const safetyTimer = setTimeout(() => {
+        if (mounted && loadingSession) {
+            console.warn("Auth timeout - clearing loader");
+            setLoadingSession(false);
+        }
+    }, 5000);
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       if (!mounted) return;
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
+      
+      if (newSession) setSession(newSession);
+
+      // Handle Redirect & Login
+      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || newSession) && newSession) {
+          clearTimeout(safetyTimer);
+          
+          // Clean URL hash if exists
           if (window.location.hash && window.location.hash.includes('access_token')) {
               window.history.replaceState(null, '', window.location.pathname + window.location.search);
           }
-      }
-      setSession(newSession);
-      if (event === 'SIGNED_OUT') {
-          setSession(null); setUserStatus(null); setSelectedPlan(null);
-          const cleanPath = getPathWithoutLocale();
-          if (cleanPath === '/feature' || cleanPath === '/payment' || cleanPath === '/video') {
-              setView('homepage'); safeHistoryReplace('/');
-          }
-          setLoadingSession(false); return;
-      }
-      if (newSession) {
+
+          // Check for pending plans (payment flow)
           const savedPlanId = localStorage.getItem('pendingPlanId');
           const plan = savedPlanId ? plans.find(p => p.id === savedPlanId) : pendingPlan;
           const params = new URLSearchParams(window.location.search);
           const urlPlanId = params.get('plan');
           const urlPlan = urlPlanId ? plans.find(p => p.id === urlPlanId) : null;
-          
-          if (urlPlan) { setSelectedPlan(urlPlan); setView('payment'); safeHistoryReplace('/'); }
-          else if (plan) { setSelectedPlan(plan); setPendingPlan(null); localStorage.removeItem('pendingPlanId'); setView('payment'); }
-          else if (view === 'auth') { 
+
+          if (urlPlan) { 
+              setSelectedPlan(urlPlan); setView('payment'); safeHistoryReplace('/'); 
+          } else if (plan) { 
+              setSelectedPlan(plan); setPendingPlan(null); localStorage.removeItem('pendingPlanId'); setView('payment'); 
+          } else {
+              // Standard Login Routing
               const cleanPath = getPathWithoutLocale();
-              if (cleanPath === '/video') setView('video'); 
-              else { setView('app'); safeHistoryReplace('/feature'); } 
-          }
-          else {
-              if (view === 'homepage') {
-                   const cleanPath = getPathWithoutLocale();
-                   if (cleanPath === '/feature') setView('app');
-                   else if (cleanPath === '/video') setView('video');
+              if (cleanPath === '/video') {
+                  setView('video');
+              } else if (cleanPath === '/pricing') {
+                  setView('pricing');
+              } else {
+                  // Redirect to HOMEPAGE view by default if on root or auth
+                  // User requested to redirect to Homepage not Feature
+                  if (cleanPath === '/' || cleanPath === '/auth') {
+                      setView('homepage');
+                      safeHistoryReplace('/');
+                  } else if (cleanPath === '/feature') {
+                      setView('app');
+                  } else {
+                      // Fallback for other logged-in states
+                      setView('homepage');
+                  }
               }
           }
           
-          cleanupStuckJobs(newSession.user.id).catch(console.error);
-          
-      } else { if (view === 'app' || view === 'payment' || view === 'video') { setView('homepage'); safeHistoryPush('/'); } }
-      setLoadingSession(false);
+          if (newSession.user) {
+             cleanupStuckJobs(newSession.user.id).catch(console.error);
+          }
+          setLoadingSession(false);
+      } 
+      
+      // Handle Logout
+      if (event === 'SIGNED_OUT') {
+          clearTimeout(safetyTimer);
+          setSession(null); 
+          setUserStatus(null); 
+          setSelectedPlan(null);
+          const cleanPath = getPathWithoutLocale();
+          if (cleanPath === '/feature' || cleanPath === '/payment' || cleanPath === '/video') {
+              setView('homepage'); 
+              safeHistoryReplace('/');
+          }
+          setLoadingSession(false);
+      }
     });
-    
-    // Initial Session Check & Routing
-    const isRedirectingFromProvider = window.location.hash && window.location.hash.includes('access_token');
-    if (!isRedirectingFromProvider) {
-        const initSession = async () => {
-            const { data: { session: initialSession } } = await supabase.auth.getSession();
-            if (mounted) {
-                const cleanPath = getPathWithoutLocale();
-                if (initialSession) {
-                    setSession(initialSession);
-                    cleanupStuckJobs(initialSession.user.id).catch(console.error);
 
+    // Initial Session Check (run once on mount)
+    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
+        if (mounted) {
+            if (initialSession) {
+                clearTimeout(safetyTimer);
+                setSession(initialSession);
+                
+                if (!isHashRedirect) {
+                    const cleanPath = getPathWithoutLocale();
                     if (cleanPath === '/pricing') setView('pricing');
-                    else if (cleanPath === '/feature') setView('app');
                     else if (cleanPath === '/video') setView('video');
-                    else if (cleanPath === '/payment') {
-                         const params = new URLSearchParams(window.location.search);
-                         const planId = params.get('plan');
-                         const plan = plans.find(p => p.id === planId);
-                         if (plan) { setSelectedPlan(plan); setView('payment'); } else setView('app');
-                    } else setView('homepage');
-                } else { 
-                    if (cleanPath === '/pricing') setView('pricing'); 
-                    else if (cleanPath === '/feature' || cleanPath === '/video') { setView('homepage'); safeHistoryReplace('/'); } 
+                    else if (cleanPath === '/feature') setView('app');
+                    else {
+                        // Default to homepage if just visiting root
+                        setView('homepage');
+                        if (cleanPath === '/auth') safeHistoryReplace('/');
+                    }
                 }
+            }
+            
+            // Only stop loading if NOT waiting for hash redirect event
+            if (!isHashRedirect) {
+                clearTimeout(safetyTimer);
                 setLoadingSession(false);
             }
-        };
-        initSession();
-    } else { setLoadingSession(true); }
-    return () => { mounted = false; subscription.unsubscribe(); };
-  }, [pendingPlan]);
+        }
+    });
+
+    return () => { 
+        mounted = false; 
+        clearTimeout(safetyTimer);
+        subscription.unsubscribe(); 
+    };
+  }, []); 
 
   const fetchUserStatus = useCallback(async () => {
     if (session?.user) {
-      // Pass full name to ensure new user sync has name data
       const fullName = session.user.user_metadata?.full_name || session.user.email?.split('@')[0];
       const status = await getUserStatus(session.user.id, session.user.email, fullName);
       setUserStatus(status);
@@ -270,12 +305,7 @@ const AppContent: React.FC = () => {
   };
 
   const handleThemeToggle = () => { setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light')); };
-  
-  const handleAuthNavigate = (_mode: 'login' | 'signup' = 'login') => { 
-      // mode argument is ignored as auth is unified now
-      setView('auth'); 
-  };
-  
+  const handleAuthNavigate = (_mode: 'login' | 'signup' = 'login') => { setView('auth'); };
   const handleStartDesigning = () => { if (session) { setView('app'); safeHistoryPush('/feature'); } else { handleAuthNavigate('signup'); } };
 
   const handleNavigateToTool = (tool: Tool) => {
@@ -311,8 +341,6 @@ const AppContent: React.FC = () => {
   };
 
   const userCredits = userStatus?.credits || 0;
-
-  // Check if active tool is in extended tools
   const isExtendedTool = utilityTools.tools.some(t => t.tool === activeTool);
 
   // -- RENDER LOGIC --
