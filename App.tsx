@@ -64,6 +64,7 @@ const AppContent: React.FC = () => {
   const utilityTools = useUtilityTools(); // Use Hook here
   
   const [view, setView] = useState<'homepage' | 'auth' | 'app' | 'pricing' | 'payment' | 'video'>('homepage');
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login'); 
   const [session, setSession] = useState<Session | null>(null);
   const [loadingSession, setLoadingSession] = useState(true);
   
@@ -154,7 +155,7 @@ const AppContent: React.FC = () => {
                else if (session) { setView('app'); }
                else { if (plan) { setPendingPlan(plan); localStorage.setItem('pendingPlanId', plan.id); } setView('homepage'); }
           } else if (cleanPath === '/pricing') { setView('pricing'); }
-          else if (cleanPath === '/video') { if (session) setView('video'); else { setView('auth'); } }
+          else if (cleanPath === '/video') { if (session) setView('video'); else { setAuthMode('login'); setView('auth'); } }
           else if (cleanPath === '/') { setView('homepage'); }
           else if (cleanPath === '/feature') { if (session) setView('app'); else { safeHistoryReplace('/'); setView('homepage'); } }
       };
@@ -271,8 +272,8 @@ const AppContent: React.FC = () => {
 
   const handleThemeToggle = () => { setTheme(prevTheme => (prevTheme === 'light' ? 'dark' : 'light')); };
   
-  const handleAuthNavigate = (_mode: 'login' | 'signup' = 'login') => { 
-      // mode argument is ignored as auth is unified now
+  const handleAuthNavigate = (mode: 'login' | 'signup' = 'login') => { 
+      setAuthMode(mode);
       setView('auth'); 
   };
   
@@ -406,7 +407,7 @@ const AppContent: React.FC = () => {
           );
       }
 
-      if (view === 'auth') { return <AuthPage onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} />; }
+      if (view === 'auth') { return <AuthPage initialMode={authMode} onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} />; }
       return ( <div className="relative"> <Homepage onStart={handleStartDesigning} onAuthNavigate={handleAuthNavigate} onNavigateToPricing={handleNavigateToPricing} session={session} userStatus={userStatus} onGoToGallery={handleOpenGallery} onOpenProfile={handleOpenProfile} onNavigateToTool={handleNavigateToTool} onSignOut={handleSignOut} /> </div> );
   };
 

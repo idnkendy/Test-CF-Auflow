@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase, isSupabaseConfigured } from '../../services/supabaseClient';
 import Spinner from '../Spinner';
 import { Logo } from '../common/Logo';
@@ -7,6 +7,7 @@ import { useLanguage } from '../../hooks/useLanguage';
 
 interface AuthPageProps {
   onGoHome: () => void;
+  initialMode?: 'login' | 'signup';
 }
 
 const GoogleIcon = () => (
@@ -18,10 +19,34 @@ const GoogleIcon = () => (
     </svg>
 );
 
-const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
+// Helper to call backend sync
+const syncToLadiPage = async (email: string, fullName: string) => {
+    try {
+        // @ts-ignore
+        const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
+        const baseUrl = BACKEND_URL.replace(/\/$/, ""); 
+        await fetch(`${baseUrl}/sync-ladipage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email, full_name: fullName, action: 'sync_ladipage' })
+        });
+    } catch (e) {
+        console.error("Failed to sync new user to LadiPage", e);
+    }
+};
+
+const AuthPage: React.FC<AuthPageProps> = ({ onGoHome, initialMode = 'login' }) => {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+
+  useEffect(() => {
+    setMode(initialMode);
+    setError(null);
+  }, [initialMode]);
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -36,6 +61,55 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
         setError(error.message);
         setLoading(false);
     }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) {
+        setError(t('common.error'));
+        return;
+    }
+    setLoading(true);
+    setError(null);
+
+    try {
+        if (mode === 'signup') {
+            const fullName = email.split('@')[0];
+            const { data, error } = await supabase.auth.signUp({
+                email,
+                password,
+                options: {
+                    data: {
+                        full_name: fullName, 
+                    }
+                }
+            });
+            if (error) throw error;
+            
+            // Sync to LadiPage immediately after signup
+            syncToLadiPage(email, fullName);
+
+            if (data.user && !data.session) {
+                 setError("Đăng ký thành công! Vui lòng kiểm tra email để xác nhận tài khoản.");
+                 setLoading(false); 
+                 return;
+            }
+        } else {
+            const { error } = await supabase.auth.signInWithPassword({
+                email,
+                password,
+            });
+            if (error) throw error;
+        }
+    } catch (err: any) {
+        setError(err.message || (mode === 'login' ? "Đăng nhập thất bại." : "Đăng ký thất bại."));
+        setLoading(false);
+    }
+  };
+
+  const toggleMode = () => {
+      setMode(prev => prev === 'login' ? 'signup' : 'login');
+      setError(null);
   };
 
   return (
@@ -55,7 +129,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
             <div className="bg-surface dark:bg-[#191919] p-8 rounded-3xl shadow-2xl border border-border-color dark:border-[#302839] relative overflow-hidden">
                 
                 <h2 className="text-xl font-bold text-text-primary dark:text-white mb-6 text-center">
-                    {t('auth.login_title')}
+                    {mode === 'signup' ? t('auth.signup_title') : t('auth.login_title')}
                 </h2>
 
                 {!isSupabaseConfigured && (
@@ -73,7 +147,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                         disabled={loading || !isSupabaseConfigured}
                         className="w-full flex justify-center items-center gap-3 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-3.5 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group"
                     >
-                        {loading ? <Spinner /> : (
+                        {loading && !email ? <Spinner /> : (
                             <>
                                 <GoogleIcon />
                                 <span className="text-sm group-hover:text-[#7f13ec] transition-colors">
@@ -82,6 +156,64 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                             </>
                         )}
                     </button>
+
+                    <div className="relative flex py-2 items-center">
+                        <div className="flex-grow border-t border-gray-300 dark:border-gray-700"></div>
+                        <span className="flex-shrink-0 mx-4 text-gray-400 text-xs uppercase">{t('auth.or')}</span>
+                        <div className="flex-grow border-t border-gray-300 dark:border-gray-700"></div>
+                    </div>
+
+                    <form onSubmit={handleEmailAuth} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('auth.email_label')}</label>
+                            <input 
+                                type="email" 
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-700 rounded-xl p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all"
+                                placeholder="name@example.com"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('auth.password_label')}</label>
+                            <input 
+                                type="password" 
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-700 rounded-xl p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all"
+                                placeholder="••••••••"
+                                required
+                                minLength={6}
+                            />
+                        </div>
+                        
+                        <button
+                            type="submit"
+                            disabled={loading || !isSupabaseConfigured}
+                            className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3.5 rounded-xl transition-all shadow-lg shadow-purple-500/20 mt-2 flex justify-center items-center gap-2"
+                        >
+                            {loading && email ? <Spinner /> : (mode === 'login' ? t('auth.login_btn') : t('auth.signup_btn'))}
+                        </button>
+                    </form>
+                </div>
+
+                <div className="mt-6 text-center text-sm text-gray-600 dark:text-gray-400">
+                    {mode === 'login' ? (
+                        <>
+                            {t('auth.no_account')} {' '}
+                            <button onClick={toggleMode} className="text-[#7f13ec] font-bold hover:underline">
+                                {t('auth.signup_now')}
+                            </button>
+                        </>
+                    ) : (
+                        <>
+                            {t('auth.have_account')} {' '}
+                            <button onClick={toggleMode} className="text-[#7f13ec] font-bold hover:underline">
+                                {t('auth.login_now')}
+                            </button>
+                        </>
+                    )}
                 </div>
             </div>
             
