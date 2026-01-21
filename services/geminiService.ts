@@ -1,22 +1,128 @@
 
 import { GoogleGenAI } from "@google/genai";
 import { FileData } from "../types";
+import { supabase } from "./supabaseClient";
 
-const getGeminiApiKey = (): string => {
-    // The API key must be obtained exclusively from the environment variable process.env.API_KEY
-    return process.env.API_KEY || "";
+// --- SECURITY & UTILS ---
+
+// KHÓA BÍ MẬT (Phải khớp với v_secret trong SQL function)
+const XOR_SECRET = 'OPZEN_SUPER_SECRET_2025';
+
+// Hàm xóa API Key khỏi chuỗi văn bản để bảo mật log
+const scrubErrorText = (text: string): string => {
+    if (!text) return "";
+    return text
+        .replace(/AIza[A-Za-z0-9_-]{35}/g, '***')
+        .replace(/api_key:[A-Za-z0-9_-]+/g, 'api_key:***')
+        .replace(/Consumer 'api_key:[^']+'/g, "API Key");
+};
+
+// Hàm giải mã XOR từ chuỗi Base64
+const decryptCode = (encryptedBase64: string): string => {
+    try {
+        if (!encryptedBase64) return "";
+        const binaryString = atob(encryptedBase64);
+        let decrypted = '';
+        for (let i = 0; i < binaryString.length; i++) {
+            const secretChar = XOR_SECRET.charCodeAt(i % XOR_SECRET.length);
+            const encryptedChar = binaryString.charCodeAt(i);
+            decrypted += String.fromCharCode(encryptedChar ^ secretChar);
+        }
+        return decrypted;
+    } catch (e) {
+        console.error("Lỗi giải mã API Key:", e);
+        return encryptedBase64;
+    }
+};
+
+const normalizeCode = (code: string): string => {
+    if (!code) return "";
+    return code.trim().replace(/[\n\r\s]/g, '');
+};
+
+// --- API KEY MANAGEMENT ---
+
+const getGeminiApiKey = async (): Promise<string> => {
+    try {
+        // 1. Ưu tiên biến môi trường Vite (Development/Local)
+        // @ts-ignore
+        if (typeof import.meta !== 'undefined' && import.meta.env) {
+            // @ts-ignore
+            if (import.meta.env.VITE_API_KEY) return import.meta.env.VITE_API_KEY;
+            // @ts-ignore
+            if (import.meta.env.API_KEY) return import.meta.env.API_KEY;
+        }
+
+        // 2. Fallback process.env
+        if (typeof process !== 'undefined' && process.env) {
+             if (process.env.VITE_API_KEY) return process.env.VITE_API_KEY;
+             if (process.env.API_KEY) return process.env.API_KEY;
+        }
+
+        // 3. Gọi RPC để lấy key ngẫu nhiên từ Supabase (Production)
+        const { data: encryptedKey, error } = await supabase.rpc('get_random_api_key');
+
+        if (error) {
+            // Fallback: Nếu không có RPC, query trực tiếp bảng api_keys
+            if (error.message?.includes('function') && error.message?.includes('not found')) {
+                 const { data: keys } = await supabase
+                    .from('api_keys')
+                    .select('key_value')
+                    .eq('is_active', true);
+                 
+                 if (keys && keys.length > 0) {
+                     const randomIndex = Math.floor(Math.random() * keys.length);
+                     return keys[randomIndex].key_value;
+                 }
+            }
+            console.error("Supabase RPC/DB Error:", error);
+            throw new Error("Không thể kết nối đến hệ thống cấp Key.");
+        }
+
+        if (!encryptedKey) throw new Error("Hệ thống đang bận, vui lòng thử lại sau giây lát.");
+        
+        // Giải mã key nhận được
+        const apiKey = normalizeCode(decryptCode(encryptedKey));
+        
+        if (!apiKey || apiKey.length < 10) {
+             // Fallback nếu giải mã ra chuỗi rỗng (trường hợp key chưa encrypt trong DB cũ)
+             if (encryptedKey.startsWith("AIza")) return encryptedKey;
+             throw new Error("API Key không hợp lệ.");
+        }
+
+        return apiKey;
+    } catch (err: any) {
+        throw new Error(err.message || "Lỗi lấy API Key.");
+    }
 };
 
 export const getDynamicAIClient = async (): Promise<GoogleGenAI> => {
-    const key = getGeminiApiKey();
-    if (!key) throw new Error("API Key configuration missing");
+    const key = await getGeminiApiKey();
+    if (!key) {
+        console.error("CRITICAL ERROR: API Key is missing.");
+        throw new Error("API Key configuration missing. Please check console for details.");
+    }
     return new GoogleGenAI({ apiKey: key });
 };
 
 export const handleGeminiError = (error: any) => {
-    console.error("Gemini Error:", error);
-    if (error.toString().includes("SAFETY")) throw new Error("SAFETY_POLICY_VIOLATION");
-    throw error;
+    let msg = error?.message || error?.toString() || "";
+    // Xóa key khỏi thông báo lỗi
+    msg = scrubErrorText(msg);
+    
+    console.error("Gemini Error Detail:", msg);
+    
+    if (msg.includes("SAFETY") || msg.includes("blocked")) {
+        throw new Error("SAFETY_POLICY_VIOLATION");
+    }
+    if (msg.includes("403") || msg.includes("API key")) {
+        throw new Error("API Key Invalid or Expired");
+    }
+    if (msg.includes('Requested entity was not found')) {
+        throw new Error("Lỗi: Không tìm thấy thực thể yêu cầu.");
+    }
+    
+    throw new Error(msg);
 };
 
 export const retryOperation = async <T>(operation: () => Promise<T>, retries = 2): Promise<T> => {
@@ -32,21 +138,27 @@ export const retryOperation = async <T>(operation: () => Promise<T>, retries = 2
 };
 
 export const getFileDataFromUrl = async (url: string): Promise<FileData> => {
-    const res = await fetch(url);
-    const blob = await res.blob();
-    return new Promise((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => {
-            const res = reader.result as string;
-            resolve({
-                base64: res.split(',')[1],
-                mimeType: blob.type,
-                objectURL: url
-            });
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-    });
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`Failed to fetch image: ${res.statusText}`);
+        const blob = await res.blob();
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const res = reader.result as string;
+                resolve({
+                    base64: res.split(',')[1],
+                    mimeType: blob.type,
+                    objectURL: url
+                });
+            };
+            reader.onerror = reject;
+            reader.readAsDataURL(blob);
+        });
+    } catch (e) {
+        console.error("getFileDataFromUrl Error:", e);
+        throw e;
+    }
 };
 
 export const processContentResponseAsync = async (response: any): Promise<string> => {
@@ -147,7 +259,8 @@ export const editImage = async (prompt: string, image: FileData, count: number =
 
 export const generateText = async (prompt: string): Promise<string> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-3-flash-preview';
+    // Use Flash Lite for lowest cost text generation
+    const model = 'gemini-flash-lite-latest';
     
     return retryOperation(async () => {
         try {
@@ -165,7 +278,8 @@ export const generateText = async (prompt: string): Promise<string> => {
 
 export const generateArchitecturalPrompt = async (image: FileData, lang: 'vi' | 'en' = 'vi'): Promise<string> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-2.0-flash-exp';
+    // Use Flash Lite for lowest cost multimodal analysis
+    const model = 'gemini-flash-lite-latest';
     
     let prompt = "";
     if (lang === 'vi') {
@@ -204,7 +318,8 @@ export const generateFloorPlanPrompt = async (
     lang: 'vi' | 'en' = 'vi'
 ): Promise<string> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-2.0-flash-exp';
+    // Use Flash Lite for lowest cost multimodal analysis
+    const model = 'gemini-flash-lite-latest';
     
     let prompt = "";
     const isVi = lang === 'vi';
@@ -258,7 +373,8 @@ export const generateFloorPlanPrompt = async (
 
 export const generateInteriorPrompt = async (image: FileData, lang: 'vi' | 'en' = 'vi'): Promise<string> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-2.0-flash-exp';
+    // Use Flash Lite for lowest cost multimodal analysis
+    const model = 'gemini-flash-lite-latest';
     
     let prompt = "";
     if (lang === 'vi') {
@@ -298,7 +414,8 @@ export const generatePromptSuggestions = async (
     lang: 'vi' | 'en' = 'vi'
 ): Promise<Record<string, string[]> | null> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-2.0-flash-exp';
+    // Use Flash Lite for lowest cost multimodal analysis
+    const model = 'gemini-flash-lite-latest';
     
     const isVi = lang === 'vi';
     
@@ -368,7 +485,8 @@ export const generatePromptSuggestions = async (
 
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-2.0-flash-exp';
+    // Use Flash Lite for lowest cost multimodal analysis
+    const model = 'gemini-flash-lite-latest';
     
     const parts: any[] = [{ text: `Act as an expert architectural prompt engineer. Enhance the following user input into a detailed, professional prompt suitable for high-quality AI rendering (like Midjourney or Gemini). Focus on lighting, materials, atmosphere, and camera specifications. \n\nUser Input: "${userInput}"` }];
     
@@ -393,7 +511,8 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 
 export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
     const ai = await getDynamicAIClient();
-    const model = 'gemini-2.0-flash-exp';
+    // Use Flash Lite for lowest cost multimodal analysis
+    const model = 'gemini-flash-lite-latest';
     
     const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI. 
     Tập trung mô tả chuyển động camera, thay đổi ánh sáng, và các yếu tố khí quyển. Giữ prompt dưới 60 từ.

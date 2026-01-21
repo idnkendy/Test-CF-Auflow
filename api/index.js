@@ -6,8 +6,11 @@ const TEST_MEDIA_ID = "";
 const TEST_PROJECT_ID = ""; 
 const DEFAULT_SUPABASE_URL = 'https://mtlomjjlgvsjpudxlspq.supabase.co';
 
-// QUAN TRỌNG: DÁN SERVICE ROLE KEY (SECRET) VÀO ĐÂY ĐỂ WORKER CÓ QUYỀN TRỪ USAGE
-// NẾU KHÔNG CÓ KHÓA NÀY, VIỆC CẬP NHẬT DATABASE SẼ THẤT BẠI (LỖI 401/403)
+// =================================================================================
+// QUAN TRỌNG: DÁN SERVICE ROLE KEY (SECRET) VÀO ĐÂY
+// Worker cần quyền ADMIN để trừ tiền/cập nhật DB. Khóa "anon" không đủ quyền.
+// Lấy tại: Supabase Dashboard > Project Settings > API > service_role
+// =================================================================================
 const SUPABASE_SERVICE_ROLE_KEY = ""; 
 
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMzAwMjcsImV4cCI6MjA3ODkwNjAyN30.6K-rSAFVJxQPLVjZKdJpBspb5tHE1dZiry4lS6u6JzQ";
@@ -28,10 +31,10 @@ const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
 const UPSCALE_FAST_WEBAPP_ID = "1983430456135852034";
 
 // --- LADIPAGE / LADIFLOW CONFIGURATION ---
-// 1. Dán API Key của LadiFlow vào đây (Lấy trong Cài đặt -> API Key của LadiFlow)
-const LADIFLOW_API_KEY = "rDTPm0fYDhyDMAAXjAklw0Ek"; 
-// 2. URL API chuẩn của LadiFlow
-const LADIFLOW_API_URL = "https://api.ladiflow.com/v1/customers";
+// API Key từ yêu cầu CURL (Đã sửa từ số 0 thành chữ O)
+const LADIFLOW_API_KEY = "SDKKdws6CcfC0QHwfwqkUrCb"; 
+// URL API chuẩn của LadiFlow
+const LADIFLOW_API_URL = "https://api.service.ladiflow.com/1.0/customer/create-or-update";
 
 const HEADERS = {
     'content-type': 'text/plain;charset=UTF-8', 
@@ -541,17 +544,21 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
 // --- Helper to push to LadiFlow via API ---
 async function sendToLadiPage(data) {
     if (!LADIFLOW_API_KEY) {
-        // API Key not configured
         console.warn("[LadiFlow] API Key missing, skipping sync.");
         return { success: false, message: "Missing API Key" };
     }
 
     try {
+        // Simple name splitting for robustness
+        const nameParts = (data.name || "").trim().split(' ');
+        const lastName = nameParts.length > 1 ? nameParts.pop() : "";
+        const firstName = nameParts.join(" ") || data.name;
+
         const payload = {
             email: data.email,
             phone: data.phone || "",
-            first_name: data.name, 
-            last_name: "", 
+            first_name: firstName, 
+            last_name: lastName, // Sending split names just in case
             tags: data.tags 
         };
 
@@ -559,17 +566,25 @@ async function sendToLadiPage(data) {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'Authorization': `Bearer ${LADIFLOW_API_KEY}`
+                'api-key': LADIFLOW_API_KEY // Ensure lowercase key per common standards
             },
             body: JSON.stringify(payload)
         });
         
+        const responseText = await response.text();
+        let responseJson;
+        try { responseJson = JSON.parse(responseText); } catch(e) { responseJson = responseText; }
+
         if (!response.ok) {
-            const errorText = await response.text();
-            throw new Error(`LadiFlow API Error (${response.status}): ${errorText}`);
+            console.error(`[LadiFlow] Error ${response.status}:`, responseText);
+            return { success: false, message: `LadiFlow Error (${response.status})`, details: responseJson };
         }
         
-        return { success: true, message: "Sync successful" };
+        return { 
+            success: true, 
+            message: "Sync successful", 
+            ladiflow_response: responseJson 
+        };
 
     } catch (e) {
         console.error("[LadiFlow] Network error:", e);
@@ -625,7 +640,7 @@ async function handleSePayWebhook(request, env) {
                         email: tx.customer_email,
                         phone: tx.customer_phone,
                         name: tx.customer_name,
-                        tags: ["OPZEN_FIRST_PURCHASE", "OPZEN_CUSTOMER"]
+                        tags: ["696d3c9b4cb43700128d7061"]
                     });
                 }
             }
@@ -695,8 +710,9 @@ async function handleRunningHubProxy(action, body) {
 
 // --- NEW FUNCTION: GEO CHECK ---
 async function handleGeoCheck(request) {
-    const country = request.headers.get('cf-ipcountry') || 'VN';
-    return { country };
+    // If cf-ipcountry exists, use it. If null, return null (do not default to VN here).
+    const country = request.headers.get('cf-ipcountry');
+    return { country: country || null };
 }
 
 // --- NEW FUNCTION: SYNC USER TO LADIPAGE ---
@@ -710,9 +726,9 @@ async function handleSyncLadiPage(body, env) {
         const result = await sendToLadiPage({
             email: email,
             name: full_name,
-            tags: ["OPZEN_NEW_USER"]
+            tags: ["696d3c8a4cb43700128d705a"]
         });
-        // Important: Return the actual result from LadiFlow to allow frontend debugging
+        // Return full LadiFlow result for debugging
         return result; 
     }
     

@@ -19,9 +19,15 @@ const GoogleIcon = () => (
 );
 
 const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  
+  // Email/Password State
+  const [isLoginMode, setIsLoginMode] = useState(true);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -47,6 +53,48 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
     }
   };
 
+  const handleEmailAuth = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!email || !password) {
+          setError(language === 'vi' ? 'Vui lòng nhập đầy đủ email và mật khẩu.' : 'Please enter email and password.');
+          return;
+      }
+
+      setLoading(true);
+      setError(null);
+      setMessage(null);
+
+      try {
+          if (isLoginMode) {
+              // Login
+              const { error } = await supabase.auth.signInWithPassword({
+                  email,
+                  password,
+              });
+              if (error) throw error;
+          } else {
+              // Sign Up
+              const { error } = await supabase.auth.signUp({
+                  email,
+                  password,
+              });
+              if (error) throw error;
+              setMessage(language === 'vi' 
+                  ? 'Đăng ký thành công! Vui lòng kiểm tra email để xác nhận (nếu cần) hoặc đăng nhập ngay.' 
+                  : 'Registration successful! Please check your email to confirm (if required) or login now.');
+              // Switch to login mode after successful signup attempt
+              setIsLoginMode(true); 
+          }
+      } catch (err: any) {
+          let msg = err.message;
+          if (msg === "Invalid login credentials") msg = language === 'vi' ? "Email hoặc mật khẩu không chính xác." : "Invalid email or password.";
+          if (msg.includes("already registered")) msg = language === 'vi' ? "Email này đã được đăng ký." : "User already registered.";
+          setError(msg);
+      } finally {
+          setLoading(false);
+      }
+  };
+
   return (
     <div className="min-h-screen bg-main-bg dark:bg-[#0F0F0F] flex flex-col items-center justify-center p-4 relative font-sans transition-colors duration-300">
         <button onClick={onGoHome} className="absolute top-6 left-6 text-text-secondary dark:text-gray-400 hover:text-accent transition-colors flex items-center gap-2 font-medium">
@@ -64,7 +112,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
             <div className="bg-surface dark:bg-[#191919] p-8 rounded-3xl shadow-2xl border border-border-color dark:border-[#302839] relative overflow-hidden">
                 
                 <h2 className="text-xl font-bold text-text-primary dark:text-white mb-6 text-center">
-                    {t('auth.login_title')}
+                    {isLoginMode ? t('auth.login_title') : t('auth.signup_title')}
                 </h2>
 
                 {!isSupabaseConfigured && (
@@ -76,17 +124,24 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                 
                 {error && (
                     <div className="mb-6 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/20 dark:border-red-500 dark:text-red-400 rounded-xl text-sm text-left animate-shake">
-                        <strong>Lỗi:</strong> {error}
+                        {error}
+                    </div>
+                )}
+
+                {message && (
+                    <div className="mb-6 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 rounded-xl text-sm text-left">
+                        {message}
                     </div>
                 )}
                 
                 <div className="space-y-4">
+                    {/* Google Login */}
                     <button
                         onClick={handleGoogleSignIn}
                         disabled={loading || !isSupabaseConfigured}
-                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-3.5 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group"
+                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-3 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group"
                     >
-                        {loading ? <Spinner /> : (
+                        {loading && !email ? <Spinner /> : (
                             <>
                                 <GoogleIcon />
                                 <span className="text-sm group-hover:text-[#7f13ec] transition-colors">
@@ -95,6 +150,71 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                             </>
                         )}
                     </button>
+
+                    {/* Divider */}
+                    <div className="relative flex py-2 items-center">
+                        <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+                        <span className="flex-shrink-0 mx-4 text-gray-400 text-xs font-medium uppercase">{t('auth.or')}</span>
+                        <div className="flex-grow border-t border-gray-200 dark:border-gray-700"></div>
+                    </div>
+
+                    {/* Email/Password Form */}
+                    <form onSubmit={handleEmailAuth} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">
+                                {t('auth.email_label')}
+                            </label>
+                            <input
+                                type="email"
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full bg-gray-50 dark:bg-[#252525] border border-gray-300 dark:border-[#333] rounded-xl px-4 py-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] focus:border-transparent outline-none transition-all"
+                                placeholder="name@example.com"
+                                required
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">
+                                {t('auth.password_label')}
+                            </label>
+                            <input
+                                type="password"
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="w-full bg-gray-50 dark:bg-[#252525] border border-gray-300 dark:border-[#333] rounded-xl px-4 py-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] focus:border-transparent outline-none transition-all"
+                                placeholder="••••••••"
+                                required
+                                minLength={6}
+                            />
+                        </div>
+
+                        <button
+                            type="submit"
+                            disabled={loading || !isSupabaseConfigured}
+                            className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-4 rounded-xl transition-all duration-200 shadow-lg shadow-purple-500/20 disabled:opacity-70 disabled:cursor-not-allowed flex justify-center items-center gap-2"
+                        >
+                            {loading && email ? <Spinner /> : null}
+                            <span>{isLoginMode ? t('auth.login_btn') : t('auth.signup_btn')}</span>
+                        </button>
+                    </form>
+
+                    {/* Toggle Login/Signup */}
+                    <div className="text-center mt-4 pt-2">
+                        <span className="text-sm text-gray-500 dark:text-gray-400">
+                            {isLoginMode ? t('auth.no_account') : t('auth.have_account')}
+                        </span>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setIsLoginMode(!isLoginMode);
+                                setError(null);
+                                setMessage(null);
+                            }}
+                            className="ml-2 text-sm font-bold text-[#7f13ec] hover:underline focus:outline-none"
+                        >
+                            {isLoginMode ? t('auth.signup_now') : t('auth.login_now')}
+                        </button>
+                    </div>
                 </div>
             </div>
             
