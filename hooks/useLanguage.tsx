@@ -12,62 +12,40 @@ interface LanguageContextType {
 
 const LanguageContext = createContext<LanguageContextType | undefined>(undefined);
 
-// Helper to fetch IP location from worker with robust fallbacks
+// Helper to fetch IP location using ONLY external APIs (skipping internal worker)
 const checkGeoLocation = async (): Promise<Language> => {
-    // @ts-ignore
-    const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
-    const baseUrl = BACKEND_URL.replace(/\/$/, "");
-    
-    console.log("Checking geolocation...");
+    console.log("Checking geolocation via External APIs...");
 
-    // 1. Try Internal Worker (Fastest & Most Accurate for Real Users)
+    // 1. Priority 1: api.country.is (Very fast, simple JSON)
     try {
-        const res = await fetch(`${baseUrl}/check-geo`);
-        if (res.ok) {
-            const data = await res.json();
-            
-            // If country is explicitly returned, rely on it
-            if (data.country) {
-                console.log("Internal Geo Check Result:", data.country);
-                return data.country === 'VN' ? 'vi' : 'en';
-            }
-            // If data.country is null (dev environment or missing header), proceed to fallback
-        }
-    } catch (e) {
-        console.warn("Internal Geo check failed, switching to external services:", e);
-    }
-
-    // 2. Fallback A: api.country.is (Very fast, simple JSON)
-    try {
-        console.log("Fallback A: Checking api.country.is...");
         const extRes = await fetch('https://api.country.is');
         if (extRes.ok) {
             const extData = await extRes.json();
             // Returns { "ip": "...", "country": "VN" }
-            console.log("Fallback A Result:", extData.country);
+            console.log("Geo Result (api.country.is):", extData.country);
             return extData.country === 'VN' ? 'vi' : 'en';
         }
     } catch (e) {
-        console.warn("Fallback A failed:", e);
+        console.warn("Priority 1 (api.country.is) failed:", e);
     }
 
-    // 3. Fallback B: ipwho.is (Comprehensive free API)
+    // 2. Priority 2: ipwho.is (Comprehensive free API)
     try {
-        console.log("Fallback B: Checking ipwho.is...");
+        console.log("Falling back to ipwho.is...");
         const extRes = await fetch('https://ipwho.is/');
         if (extRes.ok) {
             const extData = await extRes.json();
             // Returns { "success": true, "country_code": "VN", ... }
             if (extData.success) {
-                console.log("Fallback B Result:", extData.country_code);
+                console.log("Geo Result (ipwho.is):", extData.country_code);
                 return extData.country_code === 'VN' ? 'vi' : 'en';
             }
         }
     } catch (e) {
-        console.warn("Fallback B failed:", e);
+        console.warn("Priority 2 (ipwho.is) failed:", e);
     }
 
-    // 4. Absolute Default
+    // 3. Absolute Default
     console.log("All Geo checks failed, defaulting to 'vi'");
     return 'vi';
 };
