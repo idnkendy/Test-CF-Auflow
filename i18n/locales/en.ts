@@ -37,6 +37,8 @@ export const en = {
   "err.input.prompt": "Please enter a description.",
   "err.input.image": "Please upload a source image.",
   "err.input.required": "Please fill in all required information.",
+  "err.sys.google_generic": "Google system may be experiencing issues, please try again later.",
+  "err.credit.insufficient_system": "You do not have enough credits to perform this task.",
 
   // --- UPLOAD COMPONENT ---
   "upload.click": "Click to upload image",
@@ -250,7 +252,7 @@ export const en = {
   
   // CTA
   "cta.title": "Ready to Build the Future?",
-  "cta.desc": "Join 4,000+ designers using OPZEN AI to elevate their projects.",
+  "cta.desc": "Join 100,000+ designers using OPZEN AI to elevate their projects.",
   "cta.button": "Start Now",
   "cta.note": "No credit card required. Get 60 Credits free.",
   
@@ -416,7 +418,7 @@ export const en = {
   "reno.sugg.sketch_to_space": "Sketch to Space",
   "reno.sugg.model_to_space": "Model to Space",
   
-  // View Sync
+  // View Sync Options (New)
   "sync.tab.sync": "View Sync",
   "sync.tab.creative": "Creative View",
   "sync.step1": "1. Upload Source Image",
@@ -441,9 +443,44 @@ export const en = {
   "sync.workspace.result_title": "Creative Results",
   "sync.workspace.download_all": "Download All",
   "sync.workspace.generating": "Drawing...",
+  "sync.workspace.generating_wait": "Processing, please wait...",
   "sync.workspace.cost": "Cost",
   "sync.workspace.regenerate": "Regenerate",
   "sync.workspace.generate": "Generate",
+
+  // Sync Dropdown Options (New)
+  "sync.angle.default": "Default",
+  "sync.angle.front": "Front View",
+  "sync.angle.left": "3/4 Left View",
+  "sync.angle.right": "3/4 Right View",
+  "sync.angle.wide": "Wide Angle",
+  "sync.angle.pano": "Panorama",
+  "sync.angle.topdown": "Top-down / Aerial",
+  "sync.angle.low": "Low Angle",
+  "sync.angle.closeup": "Close-up",
+  
+  "sync.atm.default": "Default",
+  "sync.atm.morning": "Early Morning",
+  "sync.atm.midday": "Midday Sun",
+  "sync.atm.sunset": "Sunset (Golden Hour)",
+  "sync.atm.night": "Night",
+  "sync.atm.rainy": "Rainy",
+  "sync.atm.misty": "Misty",
+  "sync.atm.after_rain": "After Rain",
+
+  "sync.frame.none": "None",
+  "sync.frame.trees": "Through Trees",
+  "sync.frame.window": "Through Window",
+  "sync.frame.flowers": "Through Flowers",
+  "sync.frame.car": "Through Car Window",
+
+  "sync.int.default": "Default",
+  "sync.int.wide": "Wide Angle",
+  "sync.int.corner": "From Corner",
+  "sync.int.detail": "Detail Shot",
+  "sync.int.window": "Towards Window",
+  "sync.int.night": "Night View",
+  "sync.int.topdown": "Top Down",
 
   // Creative View Options
   "sync.creative.opt.interior": "Interior Views",
@@ -526,6 +563,10 @@ export const en = {
   "ext.floorplan.step3": "3. Fine-tune Details (Click to add)",
   "ext.floorplan.step4": "4. Detailed Description (Prompt)",
   "ext.floorplan.step3_perspective": "3. Describe Viewpoint",
+  "ext.floorplan.mode.topdown_ext": "Master Plan View",
+  "ext.floorplan.mode.topdown_int": "3D Floor Plan",
+  "ext.floorplan.mode.perspective_ext": "3D Architectural View",
+  "ext.floorplan.mode.perspective_int": "3D Interior View",
   "ext.floorplan.auto_prompt": "Auto Generate Prompt",
   "ext.floorplan.analyzing": "Analyzing...",
   "ext.floorplan.btn_generate": "Start Render",
@@ -748,4 +789,13 @@ export const en = {
   "video.loading.5": "Please do not close this tab...",
   "video.loading.6": "Process may take 3-6 minutes...",
   "video.loading.7": "If too long, system will retry automatically...",
+  
+  // --- SAFETY WARNING MODAL ---
+  "safety.title": "Image Rejected",
+  "safety.reason_title": "Common reasons:",
+  "safety.reason_1": "Contains <strong>real people</strong> (especially children or celebrities).",
+  "safety.reason_2": "NSFW content or nudity.",
+  "safety.reason_3": "Violent or disturbing content.",
+  "safety.note": "*Google AI automatically scans and blocks these contents immediately upon upload for safety.",
+  "safety.btn": "Choose another image",
 };

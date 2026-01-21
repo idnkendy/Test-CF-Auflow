@@ -100,19 +100,41 @@ const AppContent: React.FC = () => {
   };
 
   const getSeoMetadata = (view: string, activeTool: Tool) => {
+      // Default / English Metadata
       let meta = {
-          title: "OPZEN AI - Kiến tạo không gian với AI", 
-          description: "Nền tảng AI hỗ trợ thiết kế kiến trúc, nội thất và quy hoạch.",
-          keywords: "AI kiến trúc, thiết kế nhà AI, render nội thất, quy hoạch đô thị, diễn họa kiến trúc, opzen",
+          title: "OPZEN AI - Create Spaces with AI",
+          description: "Leading AI platform supporting Architects and Designers. Render images, generate videos, urban planning, and interior design in seconds.",
+          keywords: "ai architecture, ai render, interior design ai, home design software, opzen ai, architectural visualization",
           noindex: false
       };
-      if (view === 'homepage') {
-          meta = { 
-              title: "OPZEN AI - Phần mềm AI Kiến trúc & Nội thất số 1 Việt Nam", 
-              description: "Công cụ AI hỗ trợ KTS render 3D, thiết kế nội thất, quy hoạch đô thị và tạo video kiến trúc chỉ trong vài giây. Dùng thử miễn phí ngay.",
-              keywords: "ai kiến trúc, render ai, thiết kế nội thất ai, phần mềm thiết kế nhà, midjourney kiến trúc, stable diffusion kiến trúc, opzen ai, diễn họa kiến trúc ai, ai architecture generator",
+
+      // Vietnamese Override
+      if (language === 'vi') {
+           meta = {
+              title: "OPZEN AI - Kiến tạo không gian với AI", 
+              description: "Nền tảng AI hàng đầu hỗ trợ Kiến trúc sư và Nhà thiết kế. Render ảnh, tạo video, quy hoạch đô thị và thiết kế nội thất chỉ trong vài giây.",
+              keywords: "AI kiến trúc, thiết kế nhà AI, render nội thất, quy hoạch đô thị, diễn họa kiến trúc, opzen",
               noindex: false
           };
+      }
+
+      // Homepage Specific Metadata
+      if (view === 'homepage') {
+          if (language === 'vi') {
+              meta = { 
+                  title: "OPZEN AI - Phần mềm AI Kiến trúc & Nội thất", 
+                  description: "Công cụ AI hỗ trợ KTS render 3D, thiết kế nội thất, quy hoạch đô thị và tạo video kiến trúc chỉ trong vài giây. Dùng thử miễn phí ngay.",
+                  keywords: "ai kiến trúc, render ai, thiết kế nội thất ai, phần mềm thiết kế nhà, midjourney kiến trúc, stable diffusion kiến trúc, opzen ai, diễn họa kiến trúc ai, ai architecture generator",
+                  noindex: false
+              };
+          } else {
+              meta = {
+                  title: "OPZEN AI - AI Software for Architecture & Interior Design",
+                  description: "AI tool supporting Architects in 3D rendering, interior design, urban planning, and architectural video creation in seconds. Try for free now.",
+                  keywords: "ai architecture, ai render, interior design ai, home design software, midjourney architecture, stable diffusion architecture, opzen ai, architectural visualization",
+                  noindex: false
+              }
+          }
       }
       return meta;
   };

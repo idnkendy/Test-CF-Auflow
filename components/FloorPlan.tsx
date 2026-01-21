@@ -98,10 +98,14 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         { value: t('opt.style.minimalist'), label: t('opt.style.minimalist') },
     ], [t, language]);
 
-    const topDownLabel = language === 'vi' ? 'Phối cảnh tổng thể' : 'Top-down View';
+    // Use specific keys for Top Down and Perspective labels based on planType (Interior/Exterior)
+    const topDownLabel = planType === 'exterior' 
+        ? t('ext.floorplan.mode.topdown_ext')
+        : t('ext.floorplan.mode.topdown_int');
+
     const perspectiveLabel = planType === 'exterior' 
-        ? (language === 'vi' ? 'Góc nhìn kiến trúc 3D' : '3D Architectural View') 
-        : (language === 'vi' ? 'Góc nhìn nội thất 3D' : '3D Interior View');
+        ? t('ext.floorplan.mode.perspective_ext')
+        : t('ext.floorplan.mode.perspective_int');
 
     useEffect(() => {
         const prompt1_vi = 'Biến thành ảnh chụp thực tế dự án';

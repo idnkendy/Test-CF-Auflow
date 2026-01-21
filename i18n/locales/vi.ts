@@ -36,6 +36,8 @@ export const vi = {
   "err.input.prompt": "Vui lòng nhập mô tả.",
   "err.input.image": "Vui lòng tải lên ảnh gốc.",
   "err.input.required": "Vui lòng nhập đầy đủ thông tin.",
+  "err.sys.google_generic": "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.",
+  "err.credit.insufficient_system": "Bạn không đủ credits để thực hiện tác vụ này.",
 
   // --- UPLOAD COMPONENT ---
   "upload.click": "Nhấp để tải ảnh lên",
@@ -173,7 +175,7 @@ export const vi = {
   "services.interior_desc": "Tự động gợi ý phong cách, vật liệu và bố trí nội thất cho không gian sống.",
   "services.urban": "AI Quy hoạch Đô thị",
   "services.urban_desc": "Phân tích và render quy hoạch khu dân cư, đô thị với mật độ tùy chỉnh.",
-  "services.floorplan": "AI Render Mặt bằng",
+  "services.floorplan": "AI Render Mặt Bằng",
   "services.floorplan_desc": "Chuyển đổi bản vẽ kỹ thuật CAD thành mặt bằng màu 2D/3D trực quan.",
   "services.renovation": "AI Cải tạo Nhà",
   "services.renovation_desc": "Gợi ý phương án cải tạo mặt tiền và nội thất dựa trên ảnh hiện trạng.",
@@ -249,7 +251,7 @@ export const vi = {
   
   // CTA
   "cta.title": "Sẵn sàng kiến tạo tương lai?",
-  "cta.desc": "Tham gia cùng 4,000+ nhà thiết kế đang sử dụng OPZEN AI để nâng tầm dự án.",
+  "cta.desc": "Tham gia cùng 100,000+ nhà thiết kế đang sử dụng OPZEN AI để nâng tầm dự án.",
   "cta.button": "Bắt đầu ngay",
   "cta.note": "Không cần thẻ tín dụng. Tặng ngay 60 Credits.",
   
@@ -415,7 +417,7 @@ export const vi = {
   "reno.sugg.sketch_to_space": "Đưa ảnh vẽ tay vào không gian",
   "reno.sugg.model_to_space": "Đưa mẫu công trình vào không gian",
   
-  // View Sync
+  // View Sync Options (New)
   "sync.tab.sync": "Đồng Bộ View",
   "sync.tab.creative": "Sáng Tạo View",
   "sync.step1": "1. Tải Lên Ảnh Gốc",
@@ -440,9 +442,44 @@ export const vi = {
   "sync.workspace.result_title": "Kết quả sáng tạo",
   "sync.workspace.download_all": "Tải tất cả",
   "sync.workspace.generating": "Đang vẽ...",
+  "sync.workspace.generating_wait": "Đang xử lý, vui lòng đợi...",
   "sync.workspace.cost": "Chi phí",
   "sync.workspace.regenerate": "Tạo lại",
   "sync.workspace.generate": "Tạo ảnh",
+
+  // Sync Dropdown Options (New)
+  "sync.angle.default": "Mặc định",
+  "sync.angle.front": "Chính diện",
+  "sync.angle.left": "Góc 3/4 Trái",
+  "sync.angle.right": "Góc 3/4 Phải",
+  "sync.angle.wide": "Góc rộng",
+  "sync.angle.pano": "Toàn cảnh (Panorama)",
+  "sync.angle.topdown": "Từ trên cao (Top-down)",
+  "sync.angle.low": "Góc thấp (Ngước lên)",
+  "sync.angle.closeup": "Cận cảnh",
+  
+  "sync.atm.default": "Mặc định",
+  "sync.atm.morning": "Sáng sớm",
+  "sync.atm.midday": "Trưa nắng",
+  "sync.atm.sunset": "Hoàng hôn (Giờ vàng)",
+  "sync.atm.night": "Ban đêm",
+  "sync.atm.rainy": "Trời mưa",
+  "sync.atm.misty": "Sương mù",
+  "sync.atm.after_rain": "Sau cơn mưa",
+
+  "sync.frame.none": "Không",
+  "sync.frame.trees": "Xuyên qua tán cây",
+  "sync.frame.window": "Nhìn qua cửa sổ",
+  "sync.frame.flowers": "Tiền cảnh hoa",
+  "sync.frame.car": "Từ trong xe ô tô",
+
+  "sync.int.default": "Mặc định",
+  "sync.int.wide": "Góc rộng bao quát",
+  "sync.int.corner": "Góc nhìn từ góc phòng",
+  "sync.int.detail": "Chi tiết đồ nội thất",
+  "sync.int.window": "Hướng ra cửa sổ",
+  "sync.int.night": "Góc nhìn đêm (Đèn)",
+  "sync.int.topdown": "Mặt bằng bố trí",
 
   // Creative View Options
   "sync.creative.opt.interior": "View Nội thất",
@@ -525,6 +562,10 @@ export const vi = {
   "ext.floorplan.step3": "3. Tinh chỉnh chi tiết (Nhấn để thêm)",
   "ext.floorplan.step4": "4. Mô tả chi tiết (Prompt)",
   "ext.floorplan.step3_perspective": "3. Mô tả góc nhìn",
+  "ext.floorplan.mode.topdown_ext": "Phối cảnh tổng thể",
+  "ext.floorplan.mode.topdown_int": "Mặt bằng 3D",
+  "ext.floorplan.mode.perspective_ext": "Góc nhìn kiến trúc 3D",
+  "ext.floorplan.mode.perspective_int": "Góc nhìn nội thất 3D",
   "ext.floorplan.auto_prompt": "Tạo tự động Prompt",
   "ext.floorplan.analyzing": "Đang phân tích...",
   "ext.floorplan.btn_generate": "Bắt đầu Render",
@@ -747,4 +788,13 @@ export const vi = {
   "video.loading.5": "Vui lòng không tắt tab này...",
   "video.loading.6": "Quá trình có thể mất 3-6 phút...",
   "video.loading.7": "Nếu quá lâu, hệ thống sẽ tự động thử lại...",
+  
+  // --- SAFETY WARNING MODAL ---
+  "safety.title": "Ảnh bị từ chối xử lý",
+  "safety.reason_title": "Nguyên nhân phổ biến:",
+  "safety.reason_1": "Ảnh chứa <strong>người thật</strong> (đặc biệt là trẻ em hoặc người nổi tiếng).",
+  "safety.reason_2": "Ảnh lộ nhiều da thịt hoặc tư thế nhạy cảm.",
+  "safety.reason_3": "Ảnh có nội dung bạo lực hoặc gây khó chịu.",
+  "safety.note": "*Hệ thống AI của Google tự động quét và chặn các nội dung này ngay khi tải lên để đảm bảo an toàn.",
+  "safety.btn": "Chọn ảnh khác ngay",
 };

@@ -1,5 +1,4 @@
 
-// ... (imports remain the same)
 import React, { useState, useEffect, useRef } from 'react';
 import { Session } from '@supabase/supabase-js';
 import { UserStatus, Tool } from '../types';
@@ -19,7 +18,6 @@ interface HomepageProps {
   onSignOut?: () => void;
 }
 
-// ... (LazyVideo component remains the same)
 const LazyVideo = ({ src, poster }: { src: string, poster?: string }) => {
     const videoRef = useRef<HTMLVideoElement>(null);
     const [shouldLoad, setShouldLoad] = useState(false);
@@ -76,6 +74,9 @@ const Homepage: React.FC<HomepageProps> = (props) => {
                     background: rgba(255, 255, 255, 0.03);
                     backdrop-filter: blur(10px);
                     border: 1px solid rgba(255, 255, 255, 0.05);
+                }
+                .hero-glow {
+                    background: radial-gradient(circle, rgba(127, 19, 236, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
                 }
             `}</style>
             
@@ -175,18 +176,18 @@ const Header: React.FC<HomepageProps> = ({ onStart, onAuthNavigate, session, onG
     return (
         <header className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${scrolled ? 'bg-[#121212]/90 backdrop-blur-md border-b border-[#302839]' : 'bg-transparent'}`}>
             <div className="max-w-[1400px] mx-auto px-4 sm:px-6 lg:px-8">
-                <div className="flex items-center justify-between h-20">
+                <div className="flex items-center justify-between h-24">
                     <div className="flex items-center gap-3 cursor-pointer" onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}>
-                        <Logo className="w-10 h-10 text-[#7f13ec]" />
-                        <span className="text-xl font-bold tracking-tight text-white">{t('app.name')}</span>
+                        <Logo className="w-14 h-14 text-[#7f13ec]" />
+                        <span className="text-3xl font-bold tracking-tight text-white">{t('app.name')}</span>
                     </div>
 
                     {/* Desktop Nav */}
                     <nav className="hidden lg:flex items-center gap-8">
-                        <button onClick={() => handleNavClick(Tool.ArchitecturalRendering)} className="text-sm font-medium text-gray-300 hover:text-white transition-colors">{t('nav.render')}</button>
-                        <button onClick={() => handleNavClick(Tool.VideoGeneration)} className="text-sm font-medium text-gray-300 hover:text-white transition-colors">{t('nav.video')}</button>
-                        <button onClick={onNavigateToPricing} className="text-sm font-medium text-gray-300 hover:text-white transition-colors">{t('nav.pricing')}</button>
-                        <button onClick={handleGiftcodeClick} className="text-sm font-medium text-gray-300 hover:text-white transition-colors">{t('nav.giftcode')}</button>
+                        <button onClick={() => handleNavClick(Tool.ArchitecturalRendering)} className="text-lg font-medium text-gray-300 hover:text-white transition-colors">{t('nav.render')}</button>
+                        <button onClick={() => handleNavClick(Tool.VideoGeneration)} className="text-lg font-medium text-gray-300 hover:text-white transition-colors">{t('nav.video')}</button>
+                        <button onClick={onNavigateToPricing} className="text-lg font-medium text-gray-300 hover:text-white transition-colors">{t('nav.pricing')}</button>
+                        <button onClick={handleGiftcodeClick} className="text-lg font-medium text-gray-300 hover:text-white transition-colors">{t('nav.giftcode')}</button>
                     </nav>
 
                     {/* Auth Buttons & Lang */}
@@ -230,10 +231,10 @@ const Header: React.FC<HomepageProps> = ({ onStart, onAuthNavigate, session, onG
                             </div>
                         ) : (
                             <>
-                                <button onClick={() => onAuthNavigate('login')} className="text-sm font-medium text-white hover:text-[#a855f7] transition-colors">{t('nav.login')}</button>
+                                <button onClick={() => onAuthNavigate('login')} className="text-lg font-medium text-white hover:text-[#a855f7] transition-colors">{t('nav.login')}</button>
                                 <button 
                                     onClick={() => onAuthNavigate('signup')}
-                                    className="px-5 py-2.5 bg-white text-black text-sm font-bold rounded-full hover:bg-gray-200 transition-colors shadow-lg shadow-white/10"
+                                    className="px-7 py-3 bg-white text-black text-lg font-bold rounded-full hover:bg-gray-200 transition-colors shadow-lg shadow-white/10"
                                 >
                                     {t('nav.signup')}
                                 </button>
@@ -291,14 +292,12 @@ const Header: React.FC<HomepageProps> = ({ onStart, onAuthNavigate, session, onG
     );
 };
 
-// ... (Rest of the file remains unchanged)
-// Re-exporting the rest of the file content below to ensure full file replacement.
-
 // --- HERO SECTION ---
 const Hero: React.FC<{onStart: () => void}> = ({ onStart }) => {
     const { t } = useLanguage();
+
     return (
-        <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden">
+        <section className="relative pt-32 pb-20 lg:pt-48 lg:pb-32 overflow-hidden hero-glow">
             <div className="absolute inset-0 z-0">
                 <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[1000px] h-[600px] bg-[#7f13ec]/20 rounded-full blur-[120px] opacity-30"></div>
                 <div className="absolute bottom-0 right-0 w-[800px] h-[600px] bg-blue-600/10 rounded-full blur-[100px] opacity-20"></div>
@@ -313,7 +312,7 @@ const Hero: React.FC<{onStart: () => void}> = ({ onStart }) => {
                     {t('hero.tag')}
                 </div>
                 
-                <h1 className="text-5xl md:text-6xl lg:text-7xl font-extrabold text-white tracking-tight mb-6 animate-fade-in-up delay-100">
+                <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white tracking-tight mb-6 animate-fade-in-up delay-100 uppercase lg:leading-[1.3] leading-[1.3] md:leading-[1.3]">
                     {t('hero.title')}
                 </h1>
                 
@@ -331,8 +330,7 @@ const Hero: React.FC<{onStart: () => void}> = ({ onStart }) => {
                     </button>
                     <button 
                         onClick={() => {
-                            const demoSection = document.getElementById('features');
-                            demoSection?.scrollIntoView({ behavior: 'smooth' });
+                            window.open('https://www.youtube.com/watch?v=0kktb_GH4gY', '_blank');
                         }}
                         className="w-full sm:w-auto px-8 py-4 bg-[#1E1E1E] text-white font-semibold rounded-full border border-[#302839] hover:bg-[#252525] transition-all flex items-center justify-center gap-2"
                     >
@@ -341,18 +339,22 @@ const Hero: React.FC<{onStart: () => void}> = ({ onStart }) => {
                     </button>
                 </div>
 
-                <div className="mt-16 relative w-full max-w-5xl mx-auto rounded-xl overflow-hidden shadow-2xl border border-[#302839] animate-fade-in-up delay-500 group">
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#121212] via-transparent to-transparent z-10"></div>
-                    <img 
-                        src="https://lh3.googleusercontent.com/aida-public/AB6AXuDuJVxJMLh56F5z4P44jRoSHcdM5w3lJPzCnkWe0-McR6c0hW7u21d6OubJX3x4WG9fetzYLjNuwucYtpHBfs54dmpw6n5sRVXD3NvfemF0lEJyulka9SidVTcoi3s1Iko71iWIXKibTZEf07a1IKOVx3C3SJqD5xPzI_XQie_oGe0ey7pFUdUtasVufndxwHuHSwiqrm-R5DNl2arwTcB49TBXM6CgJ292rewaoTLXS-sOdiZ5i5qyIM8yGYaTXwOxEEulCMSAIHlN" 
-                        alt="AI Architecture Demo" 
-                        className="w-full h-auto object-cover opacity-80 group-hover:scale-105 transition-transform duration-700"
-                    />
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex gap-2">
-                        <span className="px-3 py-1 bg-black/60 backdrop-blur-md rounded-full text-xs font-medium border border-white/10">Sketch to Render</span>
-                        <span className="px-3 py-1 bg-black/60 backdrop-blur-md rounded-full text-xs font-medium border border-white/10">Interior Design</span>
-                        <span className="px-3 py-1 bg-black/60 backdrop-blur-md rounded-full text-xs font-medium border border-white/10">Exterior</span>
+                {/* HERO IMAGE SECTION */}
+                <div className="mt-12 relative w-full max-w-3xl mx-auto z-20 animate-fade-in-up delay-500">
+                    <div className="relative rounded-2xl overflow-hidden bg-[#121212] border border-white/20 shadow-2xl group">
+                        
+                        {/* Image Area */}
+                        <div className="relative w-full bg-black/50">
+                            <img
+                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDuJVxJMLh56F5z4P44jRoSHcdM5w3lJPzCnkWe0-McR6c0hW7u21d6OubJX3x4WG9fetzYLjNuwucYtpHBfs54dmpw6n5sRVXD3NvfemF0lEJyulka9SidVTcoi3s1Iko71iWIXKibTZEf07a1IKOVx3C3SJqD5xPzI_XQie_oGe0ey7pFUdUtasVufndxwHuHSwiqrm-R5DNl2arwTcB49TBXM6CgJ292rewaoTLXS-sOdiZ5i5qyIM8yGYaTXwOxEEulCMSAIHlN"
+                                alt="OPZEN AI Interface"
+                                className="w-full h-auto object-cover mx-auto"
+                            />
+                        </div>
                     </div>
+                    
+                    {/* Back Glow */}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[90%] bg-[#7f13ec]/30 blur-[100px] -z-10 rounded-full pointer-events-none"></div>
                 </div>
             </div>
         </section>
@@ -362,8 +364,8 @@ const Hero: React.FC<{onStart: () => void}> = ({ onStart }) => {
 const StatsSection = () => {
     const { t } = useLanguage();
     const stats = [
-        { label: t('stats.users'), value: "4,000+" },
-        { label: t('stats.images'), value: "200,000+" },
+        { label: t('stats.users'), value: "100,000+" },
+        { label: t('stats.images'), value: "10,000,000+" },
         { label: t('stats.time'), value: "90%" },
     ];
 
@@ -445,7 +447,7 @@ const FeatureDetailed: React.FC<{onStart: () => void, onNavigateToTool?: (tool: 
                         <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl blur opacity-30 group-hover:opacity-60 transition duration-500"></div>
                         <div className="relative rounded-2xl overflow-hidden border border-[#302839] bg-[#1E1E1E] aspect-[4/3] group shadow-2xl">
                             <img 
-                                src="https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/Anh-Phac-Thao-Thanh-Render-HomePage.jpg"
+                                src="https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render%204k%20img.jpg"
                                 alt="AI Render Result" 
                                 className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105" 
                             />

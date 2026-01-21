@@ -54,45 +54,45 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
 
     // --- Translated Options ---
     const perspectiveAngles = useMemo(() => [
-        { id: 'default', label: 'Default', promptClause: "the same general perspective as the source image" },
-        { id: 'front', label: 'Front (Chính diện)', promptClause: "Straight-on front elevation view, symmetrical composition. Flat facade focusing on geometric shapes and materials." },
-        { id: 'left-side', label: '3/4 Left (Trái)', promptClause: "a 3/4 perspective view from the front-left, showing depth and dimension of the building massing." },
-        { id: 'right-side', label: '3/4 Right (Phải)', promptClause: "a 3/4 perspective view from the front-right, showing both the front and right facades" },
-        { id: 'wide-frame', label: 'Wide Angle (Góc rộng)', promptClause: "Wide-angle shot capturing the building within its surrounding context and landscape. Spacious atmosphere, expanded field of view." },
-        { id: 'panoramic', label: 'Panorama', promptClause: "Panoramic view, ultra-wide horizontal composition. Capturing the entire landscape and building context in a single frame. Cinematic wide shot." },
-        { id: 'top-down', label: 'Top Down (Trên cao)', promptClause: "Aerial bird's-eye view looking down from above. Drone photography showing the roof plan, site layout, and surrounding environment. Masterplan visualization." },
-        { id: 'low-angle', label: 'Low Angle (Ngước lên)', promptClause: "Low angle worm's-eye view looking up at the building. Imposing and majestic stature against the sky. Dramatic perspective emphasizing height." },
-        { id: 'close-up', label: 'Close Up (Cận cảnh)', promptClause: "Macro close-up shot of architectural details. Focus on textures, materials, and intricate facade elements. Shallow depth of field, blurred background." },
-    ], []);
+        { id: 'default', label: t('sync.angle.default'), promptClause: "the same general perspective as the source image" },
+        { id: 'front', label: t('sync.angle.front'), promptClause: "Straight-on front elevation view, symmetrical composition. Flat facade focusing on geometric shapes and materials." },
+        { id: 'left-side', label: t('sync.angle.left'), promptClause: "a 3/4 perspective view from the front-left, showing depth and dimension of the building massing." },
+        { id: 'right-side', label: t('sync.angle.right'), promptClause: "a 3/4 perspective view from the front-right, showing both the front and right facades" },
+        { id: 'wide-frame', label: t('sync.angle.wide'), promptClause: "Wide-angle shot capturing the building within its surrounding context and landscape. Spacious atmosphere, expanded field of view." },
+        { id: 'panoramic', label: t('sync.angle.pano'), promptClause: "Panoramic view, ultra-wide horizontal composition. Capturing the entire landscape and building context in a single frame. Cinematic wide shot." },
+        { id: 'top-down', label: t('sync.angle.topdown'), promptClause: "Aerial bird's-eye view looking down from above. Drone photography showing the roof plan, site layout, and surrounding environment. Masterplan visualization." },
+        { id: 'low-angle', label: t('sync.angle.low'), promptClause: "Low angle worm's-eye view looking up at the building. Imposing and majestic stature against the sky. Dramatic perspective emphasizing height." },
+        { id: 'close-up', label: t('sync.angle.closeup'), promptClause: "Macro close-up shot of architectural details. Focus on textures, materials, and intricate facade elements. Shallow depth of field, blurred background." },
+    ], [t]);
 
     const atmosphericAngles = useMemo(() => [
-        { id: 'default', label: 'Default', promptClause: "with standard daylight lighting" },
-        { id: 'early-morning', label: 'Early Morning (Sáng sớm)', promptClause: "in the early morning, with soft, gentle sunrise light and long shadows" },
-        { id: 'midday-sun', label: 'Midday Sun (Trưa nắng)', promptClause: "at midday under bright, direct sunlight with strong, short shadows" },
-        { id: 'late-afternoon', label: 'Golden Hour (Chiều tà)', promptClause: "during the late afternoon (golden hour), with warm, orange-hued light and long, dramatic shadows" },
-        { id: 'night', label: 'Night (Ban đêm)', promptClause: "at night, with interior and exterior lights turned on" },
-        { id: 'rainy', label: 'Rainy (Mưa)', promptClause: "during a gentle rain, with wet surfaces and a slightly overcast sky" },
-        { id: 'misty', label: 'Misty (Sương mù)', promptClause: "on a misty or foggy morning, creating a soft and mysterious atmosphere" },
-        { id: 'after-rain', label: 'After Rain (Sau mưa)', promptClause: "just after a rain shower, with wet ground reflecting the sky and surroundings, and a sense of freshness in the air" },
-    ], []);
+        { id: 'default', label: t('sync.atm.default'), promptClause: "with standard daylight lighting" },
+        { id: 'early-morning', label: t('sync.atm.morning'), promptClause: "in the early morning, with soft, gentle sunrise light and long shadows" },
+        { id: 'midday-sun', label: t('sync.atm.midday'), promptClause: "at midday under bright, direct sunlight with strong, short shadows" },
+        { id: 'late-afternoon', label: t('sync.atm.sunset'), promptClause: "during the late afternoon (golden hour), with warm, orange-hued light and long, dramatic shadows" },
+        { id: 'night', label: t('sync.atm.night'), promptClause: "at night, with interior and exterior lights turned on" },
+        { id: 'rainy', label: t('sync.atm.rainy'), promptClause: "during a gentle rain, with wet surfaces and a slightly overcast sky" },
+        { id: 'misty', label: t('sync.atm.misty'), promptClause: "on a misty or foggy morning, creating a soft and mysterious atmosphere" },
+        { id: 'after-rain', label: t('sync.atm.after_rain'), promptClause: "just after a rain shower, with wet ground reflecting the sky and surroundings, and a sense of freshness in the air" },
+    ], [t]);
 
     const framingAngles = useMemo(() => [
-        { id: 'none', label: 'None', promptClause: "" },
-        { id: 'through-trees', label: 'Through Trees', promptClause: "The building is seen through a foreground of trees or foliage, creating a natural framing effect." },
-        { id: 'through-window', label: 'Through Window', promptClause: "The building is seen from inside a cozy cafe across the street, looking out through the cafe's large glass window, which creates a framing effect." },
-        { id: 'through-flowers', label: 'Through Flowers', promptClause: "The building is viewed through a foreground of colorful flowers lining the roadside, creating a beautiful and soft framing effect." },
-        { id: 'through-car-window', label: 'Through Car Window', promptClause: "The building is seen from the perspective of looking out from a car parked on the side of the road, with the car's window frame and side mirror creating a dynamic frame." },
-    ], []);
+        { id: 'none', label: t('sync.frame.none'), promptClause: "" },
+        { id: 'through-trees', label: t('sync.frame.trees'), promptClause: "The building is seen through a foreground of trees or foliage, creating a natural framing effect." },
+        { id: 'through-window', label: t('sync.frame.window'), promptClause: "The building is seen from inside a cozy cafe across the street, looking out through the cafe's large glass window, which creates a framing effect." },
+        { id: 'through-flowers', label: t('sync.frame.flowers'), promptClause: "The building is viewed through a foreground of colorful flowers lining the roadside, creating a beautiful and soft framing effect." },
+        { id: 'through-car-window', label: t('sync.frame.car'), promptClause: "The building is seen from the perspective of looking out from a car parked on the side of the road, with the car's window frame and side mirror creating a dynamic frame." },
+    ], [t]);
 
     const interiorViewAngles = useMemo(() => [
-        { id: 'default', label: 'Default', prompt: "Maintain the same camera perspective as the source image." },
-        { id: 'wide-angle', label: 'Wide Angle (Góc rộng)', prompt: "Generate a wide-angle view of the interior space, capturing as much of the room as possible. Maintain the same design style, furniture, and materials as the uploaded image." },
-        { id: 'from-corner', label: 'From Corner (Từ góc)', prompt: "Generate a view from a corner of the room, looking towards the center. Maintain the same design style, furniture, and materials as the uploaded image." },
-        { id: 'detail-shot', label: 'Detail (Cận cảnh)', prompt: "Generate a close-up detail shot of a key furniture piece or decorative element. Maintain the same design style, furniture, and materials as the uploaded image." },
-        { id: 'towards-window', label: 'Towards Window', prompt: "Generate a view from inside the room looking towards the main window, showing the natural light. Maintain the same design style, furniture, and materials as the uploaded image." },
-        { id: 'night-view', label: 'Night View', prompt: "Generate a view of the interior space at night, with artificial lighting turned on (lamps, ceiling lights). Maintain the same design style, furniture, and materials as the uploaded image." },
-        { id: 'top-down-interior', label: 'Top Down', prompt: "Generate a top-down view of the room's layout, similar to a 3D floor plan. Maintain the same design style, furniture, and materials as the uploaded image." },
-    ], []);
+        { id: 'default', label: t('sync.int.default'), prompt: "Maintain the same camera perspective as the source image." },
+        { id: 'wide-angle', label: t('sync.int.wide'), prompt: "Generate a wide-angle view of the interior space, capturing as much of the room as possible. Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'from-corner', label: t('sync.int.corner'), prompt: "Generate a view from a corner of the room, looking towards the center. Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'detail-shot', label: t('sync.int.detail'), prompt: "Generate a close-up detail shot of a key furniture piece or decorative element. Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'towards-window', label: t('sync.int.window'), prompt: "Generate a view from inside the room looking towards the main window, showing the natural light. Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'night-view', label: t('sync.int.night'), prompt: "Generate a view of the interior space at night, with artificial lighting turned on (lamps, ceiling lights). Maintain the same design style, furniture, and materials as the uploaded image." },
+        { id: 'top-down-interior', label: t('sync.int.topdown'), prompt: "Generate a top-down view of the room's layout, similar to a 3D floor plan. Maintain the same design style, furniture, and materials as the uploaded image." },
+    ], [t]);
 
     // --- Dynamic Creative Options ---
     const creativeOptions = useMemo(() => [
@@ -119,29 +119,30 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         }
     ], [t]);
 
-    // --- Dynamic Slots ---
+    // --- Dynamic Slots (WITH IDs) ---
+    // Added 'id' property to maintain consistency across language switches
     const interiorSlots = useMemo(() => [
-        { name: t('sync.creative.slot.living_room'), icon: 'chair', action: 'sitting on sofa' },
-        { name: t('sync.creative.slot.bedroom'), icon: 'bed', action: 'resting on bed' },
-        { name: t('sync.creative.slot.kitchen'), icon: 'kitchen', action: 'preparing food' },
-        { name: t('sync.creative.slot.dining'), icon: 'dining', action: 'sitting at dining table' },
-        { name: t('sync.creative.slot.reading'), icon: 'menu_book', action: 'working at desk' },
-        { name: t('sync.creative.slot.bathroom'), icon: 'bathtub', action: 'standing by mirror' },
-        { name: t('sync.creative.slot.corridor'), icon: 'door_sliding', action: 'walking in corridor' },
-        { name: t('sync.creative.slot.closeup'), icon: 'center_focus_strong', action: 'touching material' },
-        { name: t('sync.creative.slot.balcony'), icon: 'deck', action: 'standing looking at view' }
+        { id: 'living_room', name: t('sync.creative.slot.living_room'), icon: 'chair', action: 'sitting on sofa' },
+        { id: 'bedroom', name: t('sync.creative.slot.bedroom'), icon: 'bed', action: 'resting on bed' },
+        { id: 'kitchen', name: t('sync.creative.slot.kitchen'), icon: 'kitchen', action: 'preparing food' },
+        { id: 'dining', name: t('sync.creative.slot.dining'), icon: 'dining', action: 'sitting at dining table' },
+        { id: 'reading', name: t('sync.creative.slot.reading'), icon: 'menu_book', action: 'working at desk' },
+        { id: 'bathroom', name: t('sync.creative.slot.bathroom'), icon: 'bathtub', action: 'standing by mirror' },
+        { id: 'corridor', name: t('sync.creative.slot.corridor'), icon: 'door_sliding', action: 'walking in corridor' },
+        { id: 'closeup', name: t('sync.creative.slot.closeup'), icon: 'center_focus_strong', action: 'touching material' },
+        { id: 'balcony', name: t('sync.creative.slot.balcony'), icon: 'deck', action: 'standing looking at view' }
     ], [t]);
 
     const architectureSlots = useMemo(() => [
-        { name: t('sync.creative.slot.pano1'), sub: t('sync.creative.sub.sunrise'), icon: 'wb_twilight', promptDescription: "High-angle panoramic view, clear sunrise light with light mist." },
-        { name: t('sync.creative.slot.pano2'), sub: t('sync.creative.sub.sunset'), icon: 'wb_sunny', promptDescription: "45-degree angle distant view, vibrant golden sunset sky background." },
-        { name: t('sync.creative.slot.pano3'), sub: t('sync.creative.sub.birdseye'), icon: 'flight', promptDescription: "Bird's eye view from above, showing the entire site and landscape." },
-        { name: t('sync.creative.slot.close1'), sub: t('sync.creative.sub.material'), icon: 'texture', promptDescription: "Close-up detailing surface materials: stone, wood, or metal textures." },
-        { name: t('sync.creative.slot.close2'), sub: t('sync.creative.sub.structure'), icon: 'construction', promptDescription: "Close-up of structural details: joints, railings, or massing intersections." },
-        { name: t('sync.creative.slot.close3'), sub: t('sync.creative.sub.entrance'), icon: 'door_front', promptDescription: "Close-up focused on the main entrance and lobby area." },
-        { name: t('sync.creative.slot.close4'), sub: t('sync.creative.sub.corner'), icon: 'camera_alt', promptDescription: "Close-up of an architectural corner or landscape detail near the base." },
-        { name: t('sync.creative.slot.art1'), sub: t('sync.creative.sub.bokeh'), icon: 'blur_on', promptDescription: "Artistic shot with blurred foreground (bokeh), deep focus on a specific detail." },
-        { name: t('sync.creative.slot.art2'), sub: t('sync.creative.sub.night'), icon: 'nights_stay', promptDescription: "Dramatic night perspective, emphasizing light spilling from windows." }
+        { id: 'pano1', name: t('sync.creative.slot.pano1'), sub: t('sync.creative.sub.sunrise'), icon: 'wb_twilight', promptDescription: "High-angle panoramic view, clear sunrise light with light mist." },
+        { id: 'pano2', name: t('sync.creative.slot.pano2'), sub: t('sync.creative.sub.sunset'), icon: 'wb_sunny', promptDescription: "45-degree angle distant view, vibrant golden sunset sky background." },
+        { id: 'pano3', name: t('sync.creative.slot.pano3'), sub: t('sync.creative.sub.birdseye'), icon: 'flight', promptDescription: "Bird's eye view from above, showing the entire site and landscape." },
+        { id: 'close1', name: t('sync.creative.slot.close1'), sub: t('sync.creative.sub.material'), icon: 'texture', promptDescription: "Close-up detailing surface materials: stone, wood, or metal textures." },
+        { id: 'close2', name: t('sync.creative.slot.close2'), sub: t('sync.creative.sub.structure'), icon: 'construction', promptDescription: "Close-up of structural details: joints, railings, or massing intersections." },
+        { id: 'close3', name: t('sync.creative.slot.close3'), sub: t('sync.creative.sub.entrance'), icon: 'door_front', promptDescription: "Close-up focused on the main entrance and lobby area." },
+        { id: 'close4', name: t('sync.creative.slot.close4'), sub: t('sync.creative.sub.corner'), icon: 'camera_alt', promptDescription: "Close-up of an architectural corner or landscape detail near the base." },
+        { id: 'art1', name: t('sync.creative.slot.art1'), sub: t('sync.creative.sub.bokeh'), icon: 'blur_on', promptDescription: "Artistic shot with blurred foreground (bokeh), deep focus on a specific detail." },
+        { id: 'art2', name: t('sync.creative.slot.art2'), sub: t('sync.creative.sub.night'), icon: 'nights_stay', promptDescription: "Dramatic night perspective, emphasizing light spilling from windows." }
     ], [t]);
 
     const getCostPerImage = () => {
@@ -176,7 +177,8 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         setIsCreativeModeSelected(false);
     };
 
-    const getResultKey = (option: string, slotName: string) => `${option}-${slotName}`;
+    // Use ID instead of Name for unique key generation
+    const getResultKey = (option: string, slotId: string) => `${option}-${slotId}`;
 
     // --- STANDARD SYNC GENERATE ---
     const handleGenerate = async () => {
@@ -191,7 +193,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         }
 
         if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên một ảnh gốc để bắt đầu.' });
+            onStateChange({ error: t('err.input.image') });
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
@@ -358,7 +360,9 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                // Translate the error key if it's one of our known keys, otherwise just show it
+                // Using t() will return the key itself if not found, or the translation if found.
+                onStateChange({ error: t(friendlyMsg) });
             }
 
             const { data: { user } } = await supabase.auth.getUser();
@@ -482,11 +486,12 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
         }
 
         if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên ảnh gốc.' });
+            onStateChange({ error: t('err.input.image') });
             return;
         }
 
-        const uniqueKey = getResultKey(creativeOption, slot.name);
+        // Use ID for consistent key across languages
+        const uniqueKey = getResultKey(creativeOption, slot.id);
         setGeneratingViews(prev => new Set(prev).add(uniqueKey));
         onStateChange({ error: null });
 
@@ -563,7 +568,7 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: t(friendlyMsg) });
             }
 
             const { data: { user } } = await supabase.auth.getUser();
@@ -593,12 +598,12 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
         }
 
         if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên ảnh gốc.' });
+            onStateChange({ error: t('err.input.image') });
             return;
         }
 
-        // Initialize loading state for all slots using unique keys
-        const allViewKeys = new Set(slots.map(s => getResultKey(creativeOption, s.name)));
+        // Initialize loading state for all slots using unique keys (ID based)
+        const allViewKeys = new Set(slots.map(s => getResultKey(creativeOption, s.id)));
         setGeneratingViews(allViewKeys);
         onStateChange({ error: null });
 
@@ -631,7 +636,7 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
 
             // Execute in parallel
             const promises = slots.map(async (slot) => {
-                const uniqueKey = getResultKey(creativeOption, slot.name);
+                const uniqueKey = getResultKey(creativeOption, slot.id);
                 try {
                     const fullPrompt = getPromptForSlot(slot);
 
@@ -713,7 +718,7 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: t(friendlyMsg) });
             }
 
             const { data: { user } } = await supabase.auth.getUser();
@@ -737,14 +742,14 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
     // --- NEW: HANDLE DOWNLOAD ALL FOR CREATIVE VIEW ---
     const handleDownloadAllCreative = async () => {
         // Filter results specific to current mode to avoid downloading irrelevant cached images
-        const currentModeKeys = slots.map(s => getResultKey(creativeOption, s.name));
+        const currentModeKeys = slots.map(s => getResultKey(creativeOption, s.id));
         const urls = currentModeKeys.map(k => creativeResults[k]).filter(Boolean);
         
         if (urls.length === 0) return;
         
         setIsDownloading(true);
         for (const slot of slots) {
-            const key = getResultKey(creativeOption, slot.name);
+            const key = getResultKey(creativeOption, slot.id);
             const url = creativeResults[key];
             if (url) {
                 await externalVideoService.forceDownload(url, `creative-${slot.name}-${Date.now()}.png`);
@@ -767,7 +772,7 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
     };
 
     const selectedOptionData = creativeOptions.find(o => o.id === creativeOption);
-    const hasCreativeResults = slots.some(s => !!creativeResults[getResultKey(creativeOption, s.name)]);
+    const hasCreativeResults = slots.some(s => !!creativeResults[getResultKey(creativeOption, s.id)]);
 
     return (
         <div>
@@ -1042,7 +1047,11 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
                                 disabled={generatingViews.size > 0 || !sourceImage} 
                                 className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg"
                             >
-                                {generatingViews.size > 0 ? <><Spinner /> {generatingViews.size}...</> : t('sync.workspace.btn_generate_batch').replace('{count}', slots.length.toString())}
+                                {generatingViews.size > 0 ? (
+                                    <><Spinner /> {t('sync.workspace.generating_wait')}</>
+                                ) : (
+                                    t('sync.workspace.btn_generate_batch').replace('{count}', slots.length.toString())
+                                )}
                             </button>
                         </div>
                     </div>
@@ -1075,7 +1084,7 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
                         
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {slots.map((slot, index) => {
-                                const key = getResultKey(creativeOption, slot.name);
+                                const key = getResultKey(creativeOption, slot.id);
                                 const resultUrl = creativeResults[key];
                                 const isGenerating = generatingViews.has(key);
 

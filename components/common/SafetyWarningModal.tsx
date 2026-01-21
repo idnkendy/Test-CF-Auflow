@@ -1,6 +1,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
+import { useLanguage } from '../../hooks/useLanguage';
 
 interface SafetyWarningModalProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface SafetyWarningModalProps {
 
 const SafetyWarningModal: React.FC<SafetyWarningModalProps> = ({ isOpen, onClose }) => {
   const [mounted, setMounted] = useState(false);
+  const { t } = useLanguage();
 
   useEffect(() => {
     setMounted(true);
@@ -64,18 +66,18 @@ const SafetyWarningModal: React.FC<SafetyWarningModalProps> = ({ isOpen, onClose
             </div>
             
             <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-3">
-                Ảnh bị từ chối xử lý
+                {t('safety.title')}
             </h2>
             
             <div className="text-sm text-gray-600 dark:text-gray-300 mb-6 leading-relaxed space-y-3 text-left bg-gray-50 dark:bg-black/20 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
-                <p className="font-semibold text-red-500">Nguyên nhân phổ biến:</p>
+                <p className="font-semibold text-red-500">{t('safety.reason_title')}</p>
                 <ul className="list-disc pl-5 space-y-1 text-gray-500 dark:text-gray-400">
-                    <li>Ảnh chứa <strong>người thật</strong> (đặc biệt là trẻ em hoặc người nổi tiếng).</li>
-                    <li>Ảnh lộ nhiều da thịt hoặc tư thế nhạy cảm.</li>
-                    <li>Ảnh có nội dung bạo lực hoặc gây khó chịu.</li>
+                    <li dangerouslySetInnerHTML={{ __html: t('safety.reason_1') }} />
+                    <li>{t('safety.reason_2')}</li>
+                    <li>{t('safety.reason_3')}</li>
                 </ul>
                 <p className="text-xs italic mt-2">
-                    *Hệ thống AI của Google tự động quét và chặn các nội dung này ngay khi tải lên để đảm bảo an toàn.
+                    {t('safety.note')}
                 </p>
             </div>
 
@@ -84,7 +86,7 @@ const SafetyWarningModal: React.FC<SafetyWarningModalProps> = ({ isOpen, onClose
                 className="w-full py-3 rounded-xl bg-gray-900 dark:bg-white hover:bg-gray-800 dark:hover:bg-gray-200 text-white dark:text-black font-bold text-sm transition-all shadow-md flex items-center justify-center gap-2"
             >
                 <span className="material-symbols-outlined text-lg">image</span>
-                <span>Chọn ảnh khác ngay</span>
+                <span>{t('safety.btn')}</span>
             </button>
       </div>
     </div>,

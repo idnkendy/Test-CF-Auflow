@@ -12,13 +12,13 @@ export const mapFriendlyErrorMessage = (errorMsg: string): string => {
     // Log lỗi gốc ra console để lập trình viên debug
     console.error("Technical Error Detail:", errorMsg);
 
-    if (!errorMsg) return "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.";
+    if (!errorMsg) return "err.sys.google_generic";
 
     const msg = errorMsg.toUpperCase();
 
     // 1. Nhóm lỗi do người dùng (Vẫn giữ thông báo cụ thể nếu là lỗi credits)
     if (msg.includes("KHÔNG ĐỦ CREDITS")) {
-        return "Bạn không đủ credits để thực hiện tác vụ này.";
+        return "err.credit.insufficient_system";
     }
     
     // Safety / Upload Failed / Validation specific mapping
@@ -37,7 +37,7 @@ export const mapFriendlyErrorMessage = (errorMsg: string): string => {
     }
     
     // 2. Nhóm lỗi kỹ thuật (Server, Network, Timeout, Queue, 503, v.v...) -> Trả về thông báo mặc định
-    return "Hệ thống Google đang có thể xảy ra lỗi, vui lòng thử lại sau.";
+    return "err.sys.google_generic";
 };
 
 const compressImage = async (blob: Blob): Promise<Blob> => {
