@@ -279,7 +279,7 @@ export const generateText = async (prompt: string): Promise<string> => {
 export const generateArchitecturalPrompt = async (image: FileData, lang: 'vi' | 'en' = 'vi'): Promise<string> => {
     const ai = await getDynamicAIClient();
     // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-flash-lite-latest';
+    const model = 'gemini-2.0-flash-exp';
     
     let prompt = "";
     if (lang === 'vi') {
@@ -319,7 +319,7 @@ export const generateFloorPlanPrompt = async (
 ): Promise<string> => {
     const ai = await getDynamicAIClient();
     // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-flash-lite-latest';
+    const model = 'gemini-2.0-flash-exp';
     
     let prompt = "";
     const isVi = lang === 'vi';
@@ -327,26 +327,33 @@ export const generateFloorPlanPrompt = async (
     if (planType === 'interior') {
         if (renderMode === 'perspective') {
             if (isVi) {
-                prompt = `Phân tích hình ảnh bản vẽ mặt bằng này và xác định luồng giao thông hoặc góc nhìn tiềm năng. Tạo một mô tả ngắn gọn bằng tiếng Việt theo cấu trúc sau: 'Góc nhìn 3D cận cảnh [Loại phòng] với góc nhìn từ [Vị trí bắt đầu/Chủ thể gần] nhìn sang [Vị trí kết thúc/Chủ thể xa]'.`;
+                prompt = `Phân tích hình ảnh bản vẽ mặt bằng này và xác định luồng giao thông hoặc góc nhìn tiềm năng. Tạo một mô tả ngắn gọn bằng tiếng Việt theo cấu trúc sau: 'Góc nhìn 3D cận cảnh [Loại phòng] với góc nhìn từ [Vị trí bắt đầu/Chủ thể gần] nhìn sang [Vị trí kết thúc/Chủ thể xa]'. 
+            Ví dụ: 'Góc nhìn 3D cận cảnh phòng khách với góc nhìn từ bộ bàn ăn nhìn sang khu vực sofa'.`;
             } else {
-                prompt = `Analyze this floor plan image and identify traffic flow or potential angles. Create a concise description in English following this structure: '3D close-up view of [Room Type] from [Start Position/Near Subject] looking towards [End Position/Far Subject]'.`;
+                prompt = `Analyze this floor plan image and identify the traffic flow or potential perspectives. Create a concise description in English following this structure: 'Close-up 3D view of [Room Type] with a view from [Starting Position/Near Subject] looking towards [Ending Position/Far Subject]'. Example: 'Close-up 3D view of the living room with a view from the dining set looking towards the sofa area'.`;
             }
         } else {
             if (isVi) {
                 prompt = `Phân tích hình ảnh mặt bằng nội thất này và tạo một mô tả ngắn gọn bằng tiếng Việt theo đúng cấu trúc sau:
-                'Biến thành ảnh chụp thực tế nội thất [Thể loại công trình] + [Điểm nhấn mặt bằng: phong cách thiết kế, mô tả các khu vực quan trọng, vật liệu, đồ nội thất] + yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.`;
+            'Biến thành ảnh chụp thực tế nội thất [Thể loại công trình] + [Điểm nhấn mặt bằng: phong cách thiết kế, mô tả các khu vực quan trọng, vật liệu, đồ nội thất] + yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.
+
+            Ví dụ: 'Biến thành ảnh chụp thực tế nội thất công trình nhà ở, phong cách thiết kế hiện đại, có phòng khách và 2 phòng ngủ, 2wc. Yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.`;
             } else {
-                prompt = `Analyze this interior floor plan image and create a concise description in English following this structure:
-                'Transform into realistic interior photo of [Building Type] + [Plan Highlights: design style, description of key areas, materials, furniture] + maintain exact details and perspective of original image'.`;
+                prompt = `Analyze this interior floor plan image and create a concise description in English according to the following structure: 'Transform into a realistic interior photo of [Project Type] + [Floor plan highlights: design style, description of key areas, materials, furniture] + request to strictly adhere to the details and perspective of the original image'.
+
+            Example: 'Transform into a realistic interior photo of a residential project, modern design style, featuring a living room, 2 bedrooms, and 2 bathrooms. Request to strictly adhere to the details and perspective of the original image'.`;
             }
         }
     } else {
         if (isVi) {
             prompt = `Phân tích hình ảnh mặt bằng/quy hoạch này và tạo một mô tả ngắn gọn bằng tiếng Việt theo đúng cấu trúc sau: 
-            'Biến thành ảnh chụp thực tế dự án [Thể loại dự án] + [Các khu vực quan trọng: nhà ở, thương mại, vui chơi, cổng, hồ nước...] + [Cảnh quan xung quanh (phong cách Việt Nam)] + [Thời gian/Thời tiết] + yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.`;
+        'Biến thành ảnh chụp thực tế dự án [Thể loại dự án] + [Các khu vực quan trọng: nhà ở, thương mại, vui chơi, cổng, hồ nước...] + [Cảnh quan xung quanh (phong cách Việt Nam)] + [Thời gian/Thời tiết] + yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.
+        
+        Ví dụ: 'Biến thành ảnh chụp thực tế dự án nghỉ dưỡng sinh thái, Có khu vực hồ nước là hồ câu cá ở trung tâm, có khu vực bungalow mái rơm, có nhà hàng và quán cafe, khu vực đỗ xe, xung quanh được bao bọc bởi các con đường lớn và cánh đồng lúa việt nam, thời gian ban ngày nắng đẹp. Yêu cầu bám sát chi tiết và góc nhìn của ảnh ban đầu'.`;
         } else {
-             prompt = `Analyze this master plan/site plan image and create a concise description in English following this structure:
-            'Transform into realistic project photo of [Project Type] + [Key Areas: residential, commercial, playground, entrance, water features...] + [Surrounding landscape] + [Time/Weather] + maintain exact details and perspective of original image'.`;
+             prompt = `Analyze this site plan/master plan image and create a concise description in Englisg following this exact structure: 'Transform into a realistic project photo of [Project Type] + [Key areas: residential, commercial, recreation, gates, lakes...] + [Surrounding landscape (Vietnamese style)] + [Time/Weather] + request to strictly adhere to the details and perspective of the original image'.
+
+        Example: 'Transform into a realistic photo of an eco-resort project, featuring a central fishing lake, straw-roofed bungalows, a restaurant and café, a parking area, surrounded by main roads and Vietnamese rice fields, during a beautiful sunny day. Request to strictly adhere to the details and perspective of the original image'.`;
         }
     }
     
@@ -374,7 +381,7 @@ export const generateFloorPlanPrompt = async (
 export const generateInteriorPrompt = async (image: FileData, lang: 'vi' | 'en' = 'vi'): Promise<string> => {
     const ai = await getDynamicAIClient();
     // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-flash-lite-latest';
+    const model = 'gemini-2.0-flash-exp';
     
     let prompt = "";
     if (lang === 'vi') {
@@ -415,7 +422,7 @@ export const generatePromptSuggestions = async (
 ): Promise<Record<string, string[]> | null> => {
     const ai = await getDynamicAIClient();
     // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-flash-lite-latest';
+    const model = 'gemini-2.0-flash-exp';
     
     const isVi = lang === 'vi';
     
@@ -486,7 +493,7 @@ export const generatePromptSuggestions = async (
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
     const ai = await getDynamicAIClient();
     // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-flash-lite-latest';
+    const model = 'gemini-2.0-flash-exp';
     
     const parts: any[] = [{ text: `Act as an expert architectural prompt engineer. Enhance the following user input into a detailed, professional prompt suitable for high-quality AI rendering (like Midjourney or Gemini). Focus on lighting, materials, atmosphere, and camera specifications. \n\nUser Input: "${userInput}"` }];
     
@@ -512,7 +519,7 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
     const ai = await getDynamicAIClient();
     // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-flash-lite-latest';
+    const model = 'gemini-2.0-flash-exp';
     
     const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI. 
     Tập trung mô tả chuyển động camera, thay đổi ánh sáng, và các yếu tố khí quyển. Giữ prompt dưới 60 từ.
