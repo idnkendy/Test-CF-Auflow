@@ -146,7 +146,7 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                         {plan.originalPrice ? (
                                             <div className="flex items-center gap-2 mb-1.5">
                                                 <span className="text-gray-500 line-through text-xl md:text-lg lg:text-xl decoration-gray-500/50 font-semibold">
-                                                    {new Intl.NumberFormat(locale, { style: 'decimal' }).format(plan.originalPrice)} {plan.currency}
+                                                    {new Intl.NumberFormat(locale, { style: 'decimal', minimumFractionDigits: language === 'vi' ? 0 : 2 }).format(plan.originalPrice)} {plan.currency}
                                                 </span>
                                                 <span className="bg-red-500/10 text-red-400 text-sm md:text-xs lg:text-sm font-extrabold px-3 py-1 rounded-full border border-red-500/20 shadow-sm">
                                                     -{discountPercent}%

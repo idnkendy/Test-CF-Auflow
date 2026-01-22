@@ -97,7 +97,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                                     <div className="flex items-baseline gap-2">
                                         {plan.originalPrice && (
                                             <span className="text-text-secondary/60 dark:text-gray-500 line-through text-sm decoration-gray-400/50">
-                                                {new Intl.NumberFormat(locale).format(plan.originalPrice)}
+                                                {new Intl.NumberFormat(locale, { style: 'decimal', minimumFractionDigits: language === 'vi' ? 0 : 2 }).format(plan.originalPrice)}
                                             </span>
                                         )}
                                         <div className="flex items-start">
