@@ -516,14 +516,21 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
     });
 };
 
-export const generateVideoPromptFromImage = async (image: FileData): Promise<string> => {
+export const generateVideoPromptFromImage = async (image: FileData, lang: 'vi' | 'en' = 'vi'): Promise<string> => {
     const ai = await getDynamicAIClient();
     // Use Flash Lite for lowest cost multimodal analysis
     const model = 'gemini-2.0-flash-exp';
     
-    const prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI. 
+    let prompt = "";
+    if (lang === 'vi') {
+        prompt = `Phân tích hình ảnh kiến trúc hoặc nội thất này. Hãy viết một prompt (lời nhắc) bằng Tiếng Việt thật chi tiết, đậm chất điện ảnh để tạo video ngắn từ hình ảnh này bằng AI. 
     Tập trung mô tả chuyển động camera, thay đổi ánh sáng, và các yếu tố khí quyển. Giữ prompt dưới 60 từ.
     QUAN TRỌNG: CHỈ TRẢ VỀ NỘI DUNG PROMPT BẰNG TIẾNG VIỆT.`;
+    } else {
+        prompt = `Analyze this architectural or interior image. Write a detailed, cinematic prompt in English to generate a short AI video from this image. 
+    Focus on camera movement, lighting changes, and atmospheric elements. Keep the prompt under 60 words.
+    IMPORTANT: RETURN ONLY THE PROMPT CONTENT IN ENGLISH.`;
+    }
 
     return retryOperation(async () => {
         try {
@@ -536,10 +543,12 @@ export const generateVideoPromptFromImage = async (image: FileData): Promise<str
                     ]
                 }
             });
-            return response.text?.trim() || "Video kiến trúc điện ảnh with chuyển động camera chậm.";
+            const fallback = lang === 'vi' ? "Video kiến trúc điện ảnh với chuyển động camera chậm." : "Cinematic architectural video with slow camera movement.";
+            return response.text?.trim() || fallback;
         } catch (e: any) {
             console.error("Failed to generate video prompt from image", e);
-            return "Video kiến trúc điện ảnh with chuyển động camera chậm.";
+            const fallback = lang === 'vi' ? "Video kiến trúc điện ảnh với chuyển động camera chậm." : "Cinematic architectural video with slow camera movement.";
+            return fallback;
         }
     });
 };

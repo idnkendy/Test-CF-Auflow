@@ -1,11 +1,11 @@
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { useLanguage } from '../../hooks/useLanguage';
 
 export const useSidebarItems = () => {
     const { t } = useLanguage();
     
-    return [
+    return useMemo(() => [
         { 
             id: 'arch-film', 
             label: t('video.sidebar.arch_film'), 
@@ -41,7 +41,7 @@ export const useSidebarItems = () => {
             prompt: 'Nối tiếp cảnh quay hiện tại, giữ nguyên phong cách và ánh sáng, camera di chuyển mượt mà.',
             isMaintenance: true
         }
-    ];
+    ], [t]);
 };
 
 // Deprecated export for type compatibility if used elsewhere (though VideoPage uses hook now)

@@ -90,7 +90,7 @@ interface VideoPageProps {
 }
 
 const VideoPage: React.FC<VideoPageProps> = (props) => {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const sidebarItems = useSidebarItems();
 
     const loadingMessages = useMemo(() => [
@@ -393,10 +393,11 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
         try {
             const updatedItems = await Promise.all(itemsToProcess.map(async (item) => {
                 try {
-                    const generatedPrompt = await geminiService.generateVideoPromptFromImage(item.file);
+                    const generatedPrompt = await geminiService.generateVideoPromptFromImage(item.file, language);
                     return { ...item, prompt: generatedPrompt, isGeneratingPrompt: false };
                 } catch (error) {
-                    return { ...item, isGeneratingPrompt: false, prompt: "Cinematic architectural shot." };
+                    const fallback = language === 'vi' ? "Video kiến trúc điện ảnh." : "Cinematic architectural video.";
+                    return { ...item, isGeneratingPrompt: false, prompt: fallback };
                 }
             }));
             setVideoState(prev => ({
