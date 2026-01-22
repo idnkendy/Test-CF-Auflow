@@ -26,7 +26,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
     const isForeign = language === 'en';
     
     // Internal state to check status locally in checkout component
-    const [hasActiveSub, setHasActiveSub] = useState(false);
+    const [canBuyCredits, setCanBuyCredits] = useState(false);
     const [loadingStatus, setLoadingStatus] = useState(true);
 
     useEffect(() => {
@@ -34,7 +34,9 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
             const { data: { user } } = await supabase.auth.getUser();
             if (user) {
                 const status = await paymentService.getUserStatus(user.id);
-                setHasActiveSub(status && !status.isExpired);
+                // Can only buy booster if they have a valid subscription end date and it's not expired
+                // If subscriptionEnd is null (new/free user), this evaluates to false.
+                setCanBuyCredits(!!(status && status.subscriptionEnd && !status.isExpired));
             }
             setLoadingStatus(false);
         };
@@ -61,7 +63,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                         : 0;
                     
                     const isCreditPlan = plan.type === 'credit';
-                    const isRestricted = isCreditPlan && !loadingStatus && !hasActiveSub;
+                    const isRestricted = isCreditPlan && !loadingStatus && !canBuyCredits;
 
                     return (
                         <div 

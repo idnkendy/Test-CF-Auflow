@@ -6,11 +6,36 @@ import { plans } from '../constants/plans'; // Source of Truth for pricing
 // @ts-ignore
 const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
 
+// Helper để lấy quốc gia từ IP
+const detectCountry = async (): Promise<string> => {
+    try {
+        // Sử dụng api.country.is (miễn phí, nhanh)
+        const res = await fetch('https://api.country.is');
+        if (res.ok) {
+            const data = await res.json();
+            return data.country || 'VN'; // Mặc định VN nếu không xác định được
+        }
+    } catch (e) {
+        console.warn("Geo detect failed, falling back to ipwho.is");
+        try {
+            // Fallback
+            const res = await fetch('https://ipwho.is/');
+            if (res.ok) {
+                const data = await res.json();
+                return data.country_code || 'VN';
+            }
+        } catch (err) {
+            console.error("All geo checks failed");
+        }
+    }
+    return 'VN'; // Fallback an toàn
+};
+
 export const getUserStatus = async (userId: string, email?: string, fullName?: string): Promise<UserStatus> => {
     try {
         let { data, error } = await supabase
             .from('profiles')
-            .select('credits, subscription_end')
+            .select('credits, subscription_end, country')
             .eq('id', userId)
             .maybeSingle();
 
@@ -18,12 +43,11 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
         if (!data && email) {
              console.log("[Auth] New user detected, creating profile...");
              
-             // Tính toán ngày hết hạn (1 tháng từ hiện tại)
-             const now = new Date();
-             now.setMonth(now.getMonth() + 1);
-             const oneMonthExpiration = now.toISOString();
+             // 1. Xác định quốc gia
+             const userCountry = await detectCountry();
+             console.log("[Auth] Detected Country:", userCountry);
 
-             // 1. Gửi Webhook sang LadiFlow ngay lập tức (Fire & Forget but with logs)
+             // 2. Gửi Webhook sang LadiFlow ngay lập tức (Kèm thông tin quốc gia)
              try {
                  const baseUrl = BACKEND_URL.replace(/\/$/, "");
                  console.log("[Sync] Triggering LadiPage sync for:", email);
@@ -34,7 +58,8 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                      body: JSON.stringify({ 
                          email, 
                          full_name: fullName || email.split('@')[0], 
-                         is_new_user: true 
+                         is_new_user: true,
+                         country: userCountry // Gửi quốc gia lên worker
                      })
                  })
                  .then(async (res) => {
@@ -46,7 +71,7 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                  console.error("[Sync] Exception:", e);
              }
 
-             // 2. Tạo hồ sơ mới trong DB với hạn sử dụng 1 tháng
+             // 3. Tạo hồ sơ mới trong DB với hạn sử dụng LÀ NULL (Vĩnh viễn) + Lưu Quốc gia
              const { error: insertError } = await supabase
                 .from('profiles')
                 .insert([{ 
@@ -54,7 +79,8 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                     email, 
                     credits: 60, 
                     full_name: fullName,
-                    subscription_end: oneMonthExpiration // Thêm hạn sử dụng 1 tháng
+                    subscription_end: null, // Vĩnh viễn (cho đến khi hết credits)
+                    country: userCountry // Lưu cột country
                 }]);
              
              if (insertError) {
@@ -62,7 +88,7 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                  console.warn("[Auth] Profile insert failed, retrying fetch...", insertError);
                  const { data: retryData, error: retryError } = await supabase
                     .from('profiles')
-                    .select('credits, subscription_end')
+                    .select('credits, subscription_end, country')
                     .eq('id', userId)
                     .single();
                     
@@ -72,7 +98,7 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                  data = retryData;
              } else {
                  // Trả về ngay trạng thái mới tạo
-                 return { credits: 60, subscriptionEnd: oneMonthExpiration, isExpired: false };
+                 return { credits: 60, subscriptionEnd: null, isExpired: false };
              }
         } else if (!data) {
             return { credits: 0, subscriptionEnd: null, isExpired: false };
@@ -102,7 +128,7 @@ export const getUserProfile = async (userId: string) => {
     try {
         const { data, error } = await supabase
             .from('profiles')
-            .select('full_name, phone')
+            .select('full_name, phone, country')
             .eq('id', userId)
             .single();
         if (error) throw error;

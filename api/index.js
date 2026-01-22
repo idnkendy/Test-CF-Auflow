@@ -720,7 +720,12 @@ async function handleSyncLadiPage(body, env) {
     if (!LADIFLOW_API_KEY) return { success: false, message: "API Key not configured" };
     
     // Only send if NEW USER tag required
-    const { is_new_user, email, full_name } = body;
+    const { is_new_user, email, full_name, country } = body;
+
+    // Check Country (Only allow 'VN')
+    if (country && country !== 'VN') {
+        return { success: true, message: `Skipped sync: Country is ${country} (Not VN)` };
+    }
 
     if (is_new_user) {
         const result = await sendToLadiPage({

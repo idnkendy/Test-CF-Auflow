@@ -111,10 +111,11 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                         // Locale for currency formatting
                         const locale = language === 'vi' ? 'vi-VN' : 'en-US';
 
-                        // Logic for Credit Booster: Only active if user has an active subscription
+                        // Logic for Credit Booster: Only active if user has an active subscription date
                         const isCreditPlan = plan.type === 'credit';
-                        const hasActiveSub = userStatus && !userStatus.isExpired;
-                        const isPlanRestricted = isCreditPlan && (!session || !hasActiveSub);
+                        // Check if subscriptionEnd exists and is not expired. Null means no sub (new user/forever free).
+                        const hasValidSubscription = userStatus && userStatus.subscriptionEnd && !userStatus.isExpired;
+                        const isPlanRestricted = isCreditPlan && (!session || !hasValidSubscription);
 
                         return (
                             <div 
