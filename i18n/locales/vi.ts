@@ -535,6 +535,7 @@ export const vi = {
   "editor.btn_generate": "Bắt đầu Chỉnh sửa",
   "editor.result_title": "Kết quả Chỉnh sửa",
   "editor.ref_hint": "Tải lên tối đa 5 ảnh để AI tham khảo phong cách hoặc chi tiết.",
+  "editor.prompt_default": "Thêm một ban công sắt nghệ thuật vào cửa sổ tầng hai.", // NEW KEY
 
   // Extended Features
   "ext.urban.title": "AI Render Quy Hoạch Đô Thị",
@@ -569,6 +570,12 @@ export const vi = {
   "ext.floorplan.auto_prompt": "Tạo tự động Prompt",
   "ext.floorplan.analyzing": "Đang phân tích...",
   "ext.floorplan.btn_generate": "Bắt đầu Render",
+
+  // FloorPlan Default Prompts (VI)
+  "floorplan.prompt.exterior_topdown": "Biến thành ảnh chụp thực tế dự án",
+  "floorplan.prompt.interior_topdown": "Biến thành ảnh chụp thực tế nội thất",
+  "floorplan.prompt.exterior_perspective": "Phối cảnh 3D ngoại thất từ mặt bằng",
+  "floorplan.prompt.interior_perspective": "Phối cảnh 3D nội thất từ mặt bằng",
 
   "ext.sketch.title": "AI Biến Ảnh Thành Sketch",
   "ext.sketch.step1": "1. Tải Lên Ảnh Gốc",
@@ -788,13 +795,4 @@ export const vi = {
   "video.loading.5": "Vui lòng không tắt tab này...",
   "video.loading.6": "Quá trình có thể mất 3-6 phút...",
   "video.loading.7": "Nếu quá lâu, hệ thống sẽ tự động thử lại...",
-  
-  // --- SAFETY WARNING MODAL ---
-  "safety.title": "Ảnh bị từ chối xử lý",
-  "safety.reason_title": "Nguyên nhân phổ biến:",
-  "safety.reason_1": "Ảnh chứa <strong>người thật</strong> (đặc biệt là trẻ em hoặc người nổi tiếng).",
-  "safety.reason_2": "Ảnh lộ nhiều da thịt hoặc tư thế nhạy cảm.",
-  "safety.reason_3": "Ảnh có nội dung bạo lực hoặc gây khó chịu.",
-  "safety.note": "*Hệ thống AI của Google tự động quét và chặn các nội dung này ngay khi tải lên để đảm bảo an toàn.",
-  "safety.btn": "Chọn ảnh khác ngay",
 };

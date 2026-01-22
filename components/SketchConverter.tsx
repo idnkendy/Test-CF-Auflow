@@ -171,13 +171,15 @@ const SketchConverter: React.FC<SketchConverterProps> = ({ state, onStateChange,
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: t(friendlyMsg) });
             }
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi sketch (${rawMsg})`, logId);
-                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") {
+                    // Optional add refund text
+                }
             }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);

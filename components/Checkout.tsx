@@ -1,7 +1,10 @@
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { PricingPlan } from '../types';
-import { plans } from '../constants/plans';
+import { plansVI, plansEN } from '../constants/plans';
+import { useLanguage } from '../hooks/useLanguage';
+import { supabase } from '../services/supabaseClient';
+import * as paymentService from '../services/paymentService';
 
 // --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
 const IS_PAYMENT_MAINTENANCE = false;
@@ -17,9 +20,29 @@ interface CheckoutProps {
 }
 
 const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
+    const { t, language } = useLanguage();
+    const activePlans = language === 'vi' ? plansVI : plansEN;
+    const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+    const isForeign = language === 'en';
     
+    // Internal state to check status locally in checkout component
+    const [hasActiveSub, setHasActiveSub] = useState(false);
+    const [loadingStatus, setLoadingStatus] = useState(true);
+
+    useEffect(() => {
+        const checkStatus = async () => {
+            const { data: { user } } = await supabase.auth.getUser();
+            if (user) {
+                const status = await paymentService.getUserStatus(user.id);
+                setHasActiveSub(status && !status.isExpired);
+            }
+            setLoadingStatus(false);
+        };
+        checkStatus();
+    }, []);
+
     const handleBuyClick = (plan: PricingPlan) => {
-        if (IS_PAYMENT_MAINTENANCE) return;
+        if (IS_PAYMENT_MAINTENANCE || isForeign) return;
         if (onPlanSelect) {
             onPlanSelect(plan);
         }
@@ -27,15 +50,18 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
 
     return (
         <div className="pb-6">
-            <h2 className="text-xl font-bold text-text-primary dark:text-white mb-2 text-center">Bảng Giá & Gói Cước</h2>
-            <p className="text-text-secondary dark:text-gray-300 mb-6 text-center text-sm max-w-xl mx-auto">Chọn gói cước phù hợp để sở hữu Credits và sáng tạo không giới hạn.</p>
+            <h2 className="text-xl font-bold text-text-primary dark:text-white mb-2 text-center">{t('pricing.title')}</h2>
+            <p className="text-text-secondary dark:text-gray-300 mb-6 text-center text-sm max-w-xl mx-auto">{t('pricing.subtitle')}</p>
 
             {/* Pricing Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 mb-8 items-stretch">
-                {plans.map((plan) => {
+            <div className={`grid grid-cols-1 sm:grid-cols-2 ${activePlans.length >= 3 ? 'xl:grid-cols-3' : ''} ${activePlans.length === 4 ? 'xl:grid-cols-4' : ''} gap-4 mb-8 items-stretch`}>
+                {activePlans.map((plan) => {
                     const discountPercent = plan.originalPrice 
                         ? Math.round(((plan.originalPrice - plan.price) / plan.originalPrice) * 100) 
                         : 0;
+                    
+                    const isCreditPlan = plan.type === 'credit';
+                    const isRestricted = isCreditPlan && !loadingStatus && !hasActiveSub;
 
                     return (
                         <div 
@@ -49,7 +75,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                             {plan.highlight && (
                                 <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2">
                                     <span className="bg-accent text-white text-[10px] uppercase font-bold px-3 py-1 rounded-full shadow-sm whitespace-nowrap">
-                                        Khuyên Dùng
+                                        {t('pricing.popular')}
                                     </span>
                                 </div>
                             )}
@@ -69,22 +95,23 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                                     <div className="flex items-baseline gap-2">
                                         {plan.originalPrice && (
                                             <span className="text-text-secondary/60 dark:text-gray-500 line-through text-sm decoration-gray-400/50">
-                                                {new Intl.NumberFormat('vi-VN').format(plan.originalPrice)}
+                                                {new Intl.NumberFormat(locale).format(plan.originalPrice)}
                                             </span>
                                         )}
                                         <div className="flex items-start">
                                             <span className="text-3xl font-extrabold text-text-primary dark:text-white tracking-tight">
-                                                {new Intl.NumberFormat('vi-VN').format(plan.price)}
+                                                {language === 'vi' ? '' : plan.currency}
+                                                {new Intl.NumberFormat(locale, { style: 'decimal', minimumFractionDigits: language === 'vi' ? 0 : 2 }).format(plan.price)}
                                             </span>
-                                            <span className="text-sm font-medium text-text-secondary dark:text-gray-400 mt-1.5 ml-0.5">{plan.currency}</span>
+                                            {language === 'vi' && <span className="text-sm font-medium text-text-secondary dark:text-gray-400 mt-1.5 ml-0.5">{plan.currency}</span>}
                                         </div>
                                     </div>
                                 </div>
                             </div>
                             
                             <div className="mb-4 bg-gray-100 dark:bg-gray-700/30 p-3 rounded-lg text-center border border-gray-200 dark:border-gray-600">
-                                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">Tổng nhận được</p>
-                                <p className="text-xl font-bold text-accent">{new Intl.NumberFormat('vi-VN').format(plan.credits || 0)} Credits</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">{t('pricing.get_now')}</p>
+                                <p className="text-xl font-bold text-accent">{new Intl.NumberFormat('en-US').format(plan.credits || 0)} Credits</p>
                             </div>
 
                             <ul className="space-y-2 text-text-secondary dark:text-gray-300 mb-6 flex-grow text-sm whitespace-normal">
@@ -99,23 +126,29 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                             </ul>
                             
                             <button 
-                                onClick={() => handleBuyClick(plan)}
-                                disabled={IS_PAYMENT_MAINTENANCE}
+                                onClick={() => !isRestricted && !isForeign && handleBuyClick(plan)}
+                                disabled={IS_PAYMENT_MAINTENANCE || isRestricted || isForeign}
                                 className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 flex justify-center items-center gap-2 text-sm transform ${
-                                    IS_PAYMENT_MAINTENANCE 
+                                    (IS_PAYMENT_MAINTENANCE || isForeign)
                                         ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
-                                        : (plan.highlight 
-                                            ? 'bg-accent hover:bg-accent-600 text-white shadow-lg shadow-accent/30 hover:-translate-y-0.5' 
-                                            : 'bg-gray-600 hover:bg-gray-700 text-white hover:shadow-md hover:-translate-y-0.5')
+                                        : isRestricted
+                                            ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600'
+                                            : (plan.highlight 
+                                                ? 'bg-accent hover:bg-accent-600 text-white shadow-lg shadow-accent/30 hover:-translate-y-0.5' 
+                                                : 'bg-gray-600 hover:bg-gray-700 text-white hover:shadow-md hover:-translate-y-0.5')
                                 }`}
                             >
                                 {IS_PAYMENT_MAINTENANCE ? (
                                     <>
                                         <span className="material-symbols-outlined text-sm">engineering</span>
-                                        <span>Đang bảo trì</span>
+                                        <span>{t('pricing.maintenance')}</span>
                                     </>
+                                ) : isForeign ? (
+                                    "Coming Soon"
+                                ) : isRestricted ? (
+                                    language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan'
                                 ) : (
-                                    'Đăng ký ngay'
+                                    t('pricing.select_plan')
                                 )}
                             </button>
                         </div>

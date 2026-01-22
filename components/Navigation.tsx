@@ -102,13 +102,6 @@ const BrushIcon = (props: React.SVGProps<SVGSVGElement>) => (
     </svg>
 );
 
-// Feng Shui (Compass)
-const FengShuiIcon = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm2.12 12.88l-6-2.5 2.5-6 6 2.5-2.5 6z" />
-    </svg>
-);
-
 const HistoryIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 );
@@ -153,7 +146,6 @@ export const useUtilityTools = () => {
             { tool: Tool.Staging, label: t('tool.staging'), desc: t('dash.staging.desc'), icon: <CubeIcon />, image: 'https://images.unsplash.com/photo-1631679706909-1844bbd07221?q=80&w=600&auto=format&fit=crop' },
             { tool: Tool.SketchConverter, label: t('tool.sketch'), desc: t('dash.sketch.desc'), icon: <PencilIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/photo-to-sketch.png' },
             { tool: Tool.AITechnicalDrawings, label: t('tool.technical'), desc: t('dash.technical.desc'), icon: <BlueprintIcon />, image: 'https://images.unsplash.com/photo-1503387762-592deb58ef4e?q=80&w=600&auto=format&fit=crop' },
-            { tool: Tool.FengShui, label: t('tool.fengshui'), desc: t('dash.fengshui.desc'), icon: <FengShuiIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/phong-thuy.png' },
         ]
     };
 };

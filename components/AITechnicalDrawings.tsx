@@ -217,7 +217,7 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: t(friendlyMsg) });
             }
             
             // DB records specific raw message
@@ -227,7 +227,9 @@ const AITechnicalDrawings: React.FC<AITechnicalDrawingsProps> = ({ state, onStat
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo bản vẽ (${rawMsg})`, logId);
-                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") {
+                     // Add logic if needed
+                }
             }
         } finally {
             onStateChange({ isLoading: false });

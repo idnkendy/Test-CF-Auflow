@@ -17,6 +17,12 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
         // NẾU KHÔNG TÌM THẤY DATA -> ĐÂY LÀ USER MỚI (SIGN UP)
         if (!data && email) {
              console.log("[Auth] New user detected, creating profile...");
+             
+             // Tính toán ngày hết hạn (1 tháng từ hiện tại)
+             const now = new Date();
+             now.setMonth(now.getMonth() + 1);
+             const oneMonthExpiration = now.toISOString();
+
              // 1. Gửi Webhook sang LadiFlow ngay lập tức (Fire & Forget but with logs)
              try {
                  const baseUrl = BACKEND_URL.replace(/\/$/, "");
@@ -40,10 +46,16 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                  console.error("[Sync] Exception:", e);
              }
 
-             // 2. Tạo hồ sơ mới trong DB
+             // 2. Tạo hồ sơ mới trong DB với hạn sử dụng 1 tháng
              const { error: insertError } = await supabase
                 .from('profiles')
-                .insert([{ id: userId, email, credits: 60, full_name: fullName }]);
+                .insert([{ 
+                    id: userId, 
+                    email, 
+                    credits: 60, 
+                    full_name: fullName,
+                    subscription_end: oneMonthExpiration // Thêm hạn sử dụng 1 tháng
+                }]);
              
              if (insertError) {
                  // Trường hợp Race Condition (đã tạo ở tab khác), thử lấy lại
@@ -59,16 +71,26 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                  }
                  data = retryData;
              } else {
-                 return { credits: 60, subscriptionEnd: null, isExpired: false };
+                 // Trả về ngay trạng thái mới tạo
+                 return { credits: 60, subscriptionEnd: oneMonthExpiration, isExpired: false };
              }
         } else if (!data) {
             return { credits: 0, subscriptionEnd: null, isExpired: false };
         }
 
+        // --- LOGIC KIỂM TRA HẾT HẠN MỚI ---
+        const now = new Date();
+        const subEnd = data?.subscription_end ? new Date(data.subscription_end) : null;
+        const isExpired = subEnd ? subEnd < now : false;
+
+        // Nếu đã hết hạn, trả về 0 credits để chặn UI/UX
+        // Nếu chưa hết hạn, trả về số credits thực tế
+        const effectiveCredits = isExpired ? 0 : (data?.credits ?? 0);
+
         return { 
-            credits: data?.credits ?? 0, 
+            credits: effectiveCredits, 
             subscriptionEnd: data?.subscription_end, 
-            isExpired: data?.subscription_end ? new Date(data.subscription_end) < new Date() : false 
+            isExpired: isExpired 
         };
     } catch (e) {
         console.error("[Auth] getUserStatus Error:", e);

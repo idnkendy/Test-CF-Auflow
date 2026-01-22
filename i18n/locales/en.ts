@@ -536,6 +536,7 @@ export const en = {
   "editor.btn_generate": "Start Editing",
   "editor.result_title": "Editing Result",
   "editor.ref_hint": "Upload up to 5 images for AI style or detail reference.",
+  "editor.prompt_default": "Add an artistic iron balcony to the second-floor window.", // NEW KEY
 
   // Extended Features
   "ext.urban.title": "AI Urban Planning Render",
@@ -570,6 +571,12 @@ export const en = {
   "ext.floorplan.auto_prompt": "Auto Generate Prompt",
   "ext.floorplan.analyzing": "Analyzing...",
   "ext.floorplan.btn_generate": "Start Render",
+
+  // FloorPlan Default Prompts (EN)
+  "floorplan.prompt.exterior_topdown": "Transform into realistic project photo",
+  "floorplan.prompt.interior_topdown": "Transform into realistic interior photo",
+  "floorplan.prompt.exterior_perspective": "3D exterior perspective from floor plan",
+  "floorplan.prompt.interior_perspective": "3D interior perspective from floor plan",
 
   "ext.sketch.title": "AI Photo to Sketch",
   "ext.sketch.step1": "1. Upload Source Image",

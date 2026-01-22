@@ -202,15 +202,16 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
             
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let errorMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let errorKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            let displayMsg = t(errorKey);
             
             // --- SAFETY MODAL TRIGGER ---
-            if (errorMsg === "SAFETY_POLICY_VIOLATION") {
+            if (errorKey === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                if (logId) errorMsg += " (Credits đã được hoàn lại)";
-                onStateChange({ error: errorMsg });
+                if (logId) displayMsg += t('video.msg.refund');
+                onStateChange({ error: displayMsg });
             }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);

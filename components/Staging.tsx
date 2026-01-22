@@ -222,20 +222,23 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
 
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            let displayMsg = t(friendlyKey);
             
             // --- SAFETY MODAL TRIGGER ---
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                onStateChange({ error: t('msg.safety_violation') });
-            } else {
-                onStateChange({ error: friendlyMsg });
+                displayMsg = t('msg.safety_violation');
             }
             
+            onStateChange({ error: displayMsg });
+
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Staging (${rawMsg})`, logId);
-                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyKey !== "SAFETY_POLICY_VIOLATION") {
+                     onStateChange({ error: displayMsg + t('video.msg.refund') });
+                }
             }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);

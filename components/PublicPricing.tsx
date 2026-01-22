@@ -2,7 +2,7 @@
 import React from 'react';
 import { PricingPlan, UserStatus } from '../types';
 import { Logo } from './common/Logo';
-import { plans } from '../constants/plans';
+import { plansVI, plansEN } from '../constants/plans';
 import { Session } from '@supabase/supabase-js';
 import { useLanguage } from '../hooks/useLanguage';
 
@@ -27,10 +27,14 @@ interface PublicPricingProps {
 }
 
 const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate, onPlanSelect, session, userStatus, onDashboardNavigate, onSignOut }) => {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
+    
+    // Select plan list based on language
+    const activePlans = language === 'vi' ? plansVI : plansEN;
+    const isForeign = language === 'en';
     
     const handlePlanClick = (plan: PricingPlan) => {
-        if (IS_PAYMENT_MAINTENANCE) return;
+        if (IS_PAYMENT_MAINTENANCE || isForeign) return;
         if (onPlanSelect) {
             onPlanSelect(plan);
         } else {
@@ -98,16 +102,24 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                 </div>
 
                 {/* PRICING GRID */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-8 items-stretch mb-20">
-                    {plans.map((plan) => {
+                <div className={`grid grid-cols-1 md:grid-cols-2 ${activePlans.length >= 3 ? 'lg:grid-cols-3' : ''} ${activePlans.length === 4 ? 'xl:grid-cols-4' : ''} gap-4 lg:gap-6 items-stretch mb-20`}>
+                    {activePlans.map((plan) => {
                         const discountPercent = plan.originalPrice 
                             ? Math.round(((plan.originalPrice - plan.price) / plan.originalPrice) * 100) 
                             : 0;
+                        
+                        // Locale for currency formatting
+                        const locale = language === 'vi' ? 'vi-VN' : 'en-US';
+
+                        // Logic for Credit Booster: Only active if user has an active subscription
+                        const isCreditPlan = plan.type === 'credit';
+                        const hasActiveSub = userStatus && !userStatus.isExpired;
+                        const isPlanRestricted = isCreditPlan && (!session || !hasActiveSub);
 
                         return (
                             <div 
                                 key={plan.id}
-                                className={`relative flex flex-col h-full p-6 md:p-4 lg:p-8 rounded-2xl transition-all duration-300 border group ${
+                                className={`relative flex flex-col h-full p-6 md:p-4 lg:p-6 rounded-2xl transition-all duration-300 border group ${
                                     plan.highlight 
                                         ? 'bg-[#191919] border-[#7f13ec] shadow-2xl shadow-[#7f13ec]/20 z-10' 
                                         : 'bg-[#191919]/50 border-[#302839] hover:border-[#7f13ec]/50'
@@ -131,31 +143,32 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                     {/* Enforce min-height on price container to align 'Receive Credits' box */}
                                     <div className="flex flex-col items-center justify-end min-h-[110px] pb-2">
                                         {plan.originalPrice ? (
-                                            <div className="flex items-center gap-2 mb-1">
-                                                <span className="text-gray-500 line-through text-lg md:text-sm lg:text-lg decoration-gray-500/50 font-medium">
-                                                    {new Intl.NumberFormat('vi-VN').format(plan.originalPrice)}
+                                            <div className="flex items-center gap-2 mb-1.5">
+                                                <span className="text-gray-500 line-through text-xl md:text-lg lg:text-xl decoration-gray-500/50 font-semibold">
+                                                    {new Intl.NumberFormat(locale, { style: 'decimal' }).format(plan.originalPrice)} {plan.currency}
                                                 </span>
-                                                <span className="bg-red-500/10 text-red-400 text-[10px] font-bold px-2 py-0.5 rounded-full border border-red-500/20">
+                                                <span className="bg-red-500/10 text-red-400 text-sm md:text-xs lg:text-sm font-extrabold px-3 py-1 rounded-full border border-red-500/20 shadow-sm">
                                                     -{discountPercent}%
                                                 </span>
                                             </div>
                                         ) : (
-                                            /* Spacer for alignment if no discount */
-                                            <div className="h-[28px] md:h-[24px] lg:h-[28px] mb-1"></div> 
+                                            /* Spacer for alignment if no discount - adjusted for larger font size above */
+                                            <div className="h-[36px] md:h-[32px] lg:h-[36px] mb-1.5"></div> 
                                         )}
                                         <div className="flex justify-center items-start">
                                             <span className="text-4xl md:text-3xl lg:text-5xl font-extrabold text-white tracking-tight">
-                                                {new Intl.NumberFormat('vi-VN').format(plan.price)}
+                                                {language === 'vi' ? '' : plan.currency}
+                                                {new Intl.NumberFormat(locale, { style: 'decimal', minimumFractionDigits: language === 'vi' ? 0 : 2 }).format(plan.price)}
                                             </span>
-                                            <span className="text-base md:text-sm lg:text-lg text-gray-400 font-medium mt-2 ml-1.5">{plan.currency}</span>
+                                            {language === 'vi' && <span className="text-base md:text-sm lg:text-lg text-gray-400 font-medium mt-2 ml-1.5">{plan.currency}</span>}
                                         </div>
                                         <p className="text-gray-500 text-xs font-medium mt-2">{t('pricing.one_time')}</p>
                                     </div>
                                     
                                     <div className="mt-4 md:mt-6 border-t border-[#302839] pt-4 md:pt-6">
-                                        <div className="inline-flex items-center justify-center gap-2 bg-[#2a1a35] text-[#DA70D6] px-5 py-2.5 md:px-3 md:py-2 lg:px-5 lg:py-2.5 rounded-xl border border-[#DA70D6]/30 w-full">
-                                            <span className="text-xs md:text-[10px] lg:text-xs uppercase tracking-wide font-semibold opacity-90">{t('pricing.get_now')}</span>
-                                            <span className="text-lg md:text-base lg:text-xl font-bold">{new Intl.NumberFormat('vi-VN').format(plan.credits || 0)} Credits</span>
+                                        <div className="inline-flex items-center justify-center gap-1.5 md:gap-1 lg:gap-1.5 xl:gap-2 bg-[#2a1a35] text-[#DA70D6] px-2 py-2.5 md:px-1.5 md:py-2 lg:px-3 lg:py-2.5 rounded-xl border border-[#DA70D6]/30 w-full whitespace-nowrap overflow-hidden">
+                                            <span className="text-xs md:text-[9px] lg:text-[10px] xl:text-xs uppercase tracking-wide font-semibold opacity-90 flex-shrink-0">{t('pricing.get_now')}</span>
+                                            <span className="text-lg md:text-sm lg:text-base xl:text-xl font-bold truncate">{new Intl.NumberFormat('en-US').format(plan.credits || 0)} Credits</span>
                                         </div>
                                     </div>
                                 </div>
@@ -174,17 +187,26 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                 </ul>
 
                                 <button 
-                                    onClick={() => handlePlanClick(plan)}
-                                    disabled={IS_PAYMENT_MAINTENANCE}
+                                    onClick={() => !isPlanRestricted && !isForeign && handlePlanClick(plan)}
+                                    disabled={IS_PAYMENT_MAINTENANCE || isPlanRestricted || isForeign}
                                     className={`w-full font-bold py-3.5 px-6 md:py-2.5 md:px-4 lg:py-3.5 lg:px-6 rounded-xl transition-all duration-300 shadow-lg text-sm md:text-xs lg:text-sm ${
-                                        IS_PAYMENT_MAINTENANCE 
+                                        (IS_PAYMENT_MAINTENANCE || isForeign)
                                             ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
-                                            : (plan.highlight 
-                                                ? 'gradient-button text-white hover:shadow-purple-500/25 hover:-translate-y-0.5' 
-                                                : 'bg-white text-black hover:bg-gray-200 hover:-translate-y-0.5')
+                                            : isPlanRestricted 
+                                                ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600'
+                                                : (plan.highlight 
+                                                    ? 'gradient-button text-white hover:shadow-purple-500/25 hover:-translate-y-0.5' 
+                                                    : 'bg-white text-black hover:bg-gray-200 hover:-translate-y-0.5')
                                     }`}
                                 >
-                                    {IS_PAYMENT_MAINTENANCE ? t('pricing.maintenance') : t('pricing.select_plan')}
+                                    {IS_PAYMENT_MAINTENANCE 
+                                        ? t('pricing.maintenance') 
+                                        : isForeign
+                                            ? "Coming Soon"
+                                            : isPlanRestricted 
+                                                ? (language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan')
+                                                : t('pricing.select_plan')
+                                    }
                                 </button>
                             </div>
                         );
@@ -199,7 +221,10 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                             <h3 className="font-bold text-white mb-2">{t('faq.q1')}</h3>
                             <p className="text-gray-400 text-sm">{t('faq.a1')}</p>
                         </div>
-                        {/* More static FAQs can be added to i18n later if needed, reused hero FAQ for now */}
+                        <div className="bg-[#191919] p-6 rounded-xl border border-[#302839]">
+                            <h3 className="font-bold text-white mb-2">{t('faq.q2')}</h3>
+                            <p className="text-gray-400 text-sm">{t('faq.a2')}</p>
+                        </div>
                     </div>
                 </div>
             </main>

@@ -1,5 +1,5 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FileData, Tool, ImageResolution, AspectRatio } from '../types';
 import { ImageEditorState } from '../state/toolState';
 import * as geminiService from '../services/geminiService';
@@ -90,7 +90,7 @@ const getClosestAspectRatio = (width: number, height: number): AspectRatio => {
 };
 
 const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
-    const { t } = useLanguage();
+    const { t, language } = useLanguage();
     const { prompt, sourceImage, maskImage, referenceImages, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     
     const [isMaskingModalOpen, setIsMaskingModalOpen] = useState<boolean>(false);
@@ -99,6 +99,17 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+    
+    // Handle Default Prompt Switching
+    useEffect(() => {
+        const viDefault = 'Thêm một ban công sắt nghệ thuật vào cửa sổ tầng hai.';
+        const enDefault = 'Add an artistic iron balcony to the second-floor window.';
+        
+        // If current prompt is empty or matches one of the defaults, update it to current language
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
 
     const handleFileSelect = (fileData: FileData | null) => {
         if (fileData?.objectURL) {
@@ -290,7 +301,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: t(friendlyMsg) });
             }
             
             const { data: { user } } = await supabase.auth.getUser();
@@ -459,56 +470,52 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('editor.btn_generate')}
                     </button>
                     {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
-                    {upscaleWarning && <p className="mt-2 text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
+                    {upscaleWarning && <p className="mt-3 text-sm text-yellow-500 text-center font-medium bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded">{upscaleWarning}</p>}
                  </div>
             </div>
 
+            {/* Result Section */}
             <div>
                 <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('editor.result_title')}</h3>
-                    {resultImages.length === 1 && (
+                    <h3 className="text-lg font-bold text-text-primary dark:text-white">{t('common.result')}</h3>
+                    {resultImages.length > 0 && (
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setPreviewImage(resultImages[0])}
-                                className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2"
+                                className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
+                                title="Phóng to"
                             >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
                                 </svg>
-                                Phóng to
                             </button>
                             <button 
                                 onClick={handleDownload} 
                                 disabled={isDownloading}
-                                className="text-center bg-gray-600 hover:bg-gray-700 text-white font-semibold py-2 px-4 transition-colors rounded-lg text-sm flex items-center gap-2"
+                                className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
                             >
-                                {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
-                                {t('common.download')}
+                                {isDownloading ? <Spinner /> : (
+                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                        <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                                    </svg>
+                                )}
+                                <span>{t('common.download')}</span>
                             </button>
                         </div>
                     )}
                 </div>
                 <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                    {isLoading && (
+                    {isLoading ? (
                         <div className="flex flex-col items-center">
                             <Spinner />
                             <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
                         </div>
-                    )}
-                    
-                    {!isLoading && resultImages.length === 1 && sourceImage && (
-                        <ImageComparator
-                            originalImage={sourceImage.objectURL}
-                            resultImage={resultImages[0]}
-                        />
-                    )}
-                    
-                    {!isLoading && resultImages.length > 1 && (
+                    ) : resultImages.length === 1 && sourceImage ? (
+                        <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
+                    ) : resultImages.length > 1 ? (
                         <ResultGrid images={resultImages} toolName="image-editor" />
-                    )}
-
-                    {!isLoading && resultImages.length === 0 && (
-                         <p className="text-text-secondary dark:text-gray-400 text-center p-4">{sourceImage ? t('msg.no_result_render') : t('common.upload_placeholder')}</p>
+                    ) : (
+                        <p className="text-text-secondary dark:text-gray-400 p-4 text-center">{t('msg.no_result_render')}</p>
                     )}
                 </div>
             </div>

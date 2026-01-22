@@ -351,38 +351,6 @@ export interface SketchConverterState {
     aspectRatio: AspectRatio; // Changed from '16:9'
 }
 
-export interface FengShuiState {
-    name: string;
-    birthDay: string;
-    birthMonth: string;
-    birthYear: string;
-    gender: 'male' | 'female';
-    analysisType: string;
-    floorPlanImage: FileData | null;
-    houseDirection: string;
-    isLoading: boolean;
-    error: string | null;
-    resultImage: string | null;
-    analysisText: string | null;
-    deathDay: string;
-    deathMonth: string;
-    deathYear: string;
-    deathHour: string;
-    spouseName: string;
-    spouseBirthYear: string;
-    eldestChildName: string;
-    eldestChildBirthYear: string;
-    graveDirection: string;
-    terrainDescription: string;
-    latitude: number | null;
-    longitude: number | null;
-    kitchenDirection: string;
-    bedroomDirection: string;
-    eventType: string;
-    vanKhanType: string;
-    resolution: ImageResolution;
-}
-
 // Khởi tạo giá trị mặc định cho trạng thái của tất cả công cụ
 export const initialToolStates = {
     [Tool.ArchitecturalRendering]: {
@@ -620,37 +588,6 @@ export const initialToolStates = {
         resolution: 'Standard',
         aspectRatio: '16:9', // Added default
     } as SketchConverterState,
-    [Tool.FengShui]: {
-        name: '',
-        birthDay: '1',
-        birthMonth: '1',
-        birthYear: '',
-        gender: 'male',
-        analysisType: 'bat-trach',
-        floorPlanImage: null,
-        houseDirection: 'bac-kham',
-        isLoading: false,
-        error: null,
-        resultImage: null,
-        analysisText: null,
-        deathDay: '',
-        deathMonth: '',
-        deathYear: '',
-        deathHour: 'ty',
-        spouseName: '',
-        spouseBirthYear: '',
-        eldestChildName: '',
-        eldestChildBirthYear: '',
-        graveDirection: 'bac-kham',
-        terrainDescription: '',
-        latitude: null,
-        longitude: null,
-        kitchenDirection: 'dong-nam-ton',
-        bedroomDirection: 'dong-chan',
-        eventType: 'dong-tho',
-        vanKhanType: 'dong-tho',
-        resolution: 'Standard',
-    } as FengShuiState,
     [Tool.LuBanRuler]: {
         width: '1200',
         height: '2400',

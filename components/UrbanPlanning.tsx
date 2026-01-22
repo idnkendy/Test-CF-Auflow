@@ -308,7 +308,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: t(friendlyMsg) });
             }
             
             const { data: { user } } = await supabase.auth.getUser();

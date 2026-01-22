@@ -1,7 +1,7 @@
 
 import { PricingPlan } from '../types';
 
-export const plans: PricingPlan[] = [
+export const plansVI: PricingPlan[] = [
     {
         id: 'plan_starter',
         name: 'Starter',
@@ -29,7 +29,7 @@ export const plans: PricingPlan[] = [
         currency: 'đ',
         features: [
             'Tổng 7,000 Credits',
-            'Hạn sử dụng: 3 Tháng', // Updated to 3 months
+            'Hạn sử dụng: 3 Tháng',
             'Tối ưu chi phí & hiệu năng',
             'Truy cập tất cả công cụ AI',
             'Render tốc độ cao',
@@ -39,7 +39,7 @@ export const plans: PricingPlan[] = [
         type: 'subscription',
         credits: 7000,
         highlight: true,
-        durationMonths: 3, // Updated to 3 months
+        durationMonths: 3,
         description: 'Lựa chọn tốt nhất cho Kiến trúc sư & Freelancer.'
     },
     {
@@ -50,7 +50,7 @@ export const plans: PricingPlan[] = [
         currency: 'đ',
         features: [
             'Tổng 25,000 Credits',
-            'Hạn sử dụng: 6 Tháng', // Updated to 6 months
+            'Hạn sử dụng: 6 Tháng',
             'Chi phí rẻ nhất/credit',
             'Truy cập tất cả công cụ AI',
             'Render tốc độ siêu tốc',
@@ -59,7 +59,89 @@ export const plans: PricingPlan[] = [
         ],
         type: 'subscription',
         credits: 25000,
-        durationMonths: 6, // Updated to 6 months
+        durationMonths: 6,
         description: 'Giải pháp tối ưu cho Studio và Doanh nghiệp.'
     }
 ];
+
+export const plansEN: PricingPlan[] = [
+    {
+        id: 'plan_global_weekly',
+        name: 'Weekly Pass',
+        price: 9.99,
+        currency: '$',
+        features: [
+            'Total 1,000 Credits',
+            'Standard Plan',
+            'Duration: 7 Days',
+            'Access all AI Tools',
+            'Standard Rendering Speed',
+            'Priority Support 24/7',
+            'Early Access to Features'
+        ],
+        type: 'subscription',
+        credits: 1000,
+        durationMonths: 0.25,
+        description: 'Perfect for short-term projects and quick renders.'
+    },
+    {
+        id: 'plan_global_monthly',
+        name: 'Pro Monthly',
+        price: 29.00,
+        originalPrice: 39.00,
+        currency: '$',
+        features: [
+            'Total 4,000 Credits',
+            'Duration: 1 Month',
+            'Cost & Performance Optimized',
+            'Access all AI Tools',
+            'Fast Rendering Speed',
+            'Priority Support 24/7',
+            'Early Access to Features'
+        ],
+        type: 'subscription',
+        credits: 4000,
+        highlight: true,
+        durationMonths: 1,
+        description: 'Best value for freelancers and regular users.'
+    },
+    {
+        id: 'plan_global_yearly',
+        name: 'Yearly Elite',
+        price: 249.00,
+        originalPrice: 468.00,
+        currency: '$',
+        features: [
+            'Total 48,000 Credits',
+            'Duration: 12 Months',
+            'Lowest Cost per Credit',
+            'Access all AI Tools',
+            'Ultra-Fast Rendering Speed',
+            'Priority Support 24/7',
+            'Early Access to Features'
+        ],
+        type: 'subscription',
+        credits: 48000,
+        durationMonths: 12,
+        description: 'Maximum power for studios. Save ~45% with annual billing.'
+    },
+    {
+        id: 'plan_global_credit',
+        name: 'Credit Booster',
+        price: 6.00,
+        currency: '$',
+        features: [
+            'Total 1,000 Credits',
+            'Add-on Plan',
+            'Access all AI Tools',
+            'Priority Support 24/7'
+        ],
+        type: 'credit',
+        credits: 1000,
+        durationMonths: 0,
+        description: 'Exclusive add-on for active subscribers. Requires an existing plan.'
+    }
+];
+
+// Combined list for validation services
+export const plans = [...plansVI, ...plansEN];

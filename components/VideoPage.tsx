@@ -463,23 +463,24 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             await historyService.addToHistory({ tool: Tool.VideoGeneration, prompt: item.prompt, sourceImageURL: item.file.objectURL, resultVideoURL: result.videoUrl });
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            let displayMsg = t(friendlyKey);
             
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = t('msg.safety_violation');
+                displayMsg = t('msg.safety_violation');
             }
 
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
                 await props.onRefreshCredits(); 
-                if (friendlyMsg !== t('msg.safety_violation')) {
-                     friendlyMsg += t('video.msg.refund');
+                if (friendlyKey !== "SAFETY_POLICY_VIOLATION") {
+                     displayMsg += t('video.msg.refund');
                 }
             }
             localStorage.removeItem('opzen_pending_tx');
-            setVideoState(prev => ({ ...prev, error: friendlyMsg, contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, isGeneratingVideo: false } : i) }));
+            setVideoState(prev => ({ ...prev, error: displayMsg, contextItems: prev.contextItems.map(i => i.id === item.id ? { ...i, isGeneratingVideo: false } : i) }));
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         }
     };
@@ -839,23 +840,24 @@ const VideoPage: React.FC<VideoPageProps> = (props) => {
             await historyService.addToHistory({ tool: Tool.VideoGeneration, prompt: singlePrompt, sourceImageURL: startImageToUse?.objectURL, resultVideoURL: result.videoUrl });
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            let displayMsg = t(friendlyKey);
             
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = t('msg.safety_violation');
+                displayMsg = t('msg.safety_violation');
             }
 
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi tạo video (${rawMsg})`);
                 await props.onRefreshCredits();
-                if (friendlyMsg !== t('msg.safety_violation')) {
-                     friendlyMsg += t('video.msg.refund');
+                if (friendlyKey !== "SAFETY_POLICY_VIOLATION") {
+                     displayMsg += t('video.msg.refund');
                 }
             }
             localStorage.removeItem('opzen_pending_tx');
-            setVideoState(prev => ({ ...prev, error: friendlyMsg }));
+            setVideoState(prev => ({ ...prev, error: displayMsg }));
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             setIsSingleGenerating(false);

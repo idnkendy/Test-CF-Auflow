@@ -11,6 +11,7 @@ import ImageUpload from './common/ImageUpload';
 import { supabase } from '../services/supabaseClient';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import SafetyWarningModal from './common/SafetyWarningModal';
+import { useLanguage } from '../hooks/useLanguage';
 
 interface VideoGeneratorProps {
     state: VideoGeneratorState;
@@ -21,6 +22,7 @@ interface VideoGeneratorProps {
 }
 
 const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
+    const { t } = useLanguage();
     const { prompt, startImage, isLoading, error, generatedVideoUrl, aspectRatio } = state;
     const [showSafetyModal, setShowSafetyModal] = useState(false);
 
@@ -44,7 +46,7 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
              return;
         }
         if (!prompt) {
-            onStateChange({ error: 'Vui lòng nhập mô tả.' });
+            onStateChange({ error: t('err.input.prompt') });
             return;
         }
 
@@ -89,23 +91,24 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
 
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            let displayMsg = t(friendlyKey);
 
             // --- SAFETY MODAL TRIGGER ---
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = "Ảnh bị từ chối do vi phạm chính sách an toàn.";
+                displayMsg = t('msg.safety_violation');
             }
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, 5, `Hoàn tiền: Lỗi tạo video (${rawMsg})`, logId);
-                if (friendlyMsg !== "Ảnh bị từ chối do vi phạm chính sách an toàn.") {
-                     friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyKey !== "SAFETY_POLICY_VIOLATION") {
+                     displayMsg += t('video.msg.refund');
                 }
             }
             
-            onStateChange({ error: friendlyMsg });
+            onStateChange({ error: displayMsg });
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
         } finally {
             onStateChange({ isLoading: false });
@@ -116,29 +119,29 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
         <div className="flex flex-col gap-8">
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             <div className="flex justify-between items-center">
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white">Tạo Video AI</h2>
-                <a href="/video" className="text-sm text-[#7f13ec] hover:underline font-medium">Chuyển sang Studio Video đầy đủ &rarr;</a>
+                <h2 className="text-2xl font-bold text-text-primary dark:text-white">{t('video.title')}</h2>
+                <a href="/video" className="text-sm text-[#7f13ec] hover:underline font-medium">{t('video.switch')} &rarr;</a>
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">1. Ảnh bắt đầu (Tùy chọn)</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('video.input.start_img')}</label>
                         <ImageUpload onFileSelect={handleFileSelect} previewUrl={startImage?.objectURL} />
                     </div>
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">2. Mô tả video</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('video.input.desc_label')}</label>
                         <textarea
                             rows={4}
                             className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                            placeholder="Mô tả chuyển động, ánh sáng..."
+                            placeholder={t('video.input.desc_placeholder')}
                             value={prompt}
                             onChange={(e) => onStateChange({ prompt: e.target.value })}
                         />
                     </div>
                     {/* Simplified Aspect Ratio for this view */}
                     <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">Tỷ lệ khung hình</label>
+                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('opt.aspect_ratio')}</label>
                         <div className="flex gap-2">
                             <button 
                                 onClick={() => handleAspectRatioChange('16:9')} 
@@ -156,23 +159,23 @@ const VideoGenerator: React.FC<VideoGeneratorProps> = ({ state, onStateChange, u
                         disabled={isLoading}
                         className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors"
                     >
-                        {isLoading ? <><Spinner /> Đang tạo...</> : 'Tạo Video (5 Credits)'}
+                        {isLoading ? <><Spinner /> {t('video.msg.generating')}</> : `${t('video.btn_generate')} (5 Credits)`}
                     </button>
                     {error && <p className="text-red-500 text-sm mt-2 bg-red-100 dark:bg-red-900/20 p-2 rounded border border-red-200 dark:border-red-800">{error}</p>}
                 </div>
                 
                 <div>
-                    <h3 className="text-xl font-semibold text-text-primary dark:text-white mb-4">Kết quả</h3>
+                    <h3 className="text-xl font-semibold text-text-primary dark:text-white mb-4">{t('common.result')}</h3>
                     <div className="w-full aspect-video bg-black rounded-lg flex items-center justify-center overflow-hidden border border-gray-700">
                         {isLoading ? (
                             <div className="text-center text-gray-400">
                                 <Spinner />
-                                <p className="mt-2 text-sm">Đang xử lý...</p>
+                                <p className="mt-2 text-sm">{t('video.loading.1')}</p>
                             </div>
                         ) : generatedVideoUrl ? (
                             <video src={generatedVideoUrl} controls autoPlay loop className="w-full h-full object-contain" />
                         ) : (
-                            <p className="text-gray-500">Kết quả sẽ hiện ở đây</p>
+                            <p className="text-gray-500">{t('video.result.placeholder')}</p>
                         )}
                     </div>
                 </div>

@@ -297,7 +297,7 @@ const Renovation: React.FC<RenovationProps> = ({ state, onStateChange, userCredi
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: t(friendlyMsg) });
             }
             
             const { data: { user } } = await supabase.auth.getUser();

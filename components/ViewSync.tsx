@@ -360,8 +360,6 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                // Translate the error key if it's one of our known keys, otherwise just show it
-                // Using t() will return the key itself if not found, or the translation if found.
                 onStateChange({ error: t(friendlyMsg) });
             }
 

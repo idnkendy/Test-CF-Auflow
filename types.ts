@@ -19,7 +19,6 @@ export enum Tool {
   Staging = 'Staging',
   AITechnicalDrawings = 'AITechnicalDrawings',
   SketchConverter = 'SketchConverter',
-  FengShui = 'FengShui',
   LuBanRuler = 'LuBanRuler',
   Pricing = 'Pricing',
   Profile = 'Profile',

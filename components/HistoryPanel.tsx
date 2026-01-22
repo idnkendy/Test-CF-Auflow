@@ -68,7 +68,6 @@ const HistoryPanel: React.FC = () => {
         [Tool.Upscale]: t('tool.upscale'),
         [Tool.Moodboard]: t('tool.moodboard'),
         [Tool.History]: t('nav.history'),
-        [Tool.FengShui]: t('tool.fengshui'),
         [Tool.LayoutGenerator]: t('tool.layout'),
         [Tool.DrawingGenerator]: t('tool.drawing'),
         [Tool.DiagramGenerator]: t('tool.diagram'),

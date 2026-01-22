@@ -108,23 +108,48 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
         : t('ext.floorplan.mode.perspective_int');
 
     useEffect(() => {
-        const prompt1_vi = 'Biến thành ảnh chụp thực tế dự án';
-        const prompt1_en = 'Transform into realistic project photo';
-        const prompt2_vi = 'Biến thành ảnh chụp thực tế nội thất';
-        const prompt2_en = 'Transform into realistic interior photo';
-
-        if (renderMode === 'top-down') {
-            if (planType === 'interior') {
-                if (!prompt || prompt === prompt1_vi || prompt === prompt1_en || prompt === prompt2_vi || prompt === prompt2_en) {
-                    onStateChange({ prompt: language === 'vi' ? prompt2_vi : prompt2_en });
-                }
-            } else if (planType === 'exterior') {
-                if (!prompt || prompt === prompt2_vi || prompt === prompt2_en || prompt === prompt1_vi || prompt === prompt1_en) {
-                    onStateChange({ prompt: language === 'vi' ? prompt1_vi : prompt1_en });
-                }
+        // Define default prompts for all 4 combinations (Ext/Int x Top/Persp)
+        const defaults = {
+            vi: {
+                topdown_ext: 'Biến thành ảnh chụp thực tế dự án',
+                topdown_int: 'Biến thành ảnh chụp thực tế nội thất',
+                persp_ext: 'Phối cảnh 3D ngoại thất từ mặt bằng',
+                persp_int: 'Phối cảnh 3D nội thất từ mặt bằng'
+            },
+            en: {
+                topdown_ext: 'Transform into realistic project photo',
+                topdown_int: 'Transform into realistic interior photo',
+                persp_ext: '3D exterior perspective from floor plan',
+                persp_int: '3D interior perspective from floor plan'
             }
+        };
+
+        // Current target default prompt based on current mode and language
+        let targetDefault = '';
+        
+        if (renderMode === 'top-down') {
+             targetDefault = planType === 'exterior'
+                ? (language === 'vi' ? defaults.vi.topdown_ext : defaults.en.topdown_ext)
+                : (language === 'vi' ? defaults.vi.topdown_int : defaults.en.topdown_int);
+
+             // Check if current prompt is empty or is one of the known defaults (meaning we switched lang or mode)
+             const allDefaults = [...Object.values(defaults.vi), ...Object.values(defaults.en)];
+             if (!prompt || allDefaults.includes(prompt)) {
+                 onStateChange({ prompt: targetDefault });
+             }
+        } else {
+             // Perspective logic (using layoutPrompt)
+             targetDefault = planType === 'exterior'
+                ? (language === 'vi' ? defaults.vi.persp_ext : defaults.en.persp_ext)
+                : (language === 'vi' ? defaults.vi.persp_int : defaults.en.persp_int);
+
+             const allDefaults = [...Object.values(defaults.vi), ...Object.values(defaults.en)];
+             if (!layoutPrompt || allDefaults.includes(layoutPrompt)) {
+                 onStateChange({ layoutPrompt: targetDefault });
+             }
         }
-    }, [renderMode, planType, onStateChange, language]);
+
+    }, [renderMode, planType, language, prompt, layoutPrompt, onStateChange]);
 
     const appendToPrompt = (text: string) => {
         const targetPromptKey = renderMode === 'top-down' ? 'prompt' : 'layoutPrompt';
@@ -338,7 +363,7 @@ const FloorPlan: React.FC<FloorPlanProps> = ({ state, onStateChange, userCredits
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: t(friendlyMsg) });
             }
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);

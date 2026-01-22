@@ -178,16 +178,16 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
         setRunningHubTaskId(null);
         
-        const friendlyMsg = jobService.mapFriendlyErrorMessage(msg);
+        const friendlyMsgKey = jobService.mapFriendlyErrorMessage(msg);
+        let displayMsg = t(friendlyMsgKey);
         
         // --- SAFETY MODAL TRIGGER (Async/Polling) ---
-        if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+        if (friendlyMsgKey === "SAFETY_POLICY_VIOLATION") {
             setShowSafetyModal(true);
-            onStateChange({ isLoading: false, error: t('msg.safety_violation') });
-        } else {
-            onStateChange({ isLoading: false, error: friendlyMsg });
+            displayMsg = t('msg.safety_violation');
         }
         
+        onStateChange({ isLoading: false, error: displayMsg });
         setStatusMessage(null);
 
         if (currentJobId) {
@@ -278,23 +278,24 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
 
         } catch (err: any) {
             let msg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(msg);
+            let friendlyKey = jobService.mapFriendlyErrorMessage(msg);
+            let displayMsg = t(friendlyKey);
             
             // --- SAFETY MODAL TRIGGER (Sync/Initial) ---
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
-                friendlyMsg = t('msg.safety_violation');
+                displayMsg = t('msg.safety_violation');
             }
             
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Upscale (${msg})`, logId);
-                if (friendlyMsg !== t('msg.safety_violation')) {
-                    friendlyMsg += t('video.msg.refund');
+                if (friendlyKey !== "SAFETY_POLICY_VIOLATION") {
+                    displayMsg += t('video.msg.refund');
                 }
             }
             
-            onStateChange({ error: friendlyMsg, isLoading: false });
+            onStateChange({ error: displayMsg, isLoading: false });
             setStatusMessage(null);
             
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
