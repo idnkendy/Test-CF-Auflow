@@ -261,9 +261,11 @@ export const en = {
   "auth.login_title": "Login",
   "auth.signup_title": "Create New Account",
   "auth.google_continue": "Continue with Google",
-  "auth.or": "Or",
+  "auth.or": "Or continue with Email",
   "auth.email_label": "Email",
+  "auth.email_placeholder": "user@example.com",
   "auth.password_label": "Password",
+  "auth.password_placeholder": "Enter password (min 6 characters)",
   "auth.login_btn": "Login",
   "auth.signup_btn": "Sign Up",
   "auth.no_account": "Don't have an account?",
@@ -273,6 +275,8 @@ export const en = {
   "auth.terms": "By continuing, you agree to our",
   "auth.terms_link": "Terms of Service",
   "auth.policy_link": "Privacy Policy",
+  "auth.check_email": "Please check your email to verify your account!",
+  "auth.login_success": "Login successful!",
   
   // --- PRICING ---
   "pricing.title": "AI PRICING PLANS",

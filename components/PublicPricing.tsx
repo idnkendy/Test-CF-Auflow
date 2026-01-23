@@ -31,10 +31,16 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
     
     // Select plan list based on language
     const activePlans = language === 'vi' ? plansVI : plansEN;
-    const isForeign = language === 'en';
     
     const handlePlanClick = (plan: PricingPlan) => {
-        if (IS_PAYMENT_MAINTENANCE || isForeign) return;
+        if (IS_PAYMENT_MAINTENANCE) return;
+
+        // Polar.sh Integration for International Payments
+        if (plan.paymentLink) {
+            window.location.href = plan.paymentLink;
+            return;
+        }
+        
         if (onPlanSelect) {
             onPlanSelect(plan);
         } else {
@@ -188,10 +194,10 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                 </ul>
 
                                 <button 
-                                    onClick={() => !isPlanRestricted && !isForeign && handlePlanClick(plan)}
-                                    disabled={IS_PAYMENT_MAINTENANCE || isPlanRestricted || isForeign}
+                                    onClick={() => !isPlanRestricted && handlePlanClick(plan)}
+                                    disabled={IS_PAYMENT_MAINTENANCE || isPlanRestricted}
                                     className={`w-full font-bold py-3.5 px-6 md:py-2.5 md:px-4 lg:py-3.5 lg:px-6 rounded-xl transition-all duration-300 shadow-lg text-sm md:text-xs lg:text-sm ${
-                                        (IS_PAYMENT_MAINTENANCE || isForeign)
+                                        IS_PAYMENT_MAINTENANCE
                                             ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
                                             : isPlanRestricted 
                                                 ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600'
@@ -202,11 +208,9 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                 >
                                     {IS_PAYMENT_MAINTENANCE 
                                         ? t('pricing.maintenance') 
-                                        : isForeign
-                                            ? "Coming Soon"
-                                            : isPlanRestricted 
-                                                ? (language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan')
-                                                : t('pricing.select_plan')
+                                        : isPlanRestricted 
+                                            ? (language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan')
+                                            : t('pricing.select_plan')
                                     }
                                 </button>
                             </div>

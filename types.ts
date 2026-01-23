@@ -70,6 +70,7 @@ export interface PricingPlan {
   highlight?: boolean;
   description: string;
   durationMonths?: number; // Added for variable subscription length
+  paymentLink?: string; // New: External payment link (e.g., Polar.sh)
 }
 
 export interface Transaction {

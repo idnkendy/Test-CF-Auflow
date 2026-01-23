@@ -64,6 +64,7 @@ export const plansVI: PricingPlan[] = [
     }
 ];
 
+// NOTE: Replace the '#' with your actual Polar.sh product checkout URLs
 export const plansEN: PricingPlan[] = [
     {
         id: 'plan_global_weekly',
@@ -82,7 +83,8 @@ export const plansEN: PricingPlan[] = [
         type: 'subscription',
         credits: 1000,
         durationMonths: 0.25,
-        description: 'Perfect for short-term projects and quick renders.'
+        description: 'Perfect for short-term projects and quick renders.',
+        paymentLink: 'https://buy.polar.sh/polar_cl_2oo0YPVJiVxZMsxp7KRNiTezy6myZe25XXHi82k3T9b' // Replace with real link
     },
     {
         id: 'plan_global_monthly',
@@ -103,7 +105,8 @@ export const plansEN: PricingPlan[] = [
         credits: 4000,
         highlight: true,
         durationMonths: 1,
-        description: 'Best value for freelancers and regular users.'
+        description: 'Best value for freelancers and regular users.',
+        paymentLink: 'https://buy.polar.sh/polar_cl_DUk4lCyfr2b70n464w59zwRwcWMIzWkCpPylI2zpwJd' // Replace with real link
     },
     {
         id: 'plan_global_yearly',
@@ -123,7 +126,8 @@ export const plansEN: PricingPlan[] = [
         type: 'subscription',
         credits: 48000,
         durationMonths: 12,
-        description: 'Maximum power for studios. Save ~45% with annual billing.'
+        description: 'Maximum power for studios. Save ~45% with annual billing.',
+        paymentLink: 'https://buy.polar.sh/polar_cl_IUySOVcSpKL4iHlL6jpZZriGtTiPDkGRhUIuR4cy1Ut' // Replace with real link
     },
     {
         id: 'plan_global_credit',
@@ -139,7 +143,8 @@ export const plansEN: PricingPlan[] = [
         type: 'credit',
         credits: 1000,
         durationMonths: 0,
-        description: 'Exclusive add-on for active subscribers. Requires an existing plan.'
+        description: 'Exclusive add-on for active subscribers. Requires an existing plan.',
+        paymentLink: 'https://buy.polar.sh/polar_cl_Dls0MNmGpYVTmbYRHP2NAWKYAh7iZ9j8OfJhl0o428A' // Replace with real link
     }
 ];
 

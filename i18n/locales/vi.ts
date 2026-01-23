@@ -260,9 +260,11 @@ export const vi = {
   "auth.login_title": "Đăng nhập",
   "auth.signup_title": "Tạo tài khoản mới",
   "auth.google_continue": "Tiếp tục với Google",
-  "auth.or": "Hoặc",
+  "auth.or": "Hoặc tiếp tục với Email",
   "auth.email_label": "Email",
+  "auth.email_placeholder": "nguoidung@example.com",
   "auth.password_label": "Mật khẩu",
+  "auth.password_placeholder": "Nhập mật khẩu (tối thiểu 6 ký tự)",
   "auth.login_btn": "Đăng nhập",
   "auth.signup_btn": "Đăng ký",
   "auth.no_account": "Chưa có tài khoản?",
@@ -272,6 +274,8 @@ export const vi = {
   "auth.terms": "Bằng việc tiếp tục, bạn đồng ý với",
   "auth.terms_link": "Điều khoản dịch vụ",
   "auth.policy_link": "Chính sách bảo mật",
+  "auth.check_email": "Vui lòng kiểm tra email để xác thực tài khoản!",
+  "auth.login_success": "Đăng nhập thành công!",
   
   // --- PRICING ---
   "pricing.title": "BẢNG GIÁ GÓI SỬ DỤNG AI",

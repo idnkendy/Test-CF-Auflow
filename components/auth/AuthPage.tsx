@@ -22,6 +22,12 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   const { t } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  
+  // Email Auth State
+  const [isSignUpMode, setIsSignUpMode] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -42,9 +48,43 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
             setLoading(false);
         }
     } catch (err: any) {
-        setError(err.message || "Lỗi kết nối. Vui lòng thử lại.");
+        setError(err.message || t('common.error'));
         setLoading(false);
     }
+  };
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!email || !password) {
+          setError(t('err.input.required'));
+          return;
+      }
+      
+      setLoading(true);
+      setError(null);
+      setSuccessMsg(null);
+
+      try {
+          if (isSignUpMode) {
+              const { error } = await supabase.auth.signUp({
+                  email,
+                  password,
+              });
+              if (error) throw error;
+              setSuccessMsg(t('auth.check_email'));
+          } else {
+              const { error } = await supabase.auth.signInWithPassword({
+                  email,
+                  password,
+              });
+              if (error) throw error;
+              // Redirect handled by App.tsx listener
+          }
+      } catch (err: any) {
+          setError(err.message || t('common.error'));
+      } finally {
+          setLoading(false);
+      }
   };
 
   return (
@@ -64,7 +104,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
             <div className="bg-surface dark:bg-[#191919] p-8 rounded-3xl shadow-2xl border border-border-color dark:border-[#302839] relative overflow-hidden">
                 
                 <h2 className="text-xl font-bold text-text-primary dark:text-white mb-6 text-center">
-                    {t('auth.login_title')}
+                    {isSignUpMode ? t('auth.signup_title') : t('auth.login_title')}
                 </h2>
 
                 {!isSupabaseConfigured && (
@@ -79,13 +119,19 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                         {error}
                     </div>
                 )}
+
+                {successMsg && (
+                    <div className="mb-6 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 rounded-xl text-sm text-left">
+                        {successMsg}
+                    </div>
+                )}
                 
                 <div className="space-y-4">
                     {/* Google Login */}
                     <button
                         onClick={handleGoogleSignIn}
                         disabled={loading || !isSupabaseConfigured}
-                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-3.5 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group"
+                        className="w-full flex justify-center items-center gap-3 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-3 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group"
                     >
                         {loading ? <Spinner /> : (
                             <>
@@ -96,6 +142,58 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                             </>
                         )}
                     </button>
+
+                    <div className="relative flex py-2 items-center">
+                        <div className="flex-grow border-t border-gray-300 dark:border-gray-700"></div>
+                        <span className="flex-shrink-0 mx-4 text-xs text-gray-400 font-medium uppercase">{t('auth.or')}</span>
+                        <div className="flex-grow border-t border-gray-300 dark:border-gray-700"></div>
+                    </div>
+
+                    {/* Email/Password Form */}
+                    <form onSubmit={handleEmailAuth} className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 ml-1">{t('auth.email_label')}</label>
+                            <input 
+                                type="email" 
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                className="w-full bg-gray-50 dark:bg-[#252525] border border-gray-200 dark:border-[#333] rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all text-text-primary dark:text-white"
+                                placeholder={t('auth.email_placeholder')}
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1 ml-1">{t('auth.password_label')}</label>
+                            <input 
+                                type="password" 
+                                required
+                                minLength={6}
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                className="w-full bg-gray-50 dark:bg-[#252525] border border-gray-200 dark:border-[#333] rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all text-text-primary dark:text-white"
+                                placeholder={t('auth.password_placeholder')}
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={loading || !isSupabaseConfigured}
+                            className="w-full bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] hover:from-[#690fca] hover:to-[#8a3dcf] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg hover:shadow-purple-500/30 flex justify-center items-center gap-2 mt-2"
+                        >
+                            {loading ? <Spinner /> : (isSignUpMode ? t('auth.signup_btn') : t('auth.login_btn'))}
+                        </button>
+                    </form>
+
+                    <div className="text-center pt-2">
+                        {isSignUpMode ? (
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                                {t('auth.have_account')} <button onClick={() => setIsSignUpMode(false)} className="text-[#7f13ec] font-bold hover:underline">{t('auth.login_now')}</button>
+                            </p>
+                        ) : (
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                                {t('auth.no_account')} <button onClick={() => setIsSignUpMode(true)} className="text-[#7f13ec] font-bold hover:underline">{t('auth.signup_now')}</button>
+                            </p>
+                        )}
+                    </div>
                 </div>
             </div>
             

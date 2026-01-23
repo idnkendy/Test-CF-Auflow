@@ -23,7 +23,6 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
     const { t, language } = useLanguage();
     const activePlans = language === 'vi' ? plansVI : plansEN;
     const locale = language === 'vi' ? 'vi-VN' : 'en-US';
-    const isForeign = language === 'en';
     
     // Internal state to check status locally in checkout component
     const [canBuyCredits, setCanBuyCredits] = useState(false);
@@ -44,7 +43,14 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
     }, []);
 
     const handleBuyClick = (plan: PricingPlan) => {
-        if (IS_PAYMENT_MAINTENANCE || isForeign) return;
+        if (IS_PAYMENT_MAINTENANCE) return;
+
+        // Polar.sh Integration for International Payments
+        if (plan.paymentLink) {
+            window.open(plan.paymentLink, '_blank');
+            return;
+        }
+
         if (onPlanSelect) {
             onPlanSelect(plan);
         }
@@ -128,10 +134,10 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                             </ul>
                             
                             <button 
-                                onClick={() => !isRestricted && !isForeign && handleBuyClick(plan)}
-                                disabled={IS_PAYMENT_MAINTENANCE || isRestricted || isForeign}
+                                onClick={() => !isRestricted && handleBuyClick(plan)}
+                                disabled={IS_PAYMENT_MAINTENANCE || isRestricted}
                                 className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 flex justify-center items-center gap-2 text-sm transform ${
-                                    (IS_PAYMENT_MAINTENANCE || isForeign)
+                                    IS_PAYMENT_MAINTENANCE
                                         ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
                                         : isRestricted
                                             ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600'
@@ -145,8 +151,6 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                                         <span className="material-symbols-outlined text-sm">engineering</span>
                                         <span>{t('pricing.maintenance')}</span>
                                     </>
-                                ) : isForeign ? (
-                                    "Coming Soon"
                                 ) : isRestricted ? (
                                     language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan'
                                 ) : (

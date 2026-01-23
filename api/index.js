@@ -490,7 +490,7 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
             }] 
         };
 
-        const res = await fetch('https://aisandbox-pa.googleapis.com/v1/video:batchCheckAsyncVideoGenerationStatus', { 
+        const res = await fetch('https://aisandbox-pa.googleapis.com/v1:batchCheckAsyncVideoGenerationStatus', { 
             method: 'POST', 
             headers: { ...HEADERS, 'authorization': `Bearer ${cleanToken(token)}`, }, 
             body: JSON.stringify(payload) 
@@ -650,6 +650,116 @@ async function handleSePayWebhook(request, env) {
     } catch (e) { return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 }); }
 }
 
+// --- NEW FUNCTION: POLAR WEBHOOK HANDLER (UPDATED) ---
+async function handlePolarWebhook(request, env) {
+    try {
+        const body = await request.json();
+        
+        // Polar Payload structure typically: { type: "order.created", data: { ... } }
+        // We only care about successful orders (or checkouts if you prefer, but orders are safer)
+        if (body.type !== 'order.created' && body.type !== 'checkout.created') {
+             return new Response("Event Ignored", { status: 200 });
+        }
+
+        const data = body.data;
+        const customer_email = data.customer_email || (data.customer && data.customer.email) || data.email;
+        const amount = data.amount; // In cents (e.g. $9.99 -> 999)
+
+        if (!customer_email) {
+            return new Response("No Email in Payload", { status: 200 });
+        }
+
+        // --- PLAN MAPPING CONFIGURATION ---
+        // Maps amount (cents) to: credits, name, and DURATION (days)
+        const PLANS = {
+            999:   { credits: 1000,  days: 7,   name: "Weekly Pass" },
+            2900:  { credits: 4000,  days: 30,  name: "Pro Monthly" },
+            24900: { credits: 48000, days: 365, name: "Yearly Elite" },
+            600:   { credits: 1000,  days: 0,   name: "Credit Booster" } // Add-on, no extension
+        };
+
+        const plan = PLANS[amount];
+
+        if (!plan) {
+            console.warn(`[Polar] Unknown amount received: ${amount}`);
+            // Return 200 to prevent Polar from retrying indefinitely on bad data
+            return new Response("Unknown Plan Amount", { status: 200 });
+        }
+
+        // Supabase connection
+        const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
+        const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
+
+        // 1. Find User by Email
+        const userRes = await fetch(`${sbUrl}/rest/v1/profiles?email=eq.${customer_email}&select=id,credits,subscription_end`, {
+            headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` }
+        });
+        
+        if (!userRes.ok) throw new Error("Supabase Error finding user");
+        
+        const users = await userRes.json();
+        
+        if (!users || users.length === 0) {
+            console.warn(`[Polar] User not found for email: ${customer_email}`);
+            return new Response("User not found", { status: 200 }); 
+        }
+
+        const user = users[0];
+
+        // 2. Calculate New Subscription End Date
+        let newSubscriptionEnd = user.subscription_end ? new Date(user.subscription_end) : new Date();
+        const now = new Date();
+
+        // If expired or null, start from now
+        if (newSubscriptionEnd < now) {
+            newSubscriptionEnd = now;
+        }
+
+        // Add duration (if applicable)
+        if (plan.days > 0) {
+            newSubscriptionEnd.setDate(newSubscriptionEnd.getDate() + plan.days);
+        }
+
+        // 3. Update Profile (Credits + Time)
+        const updateRes = await fetch(`${sbUrl}/rest/v1/profiles?id=eq.${user.id}`, {
+            method: 'PATCH',
+            headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+                credits: (user.credits || 0) + plan.credits,
+                subscription_end: plan.days > 0 ? newSubscriptionEnd.toISOString() : user.subscription_end // Only update time if plan has duration
+            })
+        });
+
+        if (!updateRes.ok) throw new Error("Supabase Error updating profile");
+
+        // 4. Log Transaction
+        const transactionCode = data.id || `POLAR-${Date.now()}`;
+        
+        await fetch(`${sbUrl}/rest/v1/transactions`, {
+            method: 'POST',
+            headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: user.id,
+                amount: amount / 100, // Convert to USD for display
+                currency: 'USD',
+                type: 'polar_payment',
+                status: 'completed',
+                credits_added: plan.credits,
+                plan_name: plan.name,
+                transaction_code: transactionCode,
+                payment_method: 'polar',
+                customer_email: customer_email
+            })
+        });
+
+        return new Response("Plan Updated Successfully", { status: 200 });
+
+    } catch (e) {
+        console.error("[Polar] Error processing webhook:", e);
+        return new Response(`Error: ${e.message}`, { status: 500 });
+    }
+}
+
 // ... Updated handleProxyDownload to mimic Python headers ...
 async function handleProxyDownload(request) {
     const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Expose-Headers': 'Content-Length, Content-Type' };
@@ -748,6 +858,7 @@ export default {
         const url = new URL(request.url);
         const path = url.pathname;
         if (path.includes('/sepay-webhook')) return handleSePayWebhook(request, env);
+        if (path.includes('/polar-webhook')) return handlePolarWebhook(request, env); // NEW: Polar Webhook Route
         if (path.includes('/proxy-download')) return handleProxyDownload(request);
         try {
             let body = {};
