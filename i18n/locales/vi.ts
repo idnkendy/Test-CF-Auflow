@@ -799,4 +799,13 @@ export const vi = {
   "video.loading.5": "Vui lòng không tắt tab này...",
   "video.loading.6": "Quá trình có thể mất 3-6 phút...",
   "video.loading.7": "Nếu quá lâu, hệ thống sẽ tự động thử lại...",
+  
+  // --- SAFETY WARNING MODAL ---
+  "safety.title": "Ảnh bị từ chối",
+  "safety.reason_title": "Lý do phổ biến:",
+  "safety.reason_1": "Chứa hình ảnh <strong>người thật</strong> (đặc biệt là trẻ em hoặc người nổi tiếng).",
+  "safety.reason_2": "Nội dung nhạy cảm (18+) hoặc hở hang.",
+  "safety.reason_3": "Nội dung bạo lực hoặc gây khó chịu.",
+  "safety.note": "*Google AI tự động quét và chặn các nội dung này ngay khi tải lên để đảm bảo an toàn.",
+  "safety.btn": "Chọn ảnh khác",
 };
