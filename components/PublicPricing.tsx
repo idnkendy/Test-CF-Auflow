@@ -43,7 +43,8 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
             setRedirectingPlanId(plan.id);
             
             // 1. Try to get user from prop first (fastest)
-            let currentUser = session?.user;
+            // FIX: Initialize with null fallback to broaden type to User | null
+            let currentUser = session?.user ?? null;
 
             // 2. If not found, fetch from Supabase (fallback)
             if (!currentUser) {
