@@ -308,6 +308,19 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     fetchUserStatus();
   }, [fetchUserStatus, activeTool]); 
+
+  // --- NEW: AUTO-REFRESH ON WINDOW FOCUS (For Payment Success) ---
+  useEffect(() => {
+      const handleFocus = () => {
+          if (session?.user) {
+              console.log("Window focused - refreshing user status...");
+              fetchUserStatus();
+          }
+      };
+      
+      window.addEventListener('focus', handleFocus);
+      return () => window.removeEventListener('focus', handleFocus);
+  }, [session, fetchUserStatus]);
   
   if (MAINTENANCE_MODE) {
       return (

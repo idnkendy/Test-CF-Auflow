@@ -5,6 +5,7 @@ import { plansVI, plansEN } from '../constants/plans';
 import { useLanguage } from '../hooks/useLanguage';
 import { supabase } from '../services/supabaseClient';
 import * as paymentService from '../services/paymentService';
+import Spinner from './Spinner';
 
 // --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
 const IS_PAYMENT_MAINTENANCE = false;
@@ -27,6 +28,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
     // Internal state to check status locally in checkout component
     const [canBuyCredits, setCanBuyCredits] = useState(false);
     const [loadingStatus, setLoadingStatus] = useState(true);
+    const [redirectingPlanId, setRedirectingPlanId] = useState<string | null>(null);
 
     useEffect(() => {
         const checkStatus = async () => {
@@ -42,12 +44,36 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
         checkStatus();
     }, []);
 
-    const handleBuyClick = (plan: PricingPlan) => {
+    const handleBuyClick = async (plan: PricingPlan) => {
         if (IS_PAYMENT_MAINTENANCE) return;
 
         // Polar.sh Integration for International Payments
         if (plan.paymentLink) {
-            window.open(plan.paymentLink, '_blank');
+            setRedirectingPlanId(plan.id);
+            // Get current user email to pre-fill directly from Supabase
+            const { data: { user } } = await supabase.auth.getUser();
+            
+            try {
+                const urlObj = new URL(plan.paymentLink);
+                if (user && user.email) {
+                    const email = user.email;
+                    // Add all common variations to ensure one hits the target
+                    urlObj.searchParams.set('email', email);
+                    urlObj.searchParams.set('customer_email', email);
+                    urlObj.searchParams.set('prefilled_email', email);
+                    urlObj.searchParams.set('checkout_email', email);
+                }
+                
+                // Using window.open for internal dashboard allows keeping app open
+                window.open(urlObj.toString(), '_blank');
+                
+                // Reset loading state after a delay (since window.open is immediate)
+                setTimeout(() => setRedirectingPlanId(null), 2000);
+            } catch (e) {
+                // Fallback if URL parsing fails
+                window.open(plan.paymentLink, '_blank');
+                setRedirectingPlanId(null);
+            }
             return;
         }
 
@@ -70,6 +96,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                     
                     const isCreditPlan = plan.type === 'credit';
                     const isRestricted = isCreditPlan && !loadingStatus && !canBuyCredits;
+                    const isRedirecting = redirectingPlanId === plan.id;
 
                     return (
                         <div 
@@ -135,7 +162,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                             
                             <button 
                                 onClick={() => !isRestricted && handleBuyClick(plan)}
-                                disabled={IS_PAYMENT_MAINTENANCE || isRestricted}
+                                disabled={IS_PAYMENT_MAINTENANCE || isRestricted || isRedirecting}
                                 className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 flex justify-center items-center gap-2 text-sm transform ${
                                     IS_PAYMENT_MAINTENANCE
                                         ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
@@ -146,15 +173,21 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                                                 : 'bg-gray-600 hover:bg-gray-700 text-white hover:shadow-md hover:-translate-y-0.5')
                                 }`}
                             >
-                                {IS_PAYMENT_MAINTENANCE ? (
+                                {isRedirecting ? (
                                     <>
-                                        <span className="material-symbols-outlined text-sm">engineering</span>
-                                        <span>{t('pricing.maintenance')}</span>
+                                        <Spinner /> {t('common.processing')}
                                     </>
-                                ) : isRestricted ? (
-                                    language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan'
                                 ) : (
-                                    t('pricing.select_plan')
+                                    IS_PAYMENT_MAINTENANCE ? (
+                                        <>
+                                            <span className="material-symbols-outlined text-sm">engineering</span>
+                                            <span>{t('pricing.maintenance')}</span>
+                                        </>
+                                    ) : isRestricted ? (
+                                        language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan'
+                                    ) : (
+                                        t('pricing.select_plan')
+                                    )
                                 )}
                             </button>
                         </div>

@@ -1,10 +1,12 @@
 
-import React from 'react';
+import React, { useState } from 'react';
 import { PricingPlan, UserStatus } from '../types';
 import { Logo } from './common/Logo';
 import { plansVI, plansEN } from '../constants/plans';
 import { Session } from '@supabase/supabase-js';
 import { useLanguage } from '../hooks/useLanguage';
+import { supabase } from '../services/supabaseClient';
+import Spinner from './Spinner';
 
 // --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
 const IS_PAYMENT_MAINTENANCE = false;
@@ -28,19 +30,56 @@ interface PublicPricingProps {
 
 const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate, onPlanSelect, session, userStatus, onDashboardNavigate, onSignOut }) => {
     const { t, language } = useLanguage();
+    const [redirectingPlanId, setRedirectingPlanId] = useState<string | null>(null);
     
     // Select plan list based on language
     const activePlans = language === 'vi' ? plansVI : plansEN;
     
-    const handlePlanClick = (plan: PricingPlan) => {
+    const handlePlanClick = async (plan: PricingPlan) => {
         if (IS_PAYMENT_MAINTENANCE) return;
 
         // Polar.sh Integration for International Payments
         if (plan.paymentLink) {
-            window.location.href = plan.paymentLink;
+            setRedirectingPlanId(plan.id);
+            
+            // 1. Try to get user from prop first (fastest)
+            let currentUser = session?.user;
+
+            // 2. If not found, fetch from Supabase (fallback)
+            if (!currentUser) {
+                const { data } = await supabase.auth.getUser();
+                currentUser = data.user;
+            }
+
+            // Require Login for Polar to ensure email tracking
+            if (!currentUser || !currentUser.email) {
+                setRedirectingPlanId(null);
+                onAuthNavigate('signup');
+                return;
+            }
+
+            // 3. Construct URL robustly with MULTIPLE email parameters to guarantee pre-fill
+            try {
+                const urlObj = new URL(plan.paymentLink);
+                const email = currentUser.email;
+                
+                // Add all common variations to ensure one hits the target
+                urlObj.searchParams.set('email', email);
+                urlObj.searchParams.set('customer_email', email);
+                urlObj.searchParams.set('prefilled_email', email);
+                urlObj.searchParams.set('checkout_email', email);
+                
+                console.log("Redirecting to Polar:", urlObj.toString());
+                window.location.href = urlObj.toString();
+            } catch (e) {
+                // Fallback for invalid URLs in config
+                console.error("Invalid Payment URL", e);
+                window.location.href = plan.paymentLink;
+            }
             return;
         }
         
+        // Banking flow (Vietnam)
         if (onPlanSelect) {
             onPlanSelect(plan);
         } else {
@@ -122,6 +161,8 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                         // Check if subscriptionEnd exists and is not expired. Null means no sub (new user/forever free).
                         const hasValidSubscription = userStatus && userStatus.subscriptionEnd && !userStatus.isExpired;
                         const isPlanRestricted = isCreditPlan && (!session || !hasValidSubscription);
+                        
+                        const isRedirecting = redirectingPlanId === plan.id;
 
                         return (
                             <div 
@@ -195,8 +236,8 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
 
                                 <button 
                                     onClick={() => !isPlanRestricted && handlePlanClick(plan)}
-                                    disabled={IS_PAYMENT_MAINTENANCE || isPlanRestricted}
-                                    className={`w-full font-bold py-3.5 px-6 md:py-2.5 md:px-4 lg:py-3.5 lg:px-6 rounded-xl transition-all duration-300 shadow-lg text-sm md:text-xs lg:text-sm ${
+                                    disabled={IS_PAYMENT_MAINTENANCE || isPlanRestricted || isRedirecting}
+                                    className={`w-full font-bold py-3.5 px-6 md:py-2.5 md:px-4 lg:py-3.5 lg:px-6 rounded-xl transition-all duration-300 shadow-lg text-sm md:text-xs lg:text-sm flex justify-center items-center gap-2 ${
                                         IS_PAYMENT_MAINTENANCE
                                             ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
                                             : isPlanRestricted 
@@ -206,12 +247,17 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                                     : 'bg-white text-black hover:bg-gray-200 hover:-translate-y-0.5')
                                     }`}
                                 >
-                                    {IS_PAYMENT_MAINTENANCE 
-                                        ? t('pricing.maintenance') 
-                                        : isPlanRestricted 
-                                            ? (language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan')
-                                            : t('pricing.select_plan')
-                                    }
+                                    {isRedirecting ? (
+                                        <>
+                                            <Spinner /> {t('common.processing')}
+                                        </>
+                                    ) : (
+                                        IS_PAYMENT_MAINTENANCE 
+                                            ? t('pricing.maintenance') 
+                                            : isPlanRestricted 
+                                                ? (language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan')
+                                                : t('pricing.select_plan')
+                                    )}
                                 </button>
                             </div>
                         );

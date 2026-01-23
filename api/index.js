@@ -675,7 +675,8 @@ async function handlePolarWebhook(request, env) {
             999:   { credits: 1000,  days: 7,   name: "Weekly Pass" },
             2900:  { credits: 4000,  days: 30,  name: "Pro Monthly" },
             24900: { credits: 48000, days: 365, name: "Yearly Elite" },
-            600:   { credits: 1000,  days: 0,   name: "Credit Booster" } // Add-on, no extension
+            600:   { credits: 1000,  days: 0,   name: "Credit Booster" }, // Add-on, no extension
+            10:    { credits: 50,    days: 1,   name: "Test Plan" } // NEW: 10 cents test
         };
 
         const plan = PLANS[amount];
