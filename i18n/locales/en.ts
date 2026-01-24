@@ -161,7 +161,9 @@ export const en = {
 
   // --- HOMEPAGE ---
   "hero.tag": "AI Architecture Technology 2025",
-  "hero.title": "Create Spaces with Artificial Intelligence",
+  "hero.title_1": "ACCELERATE YOUR WORKFLOW 10X",
+  // Use non-breaking space (\u00A0) to keep OPZEN AI together
+  "hero.title_2": "IN ARCHITECTURE & INTERIOR DESIGN WITH OPZEN\u00A0AI",
   "hero.desc": "Turn hand sketches into sharp 3D Renders in seconds. Optimized workflow for Architects, Designers, and Real Estate Agents.",
   "hero.start": "Try for Free",
   "hero.demo": "View Demo",

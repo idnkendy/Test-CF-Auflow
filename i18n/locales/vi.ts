@@ -160,7 +160,9 @@ export const vi = {
 
   // --- HOMEPAGE ---
   "hero.tag": "Công nghệ AI Kiến trúc 2025",
-  "hero.title": "Kiến tạo không gian bằng Trí tuệ nhân tạo",
+  "hero.title_1": "TĂNG TỐC X10 QUY TRÌNH",
+  // Use non-breaking space (\u00A0) to keep OPZEN AI together
+  "hero.title_2": "THIẾT KẾ KIẾN TRÚC, NỘI THẤT VỚI OPZEN\u00A0AI",
   "hero.desc": "Biến phác thảo tay thành ảnh Render 3D sắc nét chỉ trong vài giây. Giải pháp tối ưu quy trình cho Kiến trúc sư, Nhà thiết kế và Môi giới Bất động sản.",
   "hero.start": "Dùng thử miễn phí",
   "hero.demo": "Xem Demo",

@@ -57,6 +57,113 @@ const LazyVideo = ({ src, poster }: { src: string, poster?: string }) => {
     );
 };
 
+// --- HERO CAROUSEL COMPONENT ---
+const HeroCarousel: React.FC = () => {
+    const images = [
+        "https://lh3.googleusercontent.com/aida-public/AB6AXuDuJVxJMLh56F5z4P44jRoSHcdM5w3lJPzCnkWe0-McR6c0hW7u21d6OubJX3x4WG9fetzYLjNuwucYtpHBfs54dmpw6n5sRVXD3NvfemF0lEJyulka9SidVTcoi3s1Iko71iWIXKibTZEf07a1IKOVx3C3SJqD5xPzI_XQie_oGe0ey7pFUdUtasVufndxwHuHSwiqrm-R5DNl2arwTcB49TBXM6CgJ292rewaoTLXS-sOdiZ5i5qyIM8yGYaTXwOxEEulCMSAIHlN",
+        "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage1.png",
+        "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage2.png",
+        "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage3.png",
+        "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage4.png"
+    ];
+
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const [isAutoPlaying, setIsAutoPlaying] = useState(true);
+
+    useEffect(() => {
+        if (!isAutoPlaying) return;
+        const interval = setInterval(() => {
+            setCurrentIndex((prev) => (prev + 1) % images.length);
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [isAutoPlaying, images.length]);
+
+    const handleNext = () => {
+        setIsAutoPlaying(false);
+        setCurrentIndex((prev) => (prev + 1) % images.length);
+    };
+
+    const handlePrev = () => {
+        setIsAutoPlaying(false);
+        setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
+    };
+
+    const getPosition = (index: number) => {
+        const diff = (index - currentIndex + images.length) % images.length;
+        if (diff === 0) return 'center';
+        if (diff === 1 || (diff === -(images.length - 1))) return 'right';
+        if (diff === images.length - 1 || diff === -1) return 'left';
+        return 'hidden';
+    };
+
+    return (
+        <div className="relative w-full max-w-5xl mx-auto h-[300px] sm:h-[400px] md:h-[500px] mt-12 mb-12 flex items-center justify-center perspective-[1500px]">
+            <div className="relative w-full h-full flex items-center justify-center">
+                {images.map((img, idx) => {
+                    const pos = getPosition(idx);
+                    let style = "absolute w-[60%] sm:w-[70%] aspect-video rounded-2xl overflow-hidden transition-all duration-700 ease-in-out border border-white/20 shadow-2xl";
+                    
+                    if (pos === 'center') {
+                        style += " z-30 opacity-100 scale-100 transform translate-x-0 cursor-default";
+                    } else if (pos === 'left') {
+                        style += " z-20 opacity-40 scale-75 transform -translate-x-[40%] sm:-translate-x-[30%] rotate-y-[25deg] blur-sm cursor-pointer";
+                    } else if (pos === 'right') {
+                        style += " z-20 opacity-40 scale-75 transform translate-x-[40%] sm:translate-x-[30%] rotate-y-[-25deg] blur-sm cursor-pointer";
+                    } else {
+                        style += " z-10 opacity-0 scale-50 pointer-events-none";
+                    }
+
+                    return (
+                        <div 
+                            key={idx} 
+                            className={style}
+                            onClick={() => {
+                                if (pos === 'left') handlePrev();
+                                if (pos === 'right') handleNext();
+                            }}
+                        >
+                            <img src={img} alt={`Slide ${idx}`} className="w-full h-full object-cover" />
+                            {pos === 'center' && (
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent pointer-events-none"></div>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* Controls */}
+            <button 
+                onClick={handlePrev}
+                className="absolute left-0 sm:-left-4 md:-left-8 z-40 p-3 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-white backdrop-blur-md transition-all group"
+                aria-label="Previous image"
+            >
+                <span className="material-symbols-outlined notranslate text-2xl group-hover:-translate-x-1 transition-transform">arrow_back_ios_new</span>
+            </button>
+            <button 
+                onClick={handleNext}
+                className="absolute right-0 sm:-right-4 md:-right-8 z-40 p-3 rounded-full bg-white/5 border border-white/10 hover:bg-white/10 text-white backdrop-blur-md transition-all group"
+                aria-label="Next image"
+            >
+                <span className="material-symbols-outlined notranslate text-2xl group-hover:translate-x-1 transition-transform">arrow_forward_ios</span>
+            </button>
+
+            {/* Pagination Dots */}
+            <div className="absolute -bottom-10 left-1/2 -translate-x-1/2 flex gap-2">
+                {images.map((_, idx) => (
+                    <button 
+                        key={idx}
+                        onClick={() => {
+                            setIsAutoPlaying(false);
+                            setCurrentIndex(idx);
+                        }}
+                        className={`w-2 h-2 rounded-full transition-all duration-300 ${currentIndex === idx ? 'w-8 bg-[#7f13ec]' : 'bg-gray-600 hover:bg-gray-400'}`}
+                    />
+                ))}
+            </div>
+        </div>
+    );
+};
+
 // --- MAIN COMPONENT ---
 const Homepage: React.FC<HomepageProps> = (props) => {
     return (
@@ -77,6 +184,15 @@ const Homepage: React.FC<HomepageProps> = (props) => {
                 }
                 .hero-glow {
                     background: radial-gradient(circle, rgba(127, 19, 236, 0.15) 0%, rgba(0, 0, 0, 0) 70%);
+                }
+                .perspective-container {
+                    perspective: 1500px;
+                }
+                .rotate-y-left {
+                    transform: rotateY(25deg);
+                }
+                .rotate-y-right {
+                    transform: rotateY(-25deg);
                 }
             `}</style>
             
@@ -231,7 +347,7 @@ const Header: React.FC<HomepageProps> = ({ onStart, onAuthNavigate, session, onG
                             </div>
                         ) : (
                             <>
-                                <button onClick={() => onAuthNavigate('login')} className="text-lg font-medium text-white hover:text-[#a855f7] transition-colors">{t('nav.login')}</button>
+                                <button onClick={() => onAuthNavigate('login')} className="text-white/80 hover:text-white text-sm font-medium">{t('nav.login')}</button>
                                 <button 
                                     onClick={() => onAuthNavigate('signup')}
                                     className="px-7 py-3 bg-white text-black text-lg font-bold rounded-full hover:bg-gray-200 transition-colors shadow-lg shadow-white/10"
@@ -312,8 +428,13 @@ const Hero: React.FC<{onStart: () => void}> = ({ onStart }) => {
                     {t('hero.tag')}
                 </div>
                 
-                <h1 className="text-4xl md:text-5xl lg:text-6xl font-extrabold text-white tracking-tight mb-6 animate-fade-in-up delay-100 uppercase lg:leading-[1.3] leading-[1.3] md:leading-[1.3]">
-                    {t('hero.title')}
+                <h1 className="w-full max-w-[1400px] mx-auto font-extrabold text-white tracking-tight mb-6 animate-fade-in-up delay-100 uppercase text-center">
+                    <span className="block text-4xl sm:text-5xl md:text-6xl gradient-text mb-2 md:mb-4 leading-normal py-2 md:whitespace-nowrap">
+                        {t('hero.title_1')}
+                    </span>
+                    <span className="block text-xl sm:text-3xl md:text-4xl lg:text-5xl text-white leading-tight md:whitespace-nowrap px-4">
+                        {t('hero.title_2')}
+                    </span>
                 </h1>
                 
                 <p className="text-lg md:text-xl text-gray-400 max-w-3xl mx-auto mb-10 leading-relaxed animate-fade-in-up delay-200">
@@ -339,23 +460,8 @@ const Hero: React.FC<{onStart: () => void}> = ({ onStart }) => {
                     </button>
                 </div>
 
-                {/* HERO IMAGE SECTION */}
-                <div className="mt-12 relative w-full max-w-3xl mx-auto z-20 animate-fade-in-up delay-500">
-                    <div className="relative rounded-2xl overflow-hidden bg-[#121212] border border-white/20 shadow-2xl group">
-                        
-                        {/* Image Area */}
-                        <div className="relative w-full bg-black/50">
-                            <img
-                                src="https://lh3.googleusercontent.com/aida-public/AB6AXuDuJVxJMLh56F5z4P44jRoSHcdM5w3lJPzCnkWe0-McR6c0hW7u21d6OubJX3x4WG9fetzYLjNuwucYtpHBfs54dmpw6n5sRVXD3NvfemF0lEJyulka9SidVTcoi3s1Iko71iWIXKibTZEf07a1IKOVx3C3SJqD5xPzI_XQie_oGe0ey7pFUdUtasVufndxwHuHSwiqrm-R5DNl2arwTcB49TBXM6CgJ292rewaoTLXS-sOdiZ5i5qyIM8yGYaTXwOxEEulCMSAIHlN"
-                                alt="OPZEN AI Interface"
-                                className="w-full h-auto object-cover mx-auto"
-                            />
-                        </div>
-                    </div>
-                    
-                    {/* Back Glow */}
-                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[90%] h-[90%] bg-[#7f13ec]/30 blur-[100px] -z-10 rounded-full pointer-events-none"></div>
-                </div>
+                {/* HERO CAROUSEL 3D */}
+                <HeroCarousel />
             </div>
         </section>
     );
@@ -747,7 +853,7 @@ const Footer: React.FC<{onStart: () => void, onNavigateToPricing?: () => void, o
 
     return (
         <footer className="bg-[#050505] border-t border-[#302839] pt-16 pb-8 px-4">
-            <div className="max-w-7xl mx-auto">
+            <div className="max-w-7xl auto">
                 <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-12">
                     <div className="col-span-2 lg:col-span-2 space-y-4">
                         <div className="flex items-center gap-2">
