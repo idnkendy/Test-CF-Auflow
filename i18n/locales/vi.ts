@@ -808,4 +808,12 @@ export const vi = {
   "safety.reason_3": "Nội dung bạo lực hoặc gây khó chịu.",
   "safety.note": "*Google AI tự động quét và chặn các nội dung này ngay khi tải lên để đảm bảo an toàn.",
   "safety.btn": "Chọn ảnh khác",
+
+  // --- PRICING MODAL ---
+  "pricing.modal.title": "Cập nhật thông tin",
+  "pricing.modal.desc": "Vui lòng hoàn tất hồ sơ để tiếp tục thanh toán.",
+  "pricing.modal.name": "Họ và tên",
+  "pricing.modal.phone": "Số điện thoại",
+  "pricing.modal.submit": "Tiếp tục",
+  "pricing.modal.required": "Vui lòng nhập đầy đủ thông tin.",
 };

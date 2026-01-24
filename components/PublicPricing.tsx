@@ -6,6 +6,7 @@ import { plansVI, plansEN } from '../constants/plans';
 import { Session } from '@supabase/supabase-js';
 import { useLanguage } from '../hooks/useLanguage';
 import { supabase } from '../services/supabaseClient';
+import * as paymentService from '../services/paymentService';
 import Spinner from './Spinner';
 
 // --- CẤU HÌNH BẢO TRÌ THANH TOÁN ---
@@ -32,12 +33,17 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
     const { t, language } = useLanguage();
     const [redirectingPlanId, setRedirectingPlanId] = useState<string | null>(null);
     
+    // Modal State for Missing Info
+    const [showInfoModal, setShowInfoModal] = useState(false);
+    const [pendingPlan, setPendingPlan] = useState<PricingPlan | null>(null);
+    const [infoForm, setInfoForm] = useState({ name: '', phone: '' });
+    const [isSavingInfo, setIsSavingInfo] = useState(false);
+    const [infoError, setInfoError] = useState<string | null>(null);
+
     // Select plan list based on language
     const activePlans = language === 'vi' ? plansVI : plansEN;
     
-    const handlePlanClick = async (plan: PricingPlan) => {
-        if (IS_PAYMENT_MAINTENANCE) return;
-
+    const processPlanSelection = async (plan: PricingPlan) => {
         // Polar.sh Integration for International Payments
         if (plan.paymentLink) {
             setRedirectingPlanId(plan.id);
@@ -88,8 +94,61 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
         }
     };
 
+    const handlePlanClick = async (plan: PricingPlan) => {
+        if (IS_PAYMENT_MAINTENANCE) return;
+
+        // Check if user needs to update info (Enforce for English/International users or general good practice)
+        // Only enforce if logged in
+        if (session?.user) {
+            try {
+                // Fetch fresh profile to ensure we aren't relying on stale props
+                const profile = await paymentService.getUserProfile(session.user.id);
+                
+                // If Name or Phone is missing
+                if (!profile?.full_name || !profile?.phone) {
+                    setPendingPlan(plan);
+                    setInfoForm({ 
+                        name: profile?.full_name || '', 
+                        phone: profile?.phone || '' 
+                    });
+                    setShowInfoModal(true);
+                    return; // Stop flow here, wait for modal
+                }
+            } catch (e) {
+                console.warn("Could not verify profile, proceeding...", e);
+            }
+        }
+
+        // If all good or not logged in (will be handled by processPlanSelection redirect to signup)
+        await processPlanSelection(plan);
+    };
+
+    const handleSaveInfo = async () => {
+        if (!infoForm.name.trim() || !infoForm.phone.trim()) {
+            setInfoError(t('pricing.modal.required'));
+            return;
+        }
+
+        setIsSavingInfo(true);
+        setInfoError(null);
+
+        try {
+            if (session?.user) {
+                await paymentService.updateUserProfile(session.user.id, infoForm.name, infoForm.phone);
+                setShowInfoModal(false);
+                if (pendingPlan) {
+                    await processPlanSelection(pendingPlan);
+                }
+            }
+        } catch (e: any) {
+            setInfoError(e.message || "Error updating profile");
+        } finally {
+            setIsSavingInfo(false);
+        }
+    };
+
     return (
-        <div className="bg-[#121212] font-display text-[#EAEAEA] min-h-screen flex flex-col">
+        <div className="bg-[#121212] font-display text-[#EAEAEA] min-h-screen flex flex-col relative">
             <style>{`
                 .gradient-button {
                     background-image: linear-gradient(to right, #8A2BE2, #DA70D6);
@@ -97,6 +156,11 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                 .gradient-button:hover {
                     opacity: 0.9;
                 }
+                @keyframes scale-up {
+                    0% { transform: scale(0.95); opacity: 0; }
+                    100% { transform: scale(1); opacity: 1; }
+                }
+                .animate-scale-up { animation: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
             `}</style>
 
             {/* HEADER */}
@@ -280,6 +344,65 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                     </div>
                 </div>
             </main>
+
+            {/* MANDATORY INFO MODAL */}
+            {showInfoModal && (
+                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-sans">
+                    <div 
+                        className="bg-white dark:bg-[#1E1E1E] rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-scale-up border border-gray-200 dark:border-[#302839] relative"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <button 
+                            onClick={() => setShowInfoModal(false)}
+                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
+                            </svg>
+                        </button>
+
+                        <div className="text-center mb-6">
+                            <h3 className="text-xl font-bold text-text-primary dark:text-white mb-2">{t('pricing.modal.title')}</h3>
+                            <p className="text-sm text-text-secondary dark:text-gray-400">{t('pricing.modal.desc')}</p>
+                        </div>
+
+                        <div className="space-y-4">
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">{t('pricing.modal.name')}</label>
+                                <input 
+                                    type="text" 
+                                    value={infoForm.name}
+                                    onChange={(e) => setInfoForm(prev => ({ ...prev, name: e.target.value }))}
+                                    className="w-full bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all"
+                                    placeholder={t('pricing.modal.name')}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">{t('pricing.modal.phone')}</label>
+                                <input 
+                                    type="tel" 
+                                    value={infoForm.phone}
+                                    onChange={(e) => setInfoForm(prev => ({ ...prev, phone: e.target.value }))}
+                                    className="w-full bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all"
+                                    placeholder={t('pricing.modal.phone')}
+                                />
+                            </div>
+                            
+                            {infoError && (
+                                <p className="text-xs text-red-500 text-center">{infoError}</p>
+                            )}
+
+                            <button 
+                                onClick={handleSaveInfo}
+                                disabled={isSavingInfo}
+                                className="w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
+                            >
+                                {isSavingInfo ? <Spinner /> : t('pricing.modal.submit')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* FOOTER */}
             <footer className="mt-16 border-t border-[#302839] py-12 px-4 bg-[#121212]">

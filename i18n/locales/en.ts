@@ -288,6 +288,13 @@ export const en = {
   "pricing.select_plan": "Select Plan",
   "pricing.maintenance": "System Maintenance",
   "pricing.faq_title": "Frequently Asked Questions",
+  
+  "pricing.modal.title": "Update Information",
+  "pricing.modal.desc": "Please complete your profile to continue payment.",
+  "pricing.modal.name": "Full Name",
+  "pricing.modal.phone": "Phone Number",
+  "pricing.modal.submit": "Continue",
+  "pricing.modal.required": "All fields are required.",
 
   // --- IMAGE GENERATOR ---
   "img_gen.title": "AI Architectural Rendering",

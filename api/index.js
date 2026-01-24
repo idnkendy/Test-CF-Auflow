@@ -11,7 +11,7 @@ const DEFAULT_SUPABASE_URL = 'https://mtlomjjlgvsjpudxlspq.supabase.co';
 // Worker cần quyền ADMIN để trừ tiền/cập nhật DB. Khóa "anon" không đủ quyền.
 // Lấy tại: Supabase Dashboard > Project Settings > API > service_role
 // =================================================================================
-const SUPABASE_SERVICE_ROLE_KEY = ""; 
+const SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzMzMDAyNywiZXhwIjoyMDc4OTA2MDI3fQ.ze3shkFofoW18JutY_HAHv0dVGgEFYkCTV7GKWUfHc8"; 
 
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMzAwMjcsImV4cCI6MjA3ODkwNjAyN30.6K-rSAFVJxQPLVjZKdJpBspb5tHE1dZiry4lS6u6JzQ";
 
@@ -650,59 +650,96 @@ async function handleSePayWebhook(request, env) {
     } catch (e) { return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 }); }
 }
 
-// --- NEW FUNCTION: POLAR WEBHOOK HANDLER (UPDATED) ---
+// --- UPDATED POLAR WEBHOOK HANDLER ---
 async function handlePolarWebhook(request, env) {
     try {
         const body = await request.json();
+        console.log("[Polar] Received Webhook:", JSON.stringify(body).substring(0, 200) + "...");
         
-        // Polar Payload structure typically: { type: "order.created", data: { ... } }
-        // We only care about successful orders (or checkouts if you prefer, but orders are safer)
-        if (body.type !== 'order.created' && body.type !== 'checkout.created') {
-             return new Response("Event Ignored", { status: 200 });
+        // Polar uses 'order.created' as the standard successful payment event.
+        if (body.type !== 'order.created') {
+             return new Response("Event Ignored (Not order.created)", { status: 200 });
         }
 
         const data = body.data;
         const customer_email = data.customer_email || (data.customer && data.customer.email) || data.email;
-        const amount = data.amount; // In cents (e.g. $9.99 -> 999)
+        
+        // FIX: Prefer 'subtotal_amount' (original price) if available, to match plan price.
+        // If not, fallback to 'amount' or 'total_amount'.
+        const amount = data.subtotal_amount || data.amount || data.total_amount; 
 
         if (!customer_email) {
+            console.error("[Polar] No Email in Payload");
             return new Response("No Email in Payload", { status: 200 });
         }
 
         // --- PLAN MAPPING CONFIGURATION ---
-        // Maps amount (cents) to: credits, name, and DURATION (days)
+        // Maps amount (cents) to: credits, name, DURATION (days), and PLAN ID
         const PLANS = {
-            999:   { credits: 1000,  days: 7,   name: "Weekly Pass" },
-            2900:  { credits: 4000,  days: 30,  name: "Pro Monthly" },
-            24900: { credits: 48000, days: 365, name: "Yearly Elite" },
-            600:   { credits: 1000,  days: 0,   name: "Credit Booster" }, // Add-on, no extension
-            10:    { credits: 50,    days: 1,   name: "Test Plan" } // NEW: 10 cents test
+            999:   { credits: 1000,  days: 7,   name: "Weekly Pass", id: "plan_global_weekly" },
+            2900:  { credits: 4000,  days: 30,  name: "Pro Monthly", id: "plan_global_monthly" },
+            24900: { credits: 48000, days: 365, name: "Yearly Elite", id: "plan_global_yearly" },
+            600:   { credits: 1000,  days: 0,   name: "Credit Booster", id: "plan_global_credit" },
+            50:    { credits: 50,    days: 1,   name: "Test Plan", id: "plan_test" }
         };
 
-        const plan = PLANS[amount];
+        // 1. Try finding by Amount
+        let plan = PLANS[amount];
+
+        // 2. Fallback: Find by Product Name (Robust against discounts)
+        if (!plan && data.product && data.product.name) {
+            console.log(`[Polar] Amount mismatch (${amount}), trying match by name: ${data.product.name}`);
+            const productName = data.product.name.toLowerCase();
+            
+            // Find in PLANS values
+            const foundKey = Object.keys(PLANS).find(key => {
+                const p = PLANS[key];
+                return p.name.toLowerCase().includes(productName) || productName.includes(p.name.toLowerCase());
+            });
+            
+            if (foundKey) {
+                plan = PLANS[foundKey];
+                console.log(`[Polar] Matched plan by name: ${plan.id}`);
+            }
+        }
 
         if (!plan) {
-            console.warn(`[Polar] Unknown amount received: ${amount}`);
+            console.warn(`[Polar] Unknown plan for amount: ${amount} and Product Name: ${data.product?.name}`);
             // Return 200 to prevent Polar from retrying indefinitely on bad data
-            return new Response("Unknown Plan Amount", { status: 200 });
+            return new Response(`Unknown Plan Amount: ${amount}`, { status: 200 });
         }
 
         // Supabase connection
         const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
         const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
 
-        // 1. Find User by Email
-        const userRes = await fetch(`${sbUrl}/rest/v1/profiles?email=eq.${customer_email}&select=id,credits,subscription_end`, {
+        if (sbKey === DEFAULT_SUPABASE_KEY && !SUPABASE_SERVICE_ROLE_KEY) {
+             console.error("[Polar] CRITICAL: Service Role Key is MISSING. Cannot update DB.");
+             return new Response("Configuration Error: Missing Service Key", { status: 500 });
+        }
+
+        // 1. Find User by Email (Normalization)
+        // Try searching by email exact match first
+        let userQuery = await fetch(`${sbUrl}/rest/v1/profiles?email=eq.${customer_email}&select=id,credits,subscription_end,full_name`, {
             headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` }
         });
         
-        if (!userRes.ok) throw new Error("Supabase Error finding user");
+        let users = await userQuery.json();
         
-        const users = await userRes.json();
+        // If not found, try case-insensitive search if supported or manual check? 
+        // Supabase ilike operator: email=ilike.${customer_email}
+        if (!users || users.length === 0) {
+             console.log(`[Polar] Exact match failed for ${customer_email}, trying ilike...`);
+             userQuery = await fetch(`${sbUrl}/rest/v1/profiles?email=ilike.${customer_email}&select=id,credits,subscription_end,full_name`, {
+                headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` }
+            });
+            users = await userQuery.json();
+        }
         
         if (!users || users.length === 0) {
             console.warn(`[Polar] User not found for email: ${customer_email}`);
-            return new Response("User not found", { status: 200 }); 
+            // Return 200 so Polar stops retrying, but log error
+            return new Response("User not found in DB", { status: 200 }); 
         }
 
         const user = users[0];
@@ -727,32 +764,72 @@ async function handlePolarWebhook(request, env) {
             headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
                 credits: (user.credits || 0) + plan.credits,
-                subscription_end: plan.days > 0 ? newSubscriptionEnd.toISOString() : user.subscription_end // Only update time if plan has duration
+                subscription_end: plan.days > 0 ? newSubscriptionEnd.toISOString() : user.subscription_end 
             })
         });
 
-        if (!updateRes.ok) throw new Error("Supabase Error updating profile");
+        if (!updateRes.ok) {
+             const errorText = await updateRes.text();
+             console.error("[Polar] Supabase Profile Update Error:", errorText);
+             throw new Error(`Supabase Update Error: ${updateRes.status}`);
+        }
 
-        // 4. Log Transaction
+        // 4. Log Transaction (Robust Version)
         const transactionCode = data.id || `POLAR-${Date.now()}`;
+        const timestamp = new Date().toISOString();
+
+        // Fix Type Constraint: Determine if credit or subscription
+        const transactionType = plan.id.includes('credit') ? 'credit' : 'subscription';
+
+        const txPayload = {
+            user_id: user.id,
+            amount: amount / 100, // Convert to USD for display
+            currency: 'USD',
+            type: transactionType, // Corrected 'type'
+            status: 'completed',
+            credits_added: plan.credits,
+            plan_name: plan.name,
+            plan_id: plan.id, // Potential point of failure if FK exists
+            transaction_code: transactionCode,
+            payment_method: 'polar',
+            customer_email: customer_email,
+            customer_name: user.full_name || customer_email.split('@')[0], 
+            created_at: timestamp, 
+            updated_at: timestamp 
+        };
         
-        await fetch(`${sbUrl}/rest/v1/transactions`, {
+        let txRes = await fetch(`${sbUrl}/rest/v1/transactions`, {
             method: 'POST',
             headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                user_id: user.id,
-                amount: amount / 100, // Convert to USD for display
-                currency: 'USD',
-                type: 'polar_payment',
-                status: 'completed',
-                credits_added: plan.credits,
-                plan_name: plan.name,
-                transaction_code: transactionCode,
-                payment_method: 'polar',
-                customer_email: customer_email
-            })
+            body: JSON.stringify(txPayload)
         });
 
+        if (!txRes.ok) {
+            const errText = await txRes.text();
+            console.error(`[Polar] Transaction Insert Failed (Attempt 1): ${errText}`);
+
+            // Retry without plan_id (Fix for Foreign Key Constraint Violation)
+            if (errText.includes("foreign key") || errText.includes("plan_id")) {
+                console.log("[Polar] Retrying transaction insert without plan_id...");
+                const fallbackPayload = { ...txPayload };
+                delete fallbackPayload.plan_id; // Remove the constraint field
+
+                txRes = await fetch(`${sbUrl}/rest/v1/transactions`, {
+                    method: 'POST',
+                    headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' },
+                    body: JSON.stringify(fallbackPayload)
+                });
+
+                if (!txRes.ok) {
+                     const retryErr = await txRes.text();
+                     console.error(`[Polar] Transaction Insert Failed (Attempt 2): ${retryErr}`);
+                } else {
+                    console.log("[Polar] Transaction saved successfully (without plan_id linkage).");
+                }
+            }
+        }
+
+        console.log(`[Polar] Success! Added ${plan.credits} credits to ${customer_email}`);
         return new Response("Plan Updated Successfully", { status: 200 });
 
     } catch (e) {
