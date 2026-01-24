@@ -60,9 +60,9 @@ const LazyVideo = ({ src, poster }: { src: string, poster?: string }) => {
 // --- HERO CAROUSEL COMPONENT ---
 const HeroCarousel: React.FC = () => {
     const images = [
-        "https://lh3.googleusercontent.com/aida-public/AB6AXuDuJVxJMLh56F5z4P44jRoSHcdM5w3lJPzCnkWe0-McR6c0hW7u21d6OubJX3x4WG9fetzYLjNuwucYtpHBfs54dmpw6n5sRVXD3NvfemF0lEJyulka9SidVTcoi3s1Iko71iWIXKibTZEf07a1IKOVx3C3SJqD5xPzI_XQie_oGe0ey7pFUdUtasVufndxwHuHSwiqrm-R5DNl2arwTcB49TBXM6CgJ292rewaoTLXS-sOdiZ5i5qyIM8yGYaTXwOxEEulCMSAIHlN",
+        "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage5.png",
         "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage1.png",
-        "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage2.png",
+        "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render%204k%20img.jpg",
         "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage3.png",
         "https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/homepage4.png"
     ];
