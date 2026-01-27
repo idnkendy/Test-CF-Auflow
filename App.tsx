@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
   
   // Use a ref to track auth initialization to prevent double-firing in Strict Mode
   const authListenerRef = useRef<{ unsubscribe: () => void } | null>(null);
-  // NEW: Ref to throttle user status fetches (prevent 429)
+  // Ref to throttle user status fetches
   const lastFetchTimeRef = useRef<number>(0);
 
   const getEffectiveLanguage = () => getCurrentLocaleFromUrl() || language || 'vi';
@@ -185,12 +185,11 @@ const AppContent: React.FC = () => {
       return () => window.removeEventListener('popstate', handlePopState);
   }, [session]); 
 
-  // --- CRITICAL AUTH LOGIC FIX ---
+  // --- CRITICAL AUTH LOGIC ---
   useEffect(() => {
     let mounted = true;
     
     const initializeAuth = async () => {
-        // Prevent race condition if listener already exists
         if (authListenerRef.current) return;
 
         const isHashRedirect = window.location.hash && window.location.hash.includes('access_token');
@@ -198,20 +197,16 @@ const AppContent: React.FC = () => {
             setLoadingSession(true);
         }
 
-        // Safety timeout
         const safetyTimer = setTimeout(() => {
             if (mounted && loadingSession) {
-                console.warn("Auth timeout - clearing loader");
                 setLoadingSession(false);
             }
         }, 5000);
 
-        // 1. Check initial session first
         const { data: { session: initialSession } } = await supabase.auth.getSession();
         
         if (mounted && initialSession) {
             setSession(initialSession);
-            // Handle routing based on initial session
             if (!isHashRedirect) {
                 const cleanPath = getPathWithoutLocale();
                 if (cleanPath === '/pricing') setView('pricing');
@@ -230,18 +225,22 @@ const AppContent: React.FC = () => {
              setLoadingSession(false);
         }
 
-        // 2. Setup Listener
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
             if (!mounted) return;
             
+            // Only update session state if it actually changed meaningfully
+            // This prevents re-renders on TOKEN_REFRESHED unless user ID changed
+            setSession(prevSession => {
+                if (prevSession?.access_token === newSession?.access_token) return prevSession;
+                return newSession;
+            });
+            
             if (newSession) {
-                setSession(newSession);
                 clearTimeout(safetyTimer);
 
                 // Handling post-login logic
-                if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+                if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
                     if (window.location.hash && window.location.hash.includes('access_token')) {
-                        // Keep current language when cleaning hash
                         window.history.replaceState(null, '', window.location.pathname + window.location.search);
                     }
 
@@ -256,11 +255,9 @@ const AppContent: React.FC = () => {
                     } else if (plan) { 
                         setSelectedPlan(plan); setPendingPlan(null); localStorage.removeItem('pendingPlanId'); setView('payment'); 
                     } else {
-                        // Only change view if we are not already in a valid authenticated view
-                        // This prevents random redirects on Token Refresh
                         const cleanPath = getPathWithoutLocale();
                         if (cleanPath === '/' || cleanPath === '/auth') {
-                            setView('homepage'); // Keep user on homepage after login if they were there
+                            setView('homepage'); 
                             safeHistoryReplace('/');
                         } else if (cleanPath === '/feature') {
                             setView('app');
@@ -275,6 +272,10 @@ const AppContent: React.FC = () => {
                         cleanupStuckJobs(newSession.user.id).catch(console.error);
                     }
                     setLoadingSession(false);
+                } 
+                // CRITICAL: Handle Token Refresh silently without route changes
+                else if (event === 'TOKEN_REFRESHED') {
+                    // Do nothing navigation-wise
                 }
             } else if (event === 'SIGNED_OUT') {
                 clearTimeout(safetyTimer);
@@ -304,37 +305,45 @@ const AppContent: React.FC = () => {
     };
   }, []); 
 
-  // --- THROTTLED FETCH USER STATUS ---
+  // --- STABLE FETCH USER STATUS ---
+  // Key Fix: Depend on userId string, NOT the entire session object. 
+  // This prevents re-fetching when 'session' object reference changes during token refresh.
+  const userId = session?.user?.id;
+  const userEmail = session?.user?.email;
+  const userMetadata = session?.user?.user_metadata;
+
   const fetchUserStatus = useCallback(async (force = false) => {
-    if (session?.user) {
-      // Throttle: chỉ cho phép gọi 1 lần mỗi 2 giây để tránh lỗi 429
+    if (userId) {
+      // Throttle: Prevent spamming even if called explicitly
       const now = Date.now();
       if (!force && now - lastFetchTimeRef.current < 2000) {
           return;
       }
       lastFetchTimeRef.current = now;
 
-      const fullName = session.user.user_metadata?.full_name || session.user.email?.split('@')[0];
-      const status = await getUserStatus(session.user.id, session.user.email, fullName);
+      const fullName = userMetadata?.full_name || userEmail?.split('@')[0];
+      const status = await getUserStatus(userId, userEmail, fullName);
       setUserStatus(status);
-    } else { setUserStatus(null); }
-  }, [session]);
+    } else { 
+        setUserStatus(null); 
+    }
+  }, [userId, userEmail, userMetadata]);
 
   useEffect(() => {
     fetchUserStatus();
-  }, [fetchUserStatus, activeTool]); 
+  }, [fetchUserStatus, activeTool]); // Only runs when User ID changes or Active Tool changes
 
-  // --- NEW: AUTO-REFRESH ON WINDOW FOCUS (For Payment Success) ---
+  // --- AUTO-REFRESH ON WINDOW FOCUS ---
   useEffect(() => {
       const handleFocus = () => {
-          if (session?.user) {
-              fetchUserStatus(true); // Force refresh on window focus
+          if (userId) {
+              fetchUserStatus(true);
           }
       };
       
       window.addEventListener('focus', handleFocus);
       return () => window.removeEventListener('focus', handleFocus);
-  }, [session, fetchUserStatus]);
+  }, [userId, fetchUserStatus]);
   
   if (MAINTENANCE_MODE) {
       return (
@@ -348,7 +357,7 @@ const AppContent: React.FC = () => {
   const handleDeductCredits = async (amount: number, description?: string): Promise<string> => {
       if (!session?.user) throw new Error("Vui lòng đăng nhập để sử dụng.");
       const logId = await deductCredits(session.user.id, amount, description || '');
-      await fetchUserStatus(true); // Force update after deduction
+      await fetchUserStatus(true);
       return logId;
   };
 
@@ -363,14 +372,12 @@ const AppContent: React.FC = () => {
 
   const handleSignOut = async () => {
     try { 
-        // Important: unsubscribe listener before signing out to prevent flashing states
         if(authListenerRef.current) authListenerRef.current.unsubscribe();
         await supabase.auth.signOut(); 
     } catch (error) { console.error("Sign out error:", error); } finally {
         localStorage.removeItem('activeTool'); localStorage.removeItem('pendingPlanId');
         setSession(null); setUserStatus(null); setSelectedPlan(null); setActiveTool(Tool.ArchitecturalRendering);
         setView('homepage'); safeHistoryReplace('/'); 
-        // Force reload to clean any lingering state completely
         window.location.reload();
     }
   };
