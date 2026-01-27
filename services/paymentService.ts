@@ -31,27 +31,34 @@ const detectCountry = async (): Promise<string> => {
 
 export const getUserStatus = async (userId: string, email?: string, fullName?: string): Promise<UserStatus> => {
     try {
-        // 1. Lấy thông tin cơ bản (Credits, Hạn dùng) từ Profiles - GIỮ NGUYÊN LOGIC CŨ
-        // Không đọc active_plan_id từ profile để tránh reset sai
+        // 1. Lấy thông tin cơ bản (Credits, Hạn dùng) từ Profiles
         let { data, error } = await supabase
             .from('profiles')
             .select('credits, subscription_end, country') 
             .eq('id', userId)
             .maybeSingle();
 
-        // NẾU KHÔNG TÌM THẤY DATA -> ĐÂY LÀ USER MỚI (SIGN UP)
+        // --- BẢN VÁ LỖI QUAN TRỌNG ---
+        // Nếu có lỗi khi đọc (ví dụ 429 Too Many Requests, 401, hoặc lỗi mạng)
+        // DỪNG NGAY LẬP TỨC. Không được chạy xuống logic tạo user mới.
+        // Điều này ngăn chặn vòng lặp vô tận gây logout.
+        if (error) {
+            console.warn("[Auth] Error fetching profile (skipping creation logic):", error.message);
+            // Trả về dữ liệu tạm thời an toàn để UI không bị crash
+            return { credits: 0, subscriptionEnd: null, isExpired: false };
+        }
+        // -----------------------------
+
+        // NẾU KHÔNG CÓ LỖI VÀ KHÔNG TÌM THẤY DATA -> ĐÂY MỚI LÀ USER MỚI THỰC SỰ
         if (!data && email) {
              console.log("[Auth] New user detected, creating profile...");
              
              // 1. Xác định quốc gia
              const userCountry = await detectCountry();
-             console.log("[Auth] Detected Country:", userCountry);
 
              // 2. Gửi Webhook sang LadiFlow ngay lập tức (Kèm thông tin quốc gia)
              try {
                  const baseUrl = BACKEND_URL.replace(/\/$/, "");
-                 console.log("[Sync] Triggering LadiPage sync for:", email);
-                 
                  fetch(`${baseUrl}/sync-ladipage`, {
                      method: 'POST',
                      headers: { 'Content-Type': 'application/json' },
@@ -61,18 +68,12 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                          is_new_user: true,
                          country: userCountry // Gửi quốc gia lên worker
                      })
-                 })
-                 .then(async (res) => {
-                     const json = await res.json();
-                     console.log("[Sync] LadiPage Result:", json);
-                 })
-                 .catch(err => console.error("[Sync] Network failed:", err));
+                 }).catch(err => console.error("[Sync] Network failed:", err));
              } catch (e) {
                  console.error("[Sync] Exception:", e);
              }
 
-             // 3. Tạo hồ sơ mới trong DB với hạn sử dụng LÀ NULL (Vĩnh viễn) + Lưu Quốc gia
-             // Sử dụng insert và catch error để xử lý trường hợp hồ sơ đã tồn tại
+             // 3. Tạo hồ sơ mới trong DB
              const { error: insertError } = await supabase
                 .from('profiles')
                 .insert([{ 
@@ -80,59 +81,48 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
                     email, 
                     credits: 60, 
                     full_name: fullName,
-                    subscription_end: null, // Vĩnh viễn (cho đến khi hết credits)
-                    country: userCountry // Lưu cột country
+                    subscription_end: null,
+                    country: userCountry
                 }]);
              
              if (insertError) {
-                 // Trường hợp Race Condition hoặc RLS (đã tạo ở tab khác)
-                 // Mã lỗi 42501 (RLS) hoặc 23505 (Unique Violation) đều nên thử fetch lại
+                 // Nếu tạo thất bại (ví dụ do race condition), thử fetch lại một lần nữa
                  console.warn(`[Auth] Profile insert failed (${insertError.code}), retrying fetch...`);
-                 
-                 const { data: retryData, error: retryError } = await supabase
+                 const { data: retryData } = await supabase
                     .from('profiles')
                     .select('credits, subscription_end, country')
                     .eq('id', userId)
                     .single();
-                    
-                 if (retryError || !retryData) {
-                     // Nếu fetch lại vẫn lỗi, trả về mặc định (chưa có credits) thay vì crash
-                     console.error("[Auth] Retry fetch failed:", retryError);
-                     return { credits: 0, subscriptionEnd: null, isExpired: false };
-                 }
-                 data = retryData;
+                 
+                 data = retryData; // Sử dụng dữ liệu nếu fetch lại thành công
              } else {
                  // Trả về ngay trạng thái mới tạo
                  return { credits: 60, subscriptionEnd: null, isExpired: false };
              }
-        } else if (!data) {
-            // Trường hợp không có data nhưng cũng không có email (ít gặp)
+        } 
+        
+        // Nếu sau tất cả các bước mà data vẫn null (lỗi lạ), trả về default
+        if (!data) {
             return { credits: 0, subscriptionEnd: null, isExpired: false };
         }
 
         // --- LOGIC KIỂM TRA HẾT HẠN ---
         const now = new Date();
         const subEnd = data?.subscription_end ? new Date(data.subscription_end) : null;
-        // Logic cũ: Hết hạn nếu có ngày hết hạn và ngày đó < hiện tại
         const isExpired = subEnd ? subEnd < now : false;
-
-        // Nếu đã hết hạn, trả về 0 credits để chặn UI/UX
         const effectiveCredits = isExpired ? 0 : (data?.credits ?? 0);
 
         // --- LOGIC MỚI: LẤY GÓI HIỆN TẠI TỪ BẢNG TRANSACTIONS ---
-        // Chỉ lấy nếu chưa hết hạn. Nếu hết hạn thì coi như không có gói active (undefined).
         let activePlanId = undefined;
         
         if (!isExpired) {
-            // Truy vấn bảng transactions để tìm giao dịch mua gói gần nhất
-            // Điều này đảm bảo hiển thị đúng gói mà không cần sửa bảng profiles
             const { data: lastTx } = await supabase
                 .from('transactions')
                 .select('plan_id')
                 .eq('user_id', userId)
                 .eq('status', 'completed')
-                .eq('type', 'subscription') // Chỉ lấy giao dịch mua gói, không lấy mua credits lẻ
-                .order('created_at', { ascending: false }) // Lấy cái mới nhất (Yearly/Monthly/Weekly)
+                .eq('type', 'subscription')
+                .order('created_at', { ascending: false })
                 .limit(1)
                 .maybeSingle();
             
@@ -145,10 +135,10 @@ export const getUserStatus = async (userId: string, email?: string, fullName?: s
             credits: effectiveCredits, 
             subscriptionEnd: data?.subscription_end, 
             isExpired: isExpired,
-            activePlanId: activePlanId // Trả về undefined nếu hết hạn, giúp UI hiển thị tất cả các gói
+            activePlanId: activePlanId 
         };
     } catch (e) {
-        console.error("[Auth] getUserStatus Critical Error:", e);
+        console.error("[Auth] getUserStatus Critical Exception:", e);
         return { credits: 0, subscriptionEnd: null, isExpired: false };
     }
 };

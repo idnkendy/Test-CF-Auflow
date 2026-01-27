@@ -90,6 +90,8 @@ const AppContent: React.FC = () => {
   
   // Use a ref to track auth initialization to prevent double-firing in Strict Mode
   const authListenerRef = useRef<{ unsubscribe: () => void } | null>(null);
+  // Ref to throttle user status fetches
+  const lastFetchTimeRef = useRef<number>(0);
 
   const getEffectiveLanguage = () => getCurrentLocaleFromUrl() || language || 'vi';
 
@@ -232,9 +234,6 @@ const AppContent: React.FC = () => {
         const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
             if (!mounted) return;
             
-            // Log to debug transition
-            // console.log("Auth Event:", event);
-
             if (newSession) {
                 setSession(newSession);
                 clearTimeout(safetyTimer);
@@ -305,8 +304,15 @@ const AppContent: React.FC = () => {
     };
   }, []); 
 
-  const fetchUserStatus = useCallback(async () => {
+  const fetchUserStatus = useCallback(async (force = false) => {
     if (session?.user) {
+      // Simple throttling: prevent calls more than once every 2 seconds unless forced
+      const now = Date.now();
+      if (!force && now - lastFetchTimeRef.current < 2000) {
+          return;
+      }
+      lastFetchTimeRef.current = now;
+
       const fullName = session.user.user_metadata?.full_name || session.user.email?.split('@')[0];
       const status = await getUserStatus(session.user.id, session.user.email, fullName);
       setUserStatus(status);
@@ -321,7 +327,7 @@ const AppContent: React.FC = () => {
   useEffect(() => {
       const handleFocus = () => {
           if (session?.user) {
-              fetchUserStatus();
+              fetchUserStatus(true); // Force refresh on window focus
           }
       };
       
@@ -341,7 +347,7 @@ const AppContent: React.FC = () => {
   const handleDeductCredits = async (amount: number, description?: string): Promise<string> => {
       if (!session?.user) throw new Error("Vui lòng đăng nhập để sử dụng.");
       const logId = await deductCredits(session.user.id, amount, description || '');
-      await fetchUserStatus();
+      await fetchUserStatus(true);
       return logId;
   };
 
@@ -379,7 +385,7 @@ const AppContent: React.FC = () => {
   const handleOpenProfile = () => { if (session) { setView('app'); setActiveTool(Tool.Profile); handleToolStateChange(Tool.Profile, { activeTab: 'profile' }); safeHistoryPush('/feature'); } }
   const handleSelectPlanForPayment = (plan: PricingPlan) => { if (session) { setSelectedPlan(plan); setView('payment'); safeHistoryPush(`/payment?plan=${plan.id}`); } else { setPendingPlan(plan); localStorage.setItem('pendingPlanId', plan.id); handleAuthNavigate('signup'); } };
   const handlePaymentBack = () => { setView('pricing'); safeHistoryPush('/pricing'); }
-  const handlePaymentSuccess = () => { fetchUserStatus(); setView('app'); setActiveTool(Tool.ArchitecturalRendering); safeHistoryPush('/feature'); };
+  const handlePaymentSuccess = () => { fetchUserStatus(true); setView('app'); setActiveTool(Tool.ArchitecturalRendering); safeHistoryPush('/feature'); };
   const handleSendToViewSync = (image: FileData) => { handleToolStateChange(Tool.ViewSync, { sourceImage: image, resultImages: [], error: null, customPrompt: '', }); setActiveTool(Tool.ViewSync); };
   const handleSendToViewSyncWithPrompt = (image: FileData, prompt: string) => { handleToolStateChange(Tool.ViewSync, { sourceImage: image, resultImages: [], error: null, customPrompt: prompt, directionImage: null }); setActiveTool(Tool.ViewSync); };
   
@@ -423,7 +429,7 @@ const AppContent: React.FC = () => {
                 onOpenProfile={handleOpenProfile} 
                 onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)} 
                 onDeductCredits={handleDeductCredits} 
-                onRefreshCredits={async () => { await fetchUserStatus() }}
+                onRefreshCredits={async () => { await fetchUserStatus(true) }}
                 onInsufficientCredits={handleInsufficientCredits}
             /> 
           );
