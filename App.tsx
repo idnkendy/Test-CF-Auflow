@@ -51,11 +51,17 @@ import { LanguageProvider, useLanguage } from './hooks/useLanguage';
 const MAINTENANCE_MODE = false; 
 // ---------------------
 
-// Helper functions for safe navigation history (Updated for i18n)
+// Helper functions for safe navigation history
 const getPathWithoutLocale = () => {
     const path = window.location.pathname;
     const clean = path.replace(/^\/(vi|en)/, '');
     return clean || '/';
+};
+
+const getCurrentLocaleFromUrl = () => {
+    const path = window.location.pathname;
+    const match = path.match(/^\/(vi|en)(\/|$)/);
+    return match ? match[1] : null;
 };
 
 const AppContent: React.FC = () => {
@@ -64,8 +70,6 @@ const AppContent: React.FC = () => {
   
   const [view, setView] = useState<'homepage' | 'auth' | 'app' | 'pricing' | 'payment' | 'video'>('homepage');
   const [session, setSession] = useState<Session | null>(null);
-  
-  // Initialize loading to true
   const [loadingSession, setLoadingSession] = useState(true);
   
   const [activeTool, setActiveTool] = useState<Tool>(() => {
@@ -83,54 +87,58 @@ const AppContent: React.FC = () => {
   const [pendingPlan, setPendingPlan] = useState<PricingPlan | null>(null);
   const [showCreditModal, setShowCreditModal] = useState(false); 
   const mainContentRef = useRef<HTMLDivElement>(null);
+  
+  // Use a ref to track auth initialization to prevent double-firing in Strict Mode
+  const authListenerRef = useRef<{ unsubscribe: () => void } | null>(null);
+
+  const getEffectiveLanguage = () => getCurrentLocaleFromUrl() || language || 'vi';
 
   const safeHistoryPush = (path: string) => {
       try {
-          const fullPath = `/${language}${path === '/' ? '' : path}`;
+          const currentLang = getEffectiveLanguage();
+          const fullPath = `/${currentLang}${path === '/' ? '' : path}`;
           window.history.pushState({}, '', fullPath);
       } catch (e) { console.warn("History push ignored:", e); }
   };
 
   const safeHistoryReplace = (path: string) => {
       try {
-          const fullPath = `/${language}${path === '/' ? '' : path}`;
+          const currentLang = getEffectiveLanguage();
+          const fullPath = `/${currentLang}${path === '/' ? '' : path}`;
           window.history.replaceState({}, '', fullPath);
       } catch (e) { console.warn("History replace ignored:", e); }
   };
 
   const getSeoMetadata = (view: string, activeTool: Tool) => {
-      // Default / English Metadata
       let meta = {
           title: "OPZEN AI - Create Spaces with AI",
-          description: "Leading AI platform supporting Architects and Designers. Render images, generate videos, urban planning, and interior design in seconds.",
-          keywords: "ai architecture, ai render, interior design ai, home design software, opzen ai, architectural visualization",
+          description: "Leading AI platform supporting Architects and Designers.",
+          keywords: "ai architecture, ai render, interior design ai",
           noindex: false
       };
 
-      // Vietnamese Override
       if (language === 'vi') {
            meta = {
               title: "OPZEN AI - Kiến tạo không gian với AI", 
-              description: "Nền tảng AI hàng đầu hỗ trợ Kiến trúc sư và Nhà thiết kế. Render ảnh, tạo video, quy hoạch đô thị và thiết kế nội thất chỉ trong vài giây.",
-              keywords: "AI kiến trúc, thiết kế nhà AI, render nội thất, quy hoạch đô thị, diễn họa kiến trúc, opzen",
+              description: "Nền tảng AI hàng đầu hỗ trợ Kiến trúc sư và Nhà thiết kế.",
+              keywords: "AI kiến trúc, thiết kế nhà AI, render nội thất",
               noindex: false
           };
       }
 
-      // Homepage Specific Metadata
       if (view === 'homepage') {
           if (language === 'vi') {
               meta = { 
                   title: "OPZEN AI - Nền tảng AI Kiến trúc & Nội thất", 
-                  description: "Công cụ AI hỗ trợ KTS render 3D, thiết kế nội thất, quy hoạch đô thị và tạo video kiến trúc chỉ trong vài giây. Dùng thử miễn phí ngay.",
-                  keywords: "ai kiến trúc, render ai, thiết kế nội thất ai, phần mềm thiết kế nhà, midjourney kiến trúc, stable diffusion kiến trúc, opzen ai, diễn họa kiến trúc ai, ai architecture generator",
+                  description: "Công cụ AI hỗ trợ KTS render 3D, thiết kế nội thất, quy hoạch đô thị và tạo video kiến trúc chỉ trong vài giây.",
+                  keywords: "ai kiến trúc, render ai, thiết kế nội thất ai, phần mềm thiết kế nhà, midjourney kiến trúc, opzen ai",
                   noindex: false
               };
           } else {
               meta = {
                   title: "OPZEN AI - AI Software for Architecture & Interior Design",
-                  description: "AI tool supporting Architects in 3D rendering, interior design, urban planning, and architectural video creation in seconds. Try for free now.",
-                  keywords: "ai architecture, ai render, interior design ai, home design software, midjourney architecture, stable diffusion architecture, opzen ai, architectural visualization",
+                  description: "AI tool supporting Architects in 3D rendering, interior design, urban planning, and architectural video creation in seconds.",
+                  keywords: "ai architecture, ai render, interior design ai, home design software, opzen ai",
                   noindex: false
               }
           }
@@ -179,121 +187,121 @@ const AppContent: React.FC = () => {
   useEffect(() => {
     let mounted = true;
     
-    // Check if we are in the middle of a redirect (Hash exists)
-    // If hash exists, we force loading to stay TRUE until onAuthStateChange fires
-    const isHashRedirect = window.location.hash && window.location.hash.includes('access_token');
-    if (isHashRedirect) {
-        setLoadingSession(true);
-    }
+    const initializeAuth = async () => {
+        // Prevent race condition if listener already exists
+        if (authListenerRef.current) return;
 
-    // Safety timeout: If Supabase takes too long or hash is malformed, stop loading after 5s
-    const safetyTimer = setTimeout(() => {
-        if (mounted && loadingSession) {
-            console.warn("Auth timeout - clearing loader");
-            setLoadingSession(false);
+        const isHashRedirect = window.location.hash && window.location.hash.includes('access_token');
+        if (isHashRedirect) {
+            setLoadingSession(true);
         }
-    }, 5000);
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
-      if (!mounted) return;
-      
-      if (newSession) setSession(newSession);
+        // Safety timeout
+        const safetyTimer = setTimeout(() => {
+            if (mounted && loadingSession) {
+                console.warn("Auth timeout - clearing loader");
+                setLoadingSession(false);
+            }
+        }, 5000);
 
-      // Handle Redirect & Login
-      if ((event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || newSession) && newSession) {
-          clearTimeout(safetyTimer);
-          
-          // Clean URL hash if exists
-          if (window.location.hash && window.location.hash.includes('access_token')) {
-              window.history.replaceState(null, '', window.location.pathname + window.location.search);
-          }
-
-          // Check for pending plans (payment flow)
-          const savedPlanId = localStorage.getItem('pendingPlanId');
-          const plan = savedPlanId ? plans.find(p => p.id === savedPlanId) : pendingPlan;
-          const params = new URLSearchParams(window.location.search);
-          const urlPlanId = params.get('plan');
-          const urlPlan = urlPlanId ? plans.find(p => p.id === urlPlanId) : null;
-
-          if (urlPlan) { 
-              setSelectedPlan(urlPlan); setView('payment'); safeHistoryReplace('/'); 
-          } else if (plan) { 
-              setSelectedPlan(plan); setPendingPlan(null); localStorage.removeItem('pendingPlanId'); setView('payment'); 
-          } else {
-              // Standard Login Routing
-              const cleanPath = getPathWithoutLocale();
-              if (cleanPath === '/video') {
-                  setView('video');
-              } else if (cleanPath === '/pricing') {
-                  setView('pricing');
-              } else {
-                  // Redirect to HOMEPAGE view by default if on root or auth
-                  // User requested to redirect to Homepage not Feature
-                  if (cleanPath === '/' || cleanPath === '/auth') {
-                      setView('homepage');
-                      safeHistoryReplace('/');
-                  } else if (cleanPath === '/feature') {
-                      setView('app');
-                  } else {
-                      // Fallback for other logged-in states
-                      setView('homepage');
-                  }
-              }
-          }
-          
-          if (newSession.user) {
-             cleanupStuckJobs(newSession.user.id).catch(console.error);
-          }
-          setLoadingSession(false);
-      } 
-      
-      // Handle Logout
-      if (event === 'SIGNED_OUT') {
-          clearTimeout(safetyTimer);
-          setSession(null); 
-          setUserStatus(null); 
-          setSelectedPlan(null);
-          const cleanPath = getPathWithoutLocale();
-          if (cleanPath === '/feature' || cleanPath === '/payment' || cleanPath === '/video') {
-              setView('homepage'); 
-              safeHistoryReplace('/');
-          }
-          setLoadingSession(false);
-      }
-    });
-
-    // Initial Session Check (run once on mount)
-    supabase.auth.getSession().then(({ data: { session: initialSession } }) => {
-        if (mounted) {
-            if (initialSession) {
-                clearTimeout(safetyTimer);
-                setSession(initialSession);
-                
-                if (!isHashRedirect) {
-                    const cleanPath = getPathWithoutLocale();
-                    if (cleanPath === '/pricing') setView('pricing');
-                    else if (cleanPath === '/video') setView('video');
-                    else if (cleanPath === '/feature') setView('app');
-                    else {
-                        // Default to homepage if just visiting root
-                        setView('homepage');
-                        if (cleanPath === '/auth') safeHistoryReplace('/');
-                    }
+        // 1. Check initial session first
+        const { data: { session: initialSession } } = await supabase.auth.getSession();
+        
+        if (mounted && initialSession) {
+            setSession(initialSession);
+            // Handle routing based on initial session
+            if (!isHashRedirect) {
+                const cleanPath = getPathWithoutLocale();
+                if (cleanPath === '/pricing') setView('pricing');
+                else if (cleanPath === '/video') setView('video');
+                else if (cleanPath === '/feature') setView('app');
+                else {
+                    setView('homepage');
+                    if (cleanPath === '/auth') safeHistoryReplace('/');
                 }
             }
-            
-            // Only stop loading if NOT waiting for hash redirect event
             if (!isHashRedirect) {
                 clearTimeout(safetyTimer);
                 setLoadingSession(false);
             }
+        } else if (mounted && !initialSession && !isHashRedirect) {
+             setLoadingSession(false);
         }
-    });
+
+        // 2. Setup Listener
+        const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
+            if (!mounted) return;
+            
+            // Log to debug transition
+            // console.log("Auth Event:", event);
+
+            if (newSession) {
+                setSession(newSession);
+                clearTimeout(safetyTimer);
+
+                // Handling post-login logic
+                if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+                    if (window.location.hash && window.location.hash.includes('access_token')) {
+                        // Keep current language when cleaning hash
+                        window.history.replaceState(null, '', window.location.pathname + window.location.search);
+                    }
+
+                    const savedPlanId = localStorage.getItem('pendingPlanId');
+                    const plan = savedPlanId ? plans.find(p => p.id === savedPlanId) : pendingPlan;
+                    const params = new URLSearchParams(window.location.search);
+                    const urlPlanId = params.get('plan');
+                    const urlPlan = urlPlanId ? plans.find(p => p.id === urlPlanId) : null;
+
+                    if (urlPlan) { 
+                        setSelectedPlan(urlPlan); setView('payment'); safeHistoryReplace('/'); 
+                    } else if (plan) { 
+                        setSelectedPlan(plan); setPendingPlan(null); localStorage.removeItem('pendingPlanId'); setView('payment'); 
+                    } else {
+                        // Only change view if we are not already in a valid authenticated view
+                        // This prevents random redirects on Token Refresh
+                        const cleanPath = getPathWithoutLocale();
+                        if (cleanPath === '/' || cleanPath === '/auth') {
+                            setView('homepage'); // Keep user on homepage after login if they were there
+                            safeHistoryReplace('/');
+                        } else if (cleanPath === '/feature') {
+                            setView('app');
+                        } else if (cleanPath === '/pricing') {
+                            setView('pricing');
+                        } else if (cleanPath === '/video') {
+                            setView('video');
+                        }
+                    }
+                    
+                    if (newSession.user) {
+                        cleanupStuckJobs(newSession.user.id).catch(console.error);
+                    }
+                    setLoadingSession(false);
+                }
+            } else if (event === 'SIGNED_OUT') {
+                clearTimeout(safetyTimer);
+                setSession(null); 
+                setUserStatus(null); 
+                setSelectedPlan(null);
+                const cleanPath = getPathWithoutLocale();
+                if (cleanPath === '/feature' || cleanPath === '/payment' || cleanPath === '/video') {
+                    setView('homepage'); 
+                    safeHistoryReplace('/');
+                }
+                setLoadingSession(false);
+            }
+        });
+        
+        authListenerRef.current = subscription;
+    };
+
+    initializeAuth();
 
     return () => { 
         mounted = false; 
-        clearTimeout(safetyTimer);
-        subscription.unsubscribe(); 
+        if (authListenerRef.current) {
+            authListenerRef.current.unsubscribe();
+            authListenerRef.current = null;
+        }
     };
   }, []); 
 
@@ -313,7 +321,6 @@ const AppContent: React.FC = () => {
   useEffect(() => {
       const handleFocus = () => {
           if (session?.user) {
-              console.log("Window focused - refreshing user status...");
               fetchUserStatus();
           }
       };
@@ -348,10 +355,16 @@ const AppContent: React.FC = () => {
   };
 
   const handleSignOut = async () => {
-    try { await supabase.auth.signOut(); } catch (error) { console.error("Sign out error:", error); } finally {
+    try { 
+        // Important: unsubscribe listener before signing out to prevent flashing states
+        if(authListenerRef.current) authListenerRef.current.unsubscribe();
+        await supabase.auth.signOut(); 
+    } catch (error) { console.error("Sign out error:", error); } finally {
         localStorage.removeItem('activeTool'); localStorage.removeItem('pendingPlanId');
         setSession(null); setUserStatus(null); setSelectedPlan(null); setActiveTool(Tool.ArchitecturalRendering);
         setView('homepage'); safeHistoryReplace('/'); 
+        // Force reload to clean any lingering state completely
+        window.location.reload();
     }
   };
   
@@ -468,7 +481,7 @@ const AppContent: React.FC = () => {
           );
       }
 
-      if (view === 'auth') { return <AuthPage onGoHome={() => { setView('homepage'); safeHistoryPush('/'); }} />; }
+      if (view === 'auth') { return <AuthPage onGoHome={() => { setView('homepage'); safeHistoryReplace('/'); }} />; }
       return ( <div className="relative"> <Homepage onStart={handleStartDesigning} onAuthNavigate={handleAuthNavigate} onNavigateToPricing={handleNavigateToPricing} session={session} userStatus={userStatus} onGoToGallery={handleOpenGallery} onOpenProfile={handleOpenProfile} onNavigateToTool={handleNavigateToTool} onSignOut={handleSignOut} /> </div> );
   };
 

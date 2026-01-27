@@ -1,8 +1,6 @@
 
 import { FileData } from "../types";
-
-// @ts-ignore
-const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev"; 
+import { BACKEND_URL } from "./config";
 
 const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const POLL_INTERVAL = 10000;

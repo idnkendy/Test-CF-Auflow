@@ -1,11 +1,12 @@
 
 import { HistoryItem, Tool } from '../types';
 import { supabase } from './supabaseClient';
+import { BACKEND_URL } from './config';
 
 const TABLE_NAME = 'generated_assets';
 const BUCKET_NAME = 'assets';
 // Proxy URL to bypass CORS for Google Storage URLs
-const PROXY_BASE_URL = "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
+const PROXY_BASE_URL = BACKEND_URL;
 
 // Helper to upload base64 or blob url to Supabase Storage
 const uploadToStorage = async (userId: string, dataUrlOrBase64: string, folder: 'results' | 'sources'): Promise<string | null> => {

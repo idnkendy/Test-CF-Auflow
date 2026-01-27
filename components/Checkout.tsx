@@ -16,6 +16,22 @@ const CheckIcon = () => (
     </svg>
 );
 
+// Helper to determine plan tier level
+const getPlanTier = (planId?: string) => {
+    if (!planId) return 0;
+    
+    // Tier 1: Starter / Weekly
+    if (planId === 'plan_starter' || planId === 'plan_global_weekly') return 1;
+    
+    // Tier 2: Pro / Monthly
+    if (planId === 'plan_pro' || planId === 'plan_global_monthly') return 2;
+    
+    // Tier 3: Ultra / Yearly
+    if (planId === 'plan_ultra' || planId === 'plan_global_yearly') return 3;
+    
+    return 0; // Unknown or Credit pack
+};
+
 interface CheckoutProps {
     onPlanSelect?: (plan: PricingPlan) => void;
 }
@@ -27,6 +43,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
     
     // Internal state to check status locally in checkout component
     const [canBuyCredits, setCanBuyCredits] = useState(false);
+    const [activePlanId, setActivePlanId] = useState<string | undefined>(undefined);
     const [loadingStatus, setLoadingStatus] = useState(true);
     const [redirectingPlanId, setRedirectingPlanId] = useState<string | null>(null);
 
@@ -36,8 +53,16 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
             if (user) {
                 const status = await paymentService.getUserStatus(user.id);
                 // Can only buy booster if they have a valid subscription end date and it's not expired
-                // If subscriptionEnd is null (new/free user), this evaluates to false.
                 setCanBuyCredits(!!(status && status.subscriptionEnd && !status.isExpired));
+                
+                // Active Plan logic:
+                // paymentService returns undefined activePlanId if expired.
+                // We double check here to be safe.
+                if (status.isExpired) {
+                     setActivePlanId(undefined);
+                } else {
+                     setActivePlanId(status.activePlanId);
+                }
             }
             setLoadingStatus(false);
         };
@@ -82,6 +107,8 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
         }
     };
 
+    const currentTier = getPlanTier(activePlanId);
+
     return (
         <div className="pb-6">
             <h2 className="text-xl font-bold text-text-primary dark:text-white mb-2 text-center">{t('pricing.title')}</h2>
@@ -95,7 +122,35 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                         : 0;
                     
                     const isCreditPlan = plan.type === 'credit';
-                    const isRestricted = isCreditPlan && !loadingStatus && !canBuyCredits;
+                    
+                    // Logic Logic for Subscription Tiering
+                    const targetTier = getPlanTier(plan.id);
+                    const isSubscription = plan.type === 'subscription';
+                    
+                    // Logic to disable/change button text based on tier
+                    let isButtonDisabled = false;
+                    let buttonText = t('pricing.select_plan');
+                    
+                    if (isCreditPlan) {
+                        // Credit pack logic: Only buyable if has active sub (not expired)
+                        if (!loadingStatus && !canBuyCredits) {
+                            isButtonDisabled = true;
+                            buttonText = language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan';
+                        }
+                    } else if (isSubscription && !loadingStatus && currentTier > 0) {
+                        // Subscription logic: Only check upgrades if currentTier > 0 (meaning NOT expired and HAS a plan)
+                        if (targetTier === currentTier) {
+                            isButtonDisabled = true;
+                            buttonText = language === 'vi' ? 'Gói hiện tại' : 'Current Plan';
+                        } else if (targetTier < currentTier) {
+                            isButtonDisabled = true;
+                            buttonText = language === 'vi' ? 'Đã ở gói cao hơn' : 'Already on Higher Plan';
+                        } else {
+                            // Upgrade available
+                            buttonText = language === 'vi' ? 'Nâng cấp' : 'Upgrade';
+                        }
+                    }
+
                     const isRedirecting = redirectingPlanId === plan.id;
 
                     return (
@@ -145,8 +200,11 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                             </div>
                             
                             <div className="mb-4 bg-gray-100 dark:bg-gray-700/30 p-3 rounded-lg text-center border border-gray-200 dark:border-gray-600">
-                                <p className="text-xs text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">{t('pricing.get_now')}</p>
-                                <p className="text-xl font-bold text-accent">{new Intl.NumberFormat('en-US').format(plan.credits || 0)} Credits</p>
+                                <p className="text-[11px] text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-1">{t('pricing.get_now')}</p>
+                                <p className="text-lg font-bold text-accent">{new Intl.NumberFormat('en-US').format(plan.credits || 0)} Credits</p>
+                                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">
+                                    {plan.type === 'subscription' ? t('pricing.subscription') : t('pricing.one_time')}
+                                </p>
                             </div>
 
                             <ul className="space-y-2 text-text-secondary dark:text-gray-300 mb-6 flex-grow text-sm whitespace-normal">
@@ -161,12 +219,12 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                             </ul>
                             
                             <button 
-                                onClick={() => !isRestricted && handleBuyClick(plan)}
-                                disabled={IS_PAYMENT_MAINTENANCE || isRestricted || isRedirecting}
+                                onClick={() => !isButtonDisabled && handleBuyClick(plan)}
+                                disabled={IS_PAYMENT_MAINTENANCE || isButtonDisabled || isRedirecting}
                                 className={`w-full font-bold py-2.5 px-4 rounded-lg transition-all duration-200 flex justify-center items-center gap-2 text-sm transform ${
                                     IS_PAYMENT_MAINTENANCE
                                         ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
-                                        : isRestricted
+                                        : isButtonDisabled
                                             ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600'
                                             : (plan.highlight 
                                                 ? 'bg-accent hover:bg-accent-600 text-white shadow-lg shadow-accent/30 hover:-translate-y-0.5' 
@@ -183,11 +241,7 @@ const Checkout: React.FC<CheckoutProps> = ({ onPlanSelect }) => {
                                             <span className="material-symbols-outlined text-sm">engineering</span>
                                             <span>{t('pricing.maintenance')}</span>
                                         </>
-                                    ) : isRestricted ? (
-                                        language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan'
-                                    ) : (
-                                        t('pricing.select_plan')
-                                    )
+                                    ) : buttonText
                                 )}
                             </button>
                         </div>

@@ -118,4 +118,5 @@ export interface UserStatus {
   credits: number;
   subscriptionEnd: string | null; // ISO string date
   isExpired: boolean;
+  activePlanId?: string; // ID of the currently active subscription plan fetched from transactions
 }

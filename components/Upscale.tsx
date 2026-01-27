@@ -13,6 +13,7 @@ import ImageComparator from './ImageComparator';
 import ImagePreviewModal from './common/ImagePreviewModal';
 import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
 import { useLanguage } from '../hooks/useLanguage';
+import { BACKEND_URL } from '../services/config';
 
 // --- CONFIGURATION ---
 const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
@@ -22,9 +23,6 @@ const UPSCALE_FAST_WEBAPP_ID = "1983430456135852034";
 // Helper to fetch from local proxy
 const fetchProxy = async (endpoint: string, body: any) => {
     // Determine backend URL (local dev vs prod)
-    // @ts-ignore
-    const BACKEND_URL = (import.meta as any).env?.VITE_API_URL || "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
-    
     // Clean URL
     const baseUrl = BACKEND_URL.replace(/\/$/, ""); 
     const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;

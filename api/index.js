@@ -6,23 +6,14 @@ const TEST_MEDIA_ID = "";
 const TEST_PROJECT_ID = ""; 
 const DEFAULT_SUPABASE_URL = 'https://mtlomjjlgvsjpudxlspq.supabase.co';
 
-// =================================================================================
-// QUAN TRỌNG: DÁN SERVICE ROLE KEY (SECRET) VÀO ĐÂY
-// Worker cần quyền ADMIN để trừ tiền/cập nhật DB. Khóa "anon" không đủ quyền.
-// Lấy tại: Supabase Dashboard > Project Settings > API > service_role
-// =================================================================================
 const SUPABASE_SERVICE_ROLE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzMzMDAyNywiZXhwIjoyMDc4OTA2MDI3fQ.ze3shkFofoW18JutY_HAHv0dVGgEFYkCTV7GKWUfHc8"; 
 
 const DEFAULT_SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im10bG9tampsZ3ZzanB1ZHhsc3BxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzMzAwMjcsImV4cCI6MjA3ODkwNjAyN30.6K-rSAFVJxQPLVjZKdJpBspb5tHE1dZiry4lS6u6JzQ";
 
-// UPDATED PROXY CONFIGURATION
 const ONEWISE_PROXY_URL_CREATE = "https://flow-api.nanoai.pics/api/fix/create-video-veo3";
 const ONEWISE_PROXY_URL_CHECK = "https://flow-api.nanoai.pics/api/fix/task-status";
-// Updated Token from request (New Token ending in IUjU)
 const ONEWISE_PROXY_AUTH = "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ODcsInJvbGUiOjMsImlhdCI6MTc2ODU1NTAxNH0.cC0pkdy1S-0ZdCzpnW1jGON1jId70d7iI5lWsddIUjU";
 
-// --- RUNNINGHUB CONFIGURATION (Moved from Frontend) ---
-// UPDATED: Sử dụng mảng keys để chạy luân phiên
 const RUNNINGHUB_API_KEYS = [
     '01a2e547c40744d4961df371645e981b',
     '921962784549478f806e829ac2ce1e0a'
@@ -30,10 +21,7 @@ const RUNNINGHUB_API_KEYS = [
 const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
 const UPSCALE_FAST_WEBAPP_ID = "1983430456135852034";
 
-// --- LADIPAGE / LADIFLOW CONFIGURATION ---
-// API Key từ yêu cầu CURL (Đã sửa từ số 0 thành chữ O)
 const LADIFLOW_API_KEY = "SDKKdws6CcfC0QHwfwqkUrCb"; 
-// URL API chuẩn của LadiFlow
 const LADIFLOW_API_URL = "https://api.service.ladiflow.com/1.0/customer/create-or-update";
 
 const HEADERS = {
@@ -48,7 +36,6 @@ function cleanToken(token) {
     return token.trim().replace(/^["']|["']$/g, '');
 }
 
-// Helper: Lấy ngẫu nhiên một RunningHub Key
 function getRandomRunningHubKey() {
     const randomIndex = Math.floor(Math.random() * RUNNINGHUB_API_KEYS.length);
     return RUNNINGHUB_API_KEYS[randomIndex];
@@ -101,7 +88,6 @@ async function handleGeminiProxy(body, env, request) {
     return { data, status: response.status, ok: response.ok };
 }
 
-// ... existing resetAllUsageCounts ...
 async function resetAllUsageCounts(env) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
     const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
@@ -114,7 +100,6 @@ async function resetAllUsageCounts(env) {
     } catch (e) {}
 }
 
-// ... existing incrementAccountUsage ...
 async function incrementAccountUsage(env, accountId, currentUsage) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
     const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
@@ -127,7 +112,6 @@ async function incrementAccountUsage(env, accountId, currentUsage) {
     } catch (e) {}
 }
 
-// ... existing getAllAccounts ...
 async function getAllAccounts(env, ignoreQuota = false) {
     const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
     const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
@@ -151,7 +135,6 @@ async function getAllAccounts(env, ignoreQuota = false) {
     } catch (e) { throw new Error("Acc Fetch Error"); }
 }
 
-// ... existing executeWithFailover ...
 async function executeWithFailover(env, accounts, operationName, callback) {
     let lastError = null;
     for (const account of accounts) {
@@ -174,7 +157,6 @@ async function executeWithFailover(env, accounts, operationName, callback) {
     throw lastError || new Error(`All accounts failed for ${operationName}`);
 }
 
-// ... existing performUpload ...
 async function performUpload(authData, base64Data, imageAspectRatio) {
     const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
     const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
@@ -207,14 +189,12 @@ async function performUpload(authData, base64Data, imageAspectRatio) {
     return data.mediaGenerationId?.mediaGenerationId || data.mediaGenerationId || data.imageOutput?.image?.id;
 }
 
-// ... existing uploadImage ...
 async function uploadImage(env, accounts, base64Data, imageAspectRatio) {
     return executeWithFailover(env, accounts, "UploadImage", async (authData) => {
         return await performUpload(authData, base64Data, imageAspectRatio);
     });
 }
 
-// ... existing triggerGenerationWithRefs ...
 async function triggerGenerationWithRefs(env, accounts, prompt, videoAspectRatio, referenceImagesData) {
     return executeWithFailover(env, accounts, "CreateVideoWithRefs", async (authData) => {
         const { access_token: token, project_id: projectId, id: accountId } = authData;
@@ -282,18 +262,15 @@ async function triggerGenerationWithRefs(env, accounts, prompt, videoAspectRatio
     });
 }
 
-// ... existing triggerGeneration ...
 async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRatio, imageData, imageAspectRatio, endImageData) {
     return executeWithFailover(env, accounts, "CreateVideo", async (authData) => {
         const { access_token: token, project_id: projectId, id: accountId } = authData;
         let activeMediaId = mediaId;
         
-        // Upload Start Image
         if (imageData) {
             activeMediaId = await performUpload(authData, imageData, imageAspectRatio);
         }
         
-        // Upload End Image (if present)
         let activeEndMediaId = null;
         if (endImageData) {
             activeEndMediaId = await performUpload(authData, endImageData, imageAspectRatio);
@@ -309,20 +286,17 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
         let googleUrl = "";
 
         if (isDoubleImage) {
-            // Case 3: Start Image + End Image
             modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
                ? "veo_3_1_i2v_s_fast_portrait_ultra_fl" 
                : "veo_3_1_i2v_s_fast_ultra_fl";
             
             googleUrl = 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartAndEndImage';
         } else if (isI2V) {
-            // Case 2: Image to Video (Start Only)
              modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT") 
                 ? "veo_3_1_i2v_s_fast_portrait_ultra" 
                 : "veo_3_1_i2v_s_fast_ultra";
              googleUrl = 'https://aisandbox-pa.googleapis.com/v1/video:batchAsyncGenerateVideoStartImage';
         } else {
-            // Case 1: Text to Video
              modelKey = (aspectRatioEnum === "VIDEO_ASPECT_RATIO_PORTRAIT")
                 ? "veo_3_1_t2v_fast_portrait_ultra"
                 : "veo_3_1_t2v_fast_ultra";
@@ -371,7 +345,6 @@ async function triggerGeneration(env, accounts, prompt, mediaId, videoAspectRati
     });
 }
 
-// ... existing safeFetchUpstream ...
 const safeFetchUpstream = async (url, options) => {
     try {
         const res = await fetch(url, options);
@@ -384,7 +357,6 @@ const safeFetchUpstream = async (url, options) => {
     } catch (err) { return { ok: false, status: 502, error: { message: err.message, code: "NETWORK_ERROR" } }; }
 }
 
-// ... existing triggerFlowMediaCreate ...
 async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAspectRatio, numberOfImages = 1, imageModelName = "GEM_PIX_2", inputImages = []) {
     return executeWithFailover(env, accounts, "CreateFlowImage", async (authData) => {
         const { access_token: token, project_id: projectId } = authData;
@@ -425,7 +397,6 @@ async function triggerFlowMediaCreate(env, accounts, prompt, imageData, imageAsp
     });
 }
 
-// ... existing triggerFlowMediaUpscale ...
 async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, targetResolution) {
     return executeWithFailover(env, accounts, "UpscaleFlowImage", async (authData) => {
         const { access_token: token } = authData;
@@ -448,7 +419,6 @@ async function triggerFlowMediaUpscale(env, accounts, mediaId, projectId, target
     });
 }
 
-// ... existing checkFlowStatus ...
 async function checkFlowStatus(env, accounts, taskId) {
     const url = `${ONEWISE_PROXY_URL_CHECK}?taskId=${taskId}`;
     const result = await safeFetchUpstream(url, { method: 'GET', headers: { 'Authorization': ONEWISE_PROXY_AUTH, 'Content-Type': 'application/json' } });
@@ -456,7 +426,6 @@ async function checkFlowStatus(env, accounts, taskId) {
     return result.data; 
 }
 
-// ... existing triggerUpscale ...
 async function triggerUpscale(env, accounts, mediaId) {
     return executeWithFailover(env, accounts, "UpscaleVideo", async (authData) => {
         const { access_token: token, auth_cookies: cookies, project_id: projectId } = authData;
@@ -473,7 +442,6 @@ async function triggerUpscale(env, accounts, mediaId) {
     });
 }
 
-// ... existing checkStatus ...
 async function checkStatus(env, accounts, googleOperationName, account_id) {
     const targetAccount = accounts.find(a => String(a.id) === String(account_id));
     if (!targetAccount) {
@@ -541,7 +509,6 @@ async function checkStatus(env, accounts, googleOperationName, account_id) {
     });
 }
 
-// --- Helper to push to LadiFlow via API ---
 async function sendToLadiPage(data) {
     if (!LADIFLOW_API_KEY) {
         console.warn("[LadiFlow] API Key missing, skipping sync.");
@@ -549,7 +516,6 @@ async function sendToLadiPage(data) {
     }
 
     try {
-        // Simple name splitting for robustness
         const nameParts = (data.name || "").trim().split(' ');
         const lastName = nameParts.length > 1 ? nameParts.pop() : "";
         const firstName = nameParts.join(" ") || data.name;
@@ -558,7 +524,7 @@ async function sendToLadiPage(data) {
             email: data.email,
             phone: data.phone || "",
             first_name: firstName, 
-            last_name: lastName, // Sending split names just in case
+            last_name: lastName, 
             tags: data.tags 
         };
 
@@ -566,7 +532,7 @@ async function sendToLadiPage(data) {
             method: 'POST',
             headers: { 
                 'Content-Type': 'application/json',
-                'api-key': LADIFLOW_API_KEY // Ensure lowercase key per common standards
+                'api-key': LADIFLOW_API_KEY 
             },
             body: JSON.stringify(payload)
         });
@@ -592,7 +558,6 @@ async function sendToLadiPage(data) {
     }
 }
 
-// ... existing handleSePayWebhook ...
 async function handleSePayWebhook(request, env) {
     try {
         const body = await request.json();
@@ -605,7 +570,6 @@ async function handleSePayWebhook(request, env) {
         const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
         const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
         
-        // 1. Approve Transaction via DB
         const response = await fetch(`${sbUrl}/rest/v1/rpc/webhook_approve_transaction`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` },
@@ -614,9 +578,7 @@ async function handleSePayWebhook(request, env) {
         
         const result = await response.json();
 
-        // 2. Check for First Purchase & Sync to LadiPage
         if (result && !result.error && LADIFLOW_API_KEY) {
-            // Retrieve User ID from transaction
             const txQuery = await fetch(`${sbUrl}/rest/v1/transactions?select=user_id,customer_email,customer_name,customer_phone&transaction_code=eq.${transactionCode}&limit=1`, {
                 headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` }
             });
@@ -626,16 +588,13 @@ async function handleSePayWebhook(request, env) {
                 const tx = txData[0];
                 const userId = tx.user_id;
 
-                // Check count of completed transactions for this user
                 const countQuery = await fetch(`${sbUrl}/rest/v1/transactions?user_id=eq.${userId}&status=eq.completed&select=id`, {
-                    headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Range': '0-1' } // Get at least 2 to know if > 1
+                    headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Range': '0-1' }
                 });
                 
-                // Note: Range 0-1 returns up to 2 items. If length is 1, it's the first purchase.
                 const countData = await countQuery.json();
                 
                 if (countData.length === 1) {
-                    // This is the FIRST successful transaction
                     await sendToLadiPage({
                         email: tx.customer_email,
                         phone: tx.customer_phone,
@@ -650,22 +609,17 @@ async function handleSePayWebhook(request, env) {
     } catch (e) { return new Response(JSON.stringify({ success: false, error: e.message }), { status: 500 }); }
 }
 
-// --- UPDATED POLAR WEBHOOK HANDLER ---
 async function handlePolarWebhook(request, env) {
     try {
         const body = await request.json();
         console.log("[Polar] Received Webhook:", JSON.stringify(body).substring(0, 200) + "...");
         
-        // Polar uses 'order.created' as the standard successful payment event.
         if (body.type !== 'order.created') {
              return new Response("Event Ignored (Not order.created)", { status: 200 });
         }
 
         const data = body.data;
         const customer_email = data.customer_email || (data.customer && data.customer.email) || data.email;
-        
-        // FIX: Prefer 'subtotal_amount' (original price) if available, to match plan price.
-        // If not, fallback to 'amount' or 'total_amount'.
         const amount = data.subtotal_amount || data.amount || data.total_amount; 
 
         if (!customer_email) {
@@ -673,8 +627,6 @@ async function handlePolarWebhook(request, env) {
             return new Response("No Email in Payload", { status: 200 });
         }
 
-        // --- PLAN MAPPING CONFIGURATION ---
-        // Maps amount (cents) to: credits, name, DURATION (days), and PLAN ID
         const PLANS = {
             999:   { credits: 1000,  days: 7,   name: "Weekly Pass", id: "plan_global_weekly" },
             2900:  { credits: 4000,  days: 30,  name: "Pro Monthly", id: "plan_global_monthly" },
@@ -683,113 +635,101 @@ async function handlePolarWebhook(request, env) {
             50:    { credits: 50,    days: 1,   name: "Test Plan", id: "plan_test" }
         };
 
-        // 1. Try finding by Amount
         let plan = PLANS[amount];
 
-        // 2. Fallback: Find by Product Name (Robust against discounts)
         if (!plan && data.product && data.product.name) {
-            console.log(`[Polar] Amount mismatch (${amount}), trying match by name: ${data.product.name}`);
             const productName = data.product.name.toLowerCase();
-            
-            // Find in PLANS values
             const foundKey = Object.keys(PLANS).find(key => {
                 const p = PLANS[key];
                 return p.name.toLowerCase().includes(productName) || productName.includes(p.name.toLowerCase());
             });
-            
             if (foundKey) {
                 plan = PLANS[foundKey];
-                console.log(`[Polar] Matched plan by name: ${plan.id}`);
             }
         }
 
         if (!plan) {
-            console.warn(`[Polar] Unknown plan for amount: ${amount} and Product Name: ${data.product?.name}`);
-            // Return 200 to prevent Polar from retrying indefinitely on bad data
+            console.warn(`[Polar] Unknown plan for amount: ${amount}`);
             return new Response(`Unknown Plan Amount: ${amount}`, { status: 200 });
         }
 
-        // Supabase connection
         const sbUrl = cleanToken(env.SUPABASE_URL || DEFAULT_SUPABASE_URL);
         const sbKey = cleanToken(env.SUPABASE_SERVICE_KEY || SUPABASE_SERVICE_ROLE_KEY || DEFAULT_SUPABASE_KEY);
 
-        if (sbKey === DEFAULT_SUPABASE_KEY && !SUPABASE_SERVICE_ROLE_KEY) {
-             console.error("[Polar] CRITICAL: Service Role Key is MISSING. Cannot update DB.");
-             return new Response("Configuration Error: Missing Service Key", { status: 500 });
-        }
-
-        // 1. Find User by Email (Normalization)
-        // Try searching by email exact match first
-        let userQuery = await fetch(`${sbUrl}/rest/v1/profiles?email=eq.${customer_email}&select=id,credits,subscription_end,full_name`, {
+        let userQuery = await fetch(`${sbUrl}/rest/v1/profiles?email=ilike.${customer_email}&select=id,credits,subscription_end,full_name,active_plan_id`, {
             headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` }
         });
         
         let users = await userQuery.json();
-        
-        // If not found, try case-insensitive search if supported or manual check? 
-        // Supabase ilike operator: email=ilike.${customer_email}
         if (!users || users.length === 0) {
-             console.log(`[Polar] Exact match failed for ${customer_email}, trying ilike...`);
-             userQuery = await fetch(`${sbUrl}/rest/v1/profiles?email=ilike.${customer_email}&select=id,credits,subscription_end,full_name`, {
-                headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}` }
-            });
-            users = await userQuery.json();
-        }
-        
-        if (!users || users.length === 0) {
-            console.warn(`[Polar] User not found for email: ${customer_email}`);
-            // Return 200 so Polar stops retrying, but log error
-            return new Response("User not found in DB", { status: 200 }); 
+            return new Response("User not found", { status: 200 }); 
         }
 
         const user = users[0];
-
-        // 2. Calculate New Subscription End Date
-        let newSubscriptionEnd = user.subscription_end ? new Date(user.subscription_end) : new Date();
         const now = new Date();
 
-        // If expired or null, start from now
-        if (newSubscriptionEnd < now) {
-            newSubscriptionEnd = now;
-        }
+        let updatedCredits = 0;
+        let newSubscriptionEnd = user.subscription_end;
 
-        // Add duration (if applicable)
         if (plan.days > 0) {
-            newSubscriptionEnd.setDate(newSubscriptionEnd.getDate() + plan.days);
+            // Đây là Gói Đăng Ký (Subscription)
+            
+            // KIỂM TRA: Có phải là mua gói khác loại (nâng cấp) hay không?
+            // Nếu active_plan_id khác với plan.id -> CỘNG DỒN
+            // Nếu trùng -> RESET (Gia hạn)
+            const isDifferentPlan = user.active_plan_id && user.active_plan_id !== plan.id;
+            
+            if (isDifferentPlan) {
+                // TRƯỜNG HỢP NÂNG CẤP/CHUYỂN GÓI (Ví dụ: Tuần lên Tháng) -> CỘNG DỒN
+                updatedCredits = (user.credits || 0) + plan.credits;
+                
+                let currentEnd = user.subscription_end ? new Date(user.subscription_end) : new Date();
+                if (currentEnd < now) currentEnd = now;
+                
+                currentEnd.setDate(currentEnd.getDate() + plan.days);
+                newSubscriptionEnd = currentEnd.toISOString();
+                
+                console.log(`[Polar] UPGRADE/SWITCH detected for ${customer_email}. Cumulative applied.`);
+            } else {
+                // TRƯỜNG HỢP GIA HẠN GÓI CŨ -> RESET
+                updatedCredits = plan.credits;
+                
+                const nextEnd = new Date();
+                nextEnd.setDate(nextEnd.getDate() + plan.days);
+                newSubscriptionEnd = nextEnd.toISOString();
+                
+                console.log(`[Polar] RENEWAL detected for ${customer_email}. Reset applied.`);
+            }
+        } else {
+            // Đây là Gói Nạp Thêm (Booster) -> Luôn cộng dồn
+            updatedCredits = (user.credits || 0) + plan.credits;
         }
 
-        // 3. Update Profile (Credits + Time)
         const updateRes = await fetch(`${sbUrl}/rest/v1/profiles?id=eq.${user.id}`, {
             method: 'PATCH',
             headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify({ 
-                credits: (user.credits || 0) + plan.credits,
-                subscription_end: plan.days > 0 ? newSubscriptionEnd.toISOString() : user.subscription_end 
+                credits: updatedCredits,
+                subscription_end: newSubscriptionEnd,
+                active_plan_id: plan.id // Lưu ID gói hiện tại để so sánh lần sau
             })
         });
 
-        if (!updateRes.ok) {
-             const errorText = await updateRes.text();
-             console.error("[Polar] Supabase Profile Update Error:", errorText);
-             throw new Error(`Supabase Update Error: ${updateRes.status}`);
-        }
+        if (!updateRes.ok) throw new Error(`Supabase Update Error: ${updateRes.status}`);
 
-        // 4. Log Transaction (Robust Version)
         const transactionCode = data.id || `POLAR-${Date.now()}`;
         const timestamp = new Date().toISOString();
-
-        // Fix Type Constraint: Determine if credit or subscription
         const transactionType = plan.id.includes('credit') ? 'credit' : 'subscription';
 
         const txPayload = {
             user_id: user.id,
-            amount: amount / 100, // Convert to USD for display
+            amount: amount / 100, 
             currency: 'USD',
-            type: transactionType, // Corrected 'type'
+            type: transactionType, 
             status: 'completed',
             credits_added: plan.credits,
             plan_name: plan.name,
-            plan_id: plan.id, // Potential point of failure if FK exists
+            plan_id: plan.id, 
             transaction_code: transactionCode,
             payment_method: 'polar',
             customer_email: customer_email,
@@ -798,47 +738,19 @@ async function handlePolarWebhook(request, env) {
             updated_at: timestamp 
         };
         
-        let txRes = await fetch(`${sbUrl}/rest/v1/transactions`, {
+        await fetch(`${sbUrl}/rest/v1/transactions`, {
             method: 'POST',
             headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' },
             body: JSON.stringify(txPayload)
         });
 
-        if (!txRes.ok) {
-            const errText = await txRes.text();
-            console.error(`[Polar] Transaction Insert Failed (Attempt 1): ${errText}`);
-
-            // Retry without plan_id (Fix for Foreign Key Constraint Violation)
-            if (errText.includes("foreign key") || errText.includes("plan_id")) {
-                console.log("[Polar] Retrying transaction insert without plan_id...");
-                const fallbackPayload = { ...txPayload };
-                delete fallbackPayload.plan_id; // Remove the constraint field
-
-                txRes = await fetch(`${sbUrl}/rest/v1/transactions`, {
-                    method: 'POST',
-                    headers: { 'apikey': sbKey, 'Authorization': `Bearer ${sbKey}`, 'Content-Type': 'application/json' },
-                    body: JSON.stringify(fallbackPayload)
-                });
-
-                if (!txRes.ok) {
-                     const retryErr = await txRes.text();
-                     console.error(`[Polar] Transaction Insert Failed (Attempt 2): ${retryErr}`);
-                } else {
-                    console.log("[Polar] Transaction saved successfully (without plan_id linkage).");
-                }
-            }
-        }
-
-        console.log(`[Polar] Success! Added ${plan.credits} credits to ${customer_email}`);
         return new Response("Plan Updated Successfully", { status: 200 });
-
     } catch (e) {
-        console.error("[Polar] Error processing webhook:", e);
+        console.error("[Polar] Error:", e);
         return new Response(`Error: ${e.message}`, { status: 500 });
     }
 }
 
-// ... Updated handleProxyDownload to mimic Python headers ...
 async function handleProxyDownload(request) {
     const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Methods': 'GET, POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type', 'Access-Control-Expose-Headers': 'Content-Length, Content-Type' };
     if (request.method === 'OPTIONS') return new Response(null, { headers: corsHeaders });
@@ -847,17 +759,8 @@ async function handleProxyDownload(request) {
         if (request.method === 'POST') { const body = await request.json(); url = body.url; } 
         else { const u = new URL(request.url); url = u.searchParams.get('url'); }
         if (!url) return new Response("Missing URL", { status: 400, headers: corsHeaders });
-        
-        // Ensure headers mimic the allowed client
-        const proxyHeaders = {
-            'user-agent': HEADERS['user-agent']
-        };
-
-        const response = await fetch(url, {
-            method: 'GET',
-            headers: proxyHeaders
-        });
-        
+        const proxyHeaders = { 'user-agent': HEADERS['user-agent'] };
+        const response = await fetch(url, { method: 'GET', headers: proxyHeaders });
         const newHeaders = new Headers(response.headers);
         newHeaders.set('Access-Control-Allow-Origin', '*');
         newHeaders.set('Access-Control-Expose-Headers', 'Content-Length, Content-Type');
@@ -865,66 +768,40 @@ async function handleProxyDownload(request) {
     } catch (e) { return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: corsHeaders }); }
 }
 
-// --- NEW FUNCTION: RUNNINGHUB PROXY ---
 async function handleRunningHubProxy(action, body) {
     let url = '';
     let payload = {};
-
     if (action === 'upscale_create' || action === 'runninghub_create') {
         url = 'https://www.runninghub.ai/task/openapi/ai-app/run';
-        payload = body; // Pass entire body payload (webappId, apiKey, nodeInfoList)
-        // Inject API Key securely using Load Balancing
+        payload = body;
         payload.apiKey = getRandomRunningHubKey();
     } 
     else if (action === 'upscale_check' || action === 'runninghub_check') {
         url = 'https://www.runninghub.ai/task/openapi/outputs';
-        payload = { 
-            apiKey: getRandomRunningHubKey(), 
-            taskId: body.taskId 
-        };
+        payload = { apiKey: getRandomRunningHubKey(), taskId: body.taskId };
     } else {
         throw new Error("Invalid RunningHub action");
     }
-
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-    });
-
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
     const data = await response.json();
     return data;
 }
 
-// --- NEW FUNCTION: GEO CHECK ---
 async function handleGeoCheck(request) {
-    // If cf-ipcountry exists, use it. If null, return null (do not default to VN here).
     const country = request.headers.get('cf-ipcountry');
     return { country: country || null };
 }
 
-// --- NEW FUNCTION: SYNC USER TO LADIPAGE ---
 async function handleSyncLadiPage(body, env) {
     if (!LADIFLOW_API_KEY) return { success: false, message: "API Key not configured" };
-    
-    // Only send if NEW USER tag required
     const { is_new_user, email, full_name, country } = body;
-
-    // Check Country (Only allow 'VN')
     if (country && country !== 'VN') {
         return { success: true, message: `Skipped sync: Country is ${country} (Not VN)` };
     }
-
     if (is_new_user) {
-        const result = await sendToLadiPage({
-            email: email,
-            name: full_name,
-            tags: ["696d3c8a4cb43700128d705a"]
-        });
-        // Return full LadiFlow result for debugging
+        const result = await sendToLadiPage({ email: email, name: full_name, tags: ["696d3c8a4cb43700128d705a"] });
         return result; 
     }
-    
     return { success: true, message: "Skipped sync (not new user)" };
 }
 
@@ -936,14 +813,12 @@ export default {
         const url = new URL(request.url);
         const path = url.pathname;
         if (path.includes('/sepay-webhook')) return handleSePayWebhook(request, env);
-        if (path.includes('/polar-webhook')) return handlePolarWebhook(request, env); // NEW: Polar Webhook Route
+        if (path.includes('/polar-webhook')) return handlePolarWebhook(request, env); 
         if (path.includes('/proxy-download')) return handleProxyDownload(request);
         try {
             let body = {};
             if (request.method !== 'GET' && request.method !== 'HEAD') { body = await request.json(); }
             let action = body.action || '';
-            
-            // Map paths to actions
             if (!action) {
                 if (path.includes('/gemini-proxy')) action = 'gemini_proxy';
                 else if (path.includes('/auth')) action = 'auth';
@@ -958,43 +833,18 @@ export default {
                 else if (path.includes('/check-name')) action = 'check_name';
                 else if (path.includes('/check-status')) action = 'check_status';
                 else if (path.includes('/check-geo')) action = 'check_geo'; 
-                else if (path.includes('/sync-ladipage')) action = 'sync_ladipage'; // NEW
+                else if (path.includes('/sync-ladipage')) action = 'sync_ladipage';
             }
-
-            if (action === 'check_geo') {
-                const result = await handleGeoCheck(request);
-                return sendJson(result);
-            }
-
-            if (action === 'upscale_create' || action === 'upscale_check') {
-                const result = await handleRunningHubProxy(action, body);
-                return sendJson(result);
-            }
-
-            if (action === 'sync_ladipage') {
-                const result = await handleSyncLadiPage(body, env);
-                return sendJson(result);
-            }
-            
-            // ... existing action handlers ...
-            if (action === 'gemini_proxy') {
-                const { data, status } = await handleGeminiProxy(body, env, request);
-                return sendJson(data, status); 
-            } else if (action === 'auth') {
-                return sendJson({ status: "connected", token: "managed-by-worker" });
-            } else if (action === 'upload') {
+            if (action === 'check_geo') { const result = await handleGeoCheck(request); return sendJson(result); }
+            if (action === 'upscale_create' || action === 'upscale_check') { const result = await handleRunningHubProxy(action, body); return sendJson(result); }
+            if (action === 'sync_ladipage') { const result = await handleSyncLadiPage(body, env); return sendJson(result); }
+            if (action === 'gemini_proxy') { const { data, status } = await handleGeminiProxy(body, env, request); return sendJson(data, status); } 
+            else if (action === 'auth') { return sendJson({ status: "connected", token: "managed-by-worker" }); } 
+            else if (action === 'upload') { const accounts = await getAllAccounts(env); const mediaId = await uploadImage(env, accounts, body.image, body.imageAspectRatio); return sendJson({ mediaId }); } 
+            else if (action === 'create') {
                 const accounts = await getAllAccounts(env);
-                const mediaId = await uploadImage(env, accounts, body.image, body.imageAspectRatio);
-                return sendJson({ mediaId });
-            } else if (action === 'create') {
-                const accounts = await getAllAccounts(env);
-                if (body.referenceImages && Array.isArray(body.referenceImages)) {
-                    const result = await triggerGenerationWithRefs(env, accounts, body.prompt, body.videoAspectRatio, body.referenceImages);
-                    return sendJson(result);
-                } else {
-                    const result = await triggerGeneration(env, accounts, body.prompt, body.mediaId, body.videoAspectRatio, body.image, body.imageAspectRatio, body.endImage);
-                    return sendJson(result);
-                }
+                if (body.referenceImages && Array.isArray(body.referenceImages)) { const result = await triggerGenerationWithRefs(env, accounts, body.prompt, body.videoAspectRatio, body.referenceImages); return sendJson(result); } 
+                else { const result = await triggerGeneration(env, accounts, body.prompt, body.mediaId, body.videoAspectRatio, body.image, body.imageAspectRatio, body.endImage); return sendJson(result); }
             } else if (action === 'flow_create' || action === 'flow_media_create') {
                 const accounts = await getAllAccounts(env);
                 const count = body.numberOfImages || 1;
@@ -1004,87 +854,39 @@ export default {
             } else if (action === 'flow_upscale') {
                 const allAccounts = await getAllAccounts(env, true);
                 let specificAccounts = [];
-                if (body.projectId) {
-                    specificAccounts = allAccounts.filter(acc => acc.project_id === body.projectId);
-                }
-                if (body.projectId && specificAccounts.length === 0) {
-                    return sendJson({ status: 'failed', message: `Account not found for Project ID: ${body.projectId}. Cannot upscale.` }, 400);
-                }
+                if (body.projectId) { specificAccounts = allAccounts.filter(acc => acc.project_id === body.projectId); }
                 const accountsToUse = specificAccounts.length > 0 ? specificAccounts : allAccounts;
                 const result = await triggerFlowMediaUpscale(env, accountsToUse, body.mediaId, body.projectId, body.targetResolution);
                 return sendJson(result);
-            } else if (action === 'flow_check') {
-                const accounts = await getAllAccounts(env);
-                const result = await checkFlowStatus(env, accounts, body.taskId);
-                return sendJson(result);
-            } else if (action === 'upscale') {
-                const accounts = await getAllAccounts(env);
-                const result = await triggerUpscale(env, accounts, body.mediaId);
-                return sendJson(result);
-            } else if (action === 'check_name') {
-                // --- GIAI ĐOẠN 1: RESOLVE NAME (Xác định Google Name từ Proxy/KV) ---
+            } else if (action === 'flow_check') { const accounts = await getAllAccounts(env); const result = await checkFlowStatus(env, accounts, body.taskId); return sendJson(result); } 
+            else if (action === 'upscale') { const accounts = await getAllAccounts(env); const result = await triggerUpscale(env, accounts, body.mediaId); return sendJson(result); } 
+            else if (action === 'check_name') {
                 const { task_id } = body;
-                
-                // 1.1 Tìm trong KV Cache trước
                 if (env.VIDEO_KV) {
-                    try {
-                        const cachedName = await env.VIDEO_KV.get(`proxy_map:${task_id}`);
-                        if (cachedName) {
-                            return sendJson({ status: 'success', name: cachedName, message: "Resolved from Cache" });
-                        }
-                    } catch (e) { console.error("KV Read Error", e); }
+                    try { const cachedName = await env.VIDEO_KV.get(`proxy_map:${task_id}`); if (cachedName) return sendJson({ status: 'success', name: cachedName }); } 
+                    catch (e) {}
                 }
-
-                // 1.2 Nếu chưa có trong KV, hỏi Proxy
-                try {
-                    const proxyUrl = `${ONEWISE_PROXY_URL_CHECK}?taskId=${task_id}`;
-                    const proxyRes = await fetch(proxyUrl, {
-                        method: 'GET',
-                        headers: { 'Authorization': ONEWISE_PROXY_AUTH, 'Content-Type': 'application/json' }
-                    });
-                    
-                    if (proxyRes.ok) {
-                        const proxyData = await proxyRes.json();
-                        // Logic lấy tên operation từ response của Proxy
-                        if (proxyData.success && proxyData.result?.operations?.length > 0) {
-                            const opData = proxyData.result.operations[0];
-                            const resolvedName = opData.operation?.name || opData.name;
-                            
-                            if (resolvedName) {
-                                // Lưu vào Cache để lần sau không cần hỏi Proxy (TTL 10 phút)
-                                if (env.VIDEO_KV) {
-                                    await env.VIDEO_KV.put(`proxy_map:${task_id}`, resolvedName, { expirationTtl: 600 });
-                                }
-                                return sendJson({ status: 'success', name: resolvedName });
-                            }
-                        } else if (proxyData.success === false && proxyData.error) {
-                             // Proxy trả về lỗi
-                             return sendJson({ status: 'failed', message: proxyData.error.message || "Proxy Error" });
+                const proxyUrl = `${ONEWISE_PROXY_URL_CHECK}?taskId=${task_id}`;
+                const proxyRes = await fetch(proxyUrl, { method: 'GET', headers: { 'Authorization': ONEWISE_PROXY_AUTH, 'Content-Type': 'application/json' } });
+                if (proxyRes.ok) {
+                    const proxyData = await proxyRes.json();
+                    if (proxyData.success && proxyData.result?.operations?.length > 0) {
+                        const opData = proxyData.result.operations[0];
+                        const resolvedName = opData.operation?.name || opData.name;
+                        if (resolvedName) {
+                            if (env.VIDEO_KV) await env.VIDEO_KV.put(`proxy_map:${task_id}`, resolvedName, { expirationTtl: 600 });
+                            return sendJson({ status: 'success', name: resolvedName });
                         }
                     }
-                } catch (e) {
-                    console.error("[Check] Proxy Resolution Failed:", e);
-                    return sendJson({ status: 'failed', message: e.message });
                 }
-
-                // Chưa có tên, vẫn đang pending
                 return sendJson({ status: 'pending', message: "Resolving name..." });
-
             } else if (action === 'check_status') {
-                // --- GIAI ĐOẠN 2: CHECK STATUS (Gọi trực tiếp Google) ---
                 const { name, account_id } = body;
-                
-                if (!name) {
-                    return sendJson({ status: 'failed', message: "Missing operation name" });
-                }
-
-                const accounts = await getAllAccounts(env, true); // true = ignore quota check for status polling
+                if (!name) return sendJson({ status: 'failed', message: "Missing operation name" });
+                const accounts = await getAllAccounts(env, true);
                 const result = await checkStatus(env, accounts, name, account_id);
                 return sendJson(result);
-
-            } else {
-                return sendJson({ status: "ok", message: "Cloudflare Worker is running", request_path: path });
-            }
+            } else { return sendJson({ status: "ok", message: "Cloudflare Worker is running", request_path: path }); }
         } catch (error) { return sendJson({ error: true, message: error.message || String(error) }, 500); }
     }
 };

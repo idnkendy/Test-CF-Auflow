@@ -283,6 +283,7 @@ export const vi = {
   "pricing.title": "BẢNG GIÁ GÓI SỬ DỤNG AI",
   "pricing.subtitle": "Chọn gói cước phù hợp với nhu cầu sáng tạo của bạn. Không phí ẩn, hủy bất cứ lúc nào.",
   "pricing.one_time": "Thanh toán một lần",
+  "pricing.subscription": "Gia hạn tự động",
   "pricing.get_now": "Nhận ngay",
   "pricing.credits": "Credits",
   "pricing.popular": "Phổ biến nhất",

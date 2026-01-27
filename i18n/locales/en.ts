@@ -284,6 +284,7 @@ export const en = {
   "pricing.title": "AI PRICING PLANS",
   "pricing.subtitle": "Choose a plan that fits your creative needs. No hidden fees, cancel anytime.",
   "pricing.one_time": "One-time payment",
+  "pricing.subscription": "Recurring subscription",
   "pricing.get_now": "Get Now",
   "pricing.credits": "Credits",
   "pricing.popular": "Most Popular",

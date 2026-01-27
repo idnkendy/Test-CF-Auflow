@@ -20,8 +20,43 @@ const GoogleIcon = () => (
 
 const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
   const { t } = useLanguage();
+  const [mode, setMode] = useState<'login' | 'signup'>('login');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [successMsg, setSuccessMsg] = useState<string | null>(null);
+
+  const handleEmailAuth = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || !password) return;
+    
+    setLoading(true);
+    setError(null);
+    setSuccessMsg(null);
+
+    try {
+      if (mode === 'signup') {
+        const { error } = await supabase.auth.signUp({
+          email,
+          password,
+        });
+        if (error) throw error;
+        setSuccessMsg(t('auth.check_email'));
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        });
+        if (error) throw error;
+        // Navigation handled by App.tsx observer
+      }
+    } catch (err: any) {
+      setError(err.message || t('common.error'));
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
@@ -64,7 +99,7 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
             <div className="bg-surface dark:bg-[#191919] p-8 rounded-3xl shadow-2xl border border-border-color dark:border-[#302839] relative overflow-hidden">
                 
                 <h2 className="text-xl font-bold text-text-primary dark:text-white mb-8 text-center">
-                    {t('auth.login_title')}
+                    {mode === 'login' ? t('auth.login_title') : t('auth.signup_title')}
                 </h2>
 
                 {!isSupabaseConfigured && (
@@ -79,10 +114,63 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                         {error}
                     </div>
                 )}
+
+                {successMsg && (
+                    <div className="mb-6 p-3 bg-green-100 border border-green-400 text-green-700 dark:bg-green-900/20 dark:border-green-500 dark:text-green-400 rounded-xl text-sm text-left">
+                        {successMsg}
+                    </div>
+                )}
                 
                 <div className="space-y-6">
-                    {/* Google Login Only */}
+                    <form onSubmit={handleEmailAuth} className="space-y-4">
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 px-1">
+                                {t('auth.email_label')}
+                            </label>
+                            <input 
+                                type="email" 
+                                required
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
+                                placeholder={t('auth.email_placeholder')}
+                                className="w-full bg-gray-50 dark:bg-[#252525] border border-gray-200 dark:border-[#333] rounded-xl px-4 py-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-accent/50 outline-none transition-all"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 px-1">
+                                {t('auth.password_label')}
+                            </label>
+                            <input 
+                                type="password" 
+                                required
+                                minLength={6}
+                                value={password}
+                                onChange={(e) => setPassword(e.target.value)}
+                                placeholder={t('auth.password_placeholder')}
+                                className="w-full bg-gray-50 dark:bg-[#252525] border border-gray-200 dark:border-[#333] rounded-xl px-4 py-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-accent/50 outline-none transition-all"
+                            />
+                        </div>
+                        <button
+                            type="submit"
+                            disabled={loading || !isSupabaseConfigured}
+                            className="w-full py-4 bg-accent hover:bg-accent-600 disabled:bg-gray-400 text-white font-bold rounded-xl shadow-lg shadow-accent/20 transition-all transform active:scale-95 flex justify-center items-center"
+                        >
+                            {loading ? <Spinner /> : (mode === 'login' ? t('auth.login_btn') : t('auth.signup_btn'))}
+                        </button>
+                    </form>
+
+                    <div className="relative py-2">
+                        <div className="absolute inset-0 flex items-center">
+                            <div className="w-full border-t border-gray-200 dark:border-[#333]"></div>
+                        </div>
+                        <div className="relative flex justify-center text-xs uppercase">
+                            <span className="bg-surface dark:bg-[#191919] px-2 text-gray-500 dark:text-gray-500 font-bold">{t('auth.or')}</span>
+                        </div>
+                    </div>
+
+                    {/* Google Login Alternative */}
                     <button
+                        type="button"
                         onClick={handleGoogleSignIn}
                         disabled={loading || !isSupabaseConfigured}
                         className="w-full flex justify-center items-center gap-4 bg-white dark:bg-[#252525] hover:bg-gray-50 dark:hover:bg-[#2a2a2a] text-gray-700 dark:text-gray-200 font-bold py-4 px-4 rounded-xl transition-all duration-200 border border-gray-300 dark:border-[#333] shadow-sm group transform active:scale-95"
@@ -97,9 +185,21 @@ const AuthPage: React.FC<AuthPageProps> = ({ onGoHome }) => {
                         )}
                     </button>
 
-                    <p className="text-center text-xs text-gray-500 dark:text-gray-400 px-4">
-                        Chúng tôi khuyên dùng tài khoản Google để đồng bộ dữ liệu và bảo mật tốt nhất.
-                    </p>
+                    <div className="text-center mt-6">
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                            {mode === 'login' ? t('auth.no_account') : t('auth.have_account')}{' '}
+                            <button 
+                                onClick={() => {
+                                    setMode(mode === 'login' ? 'signup' : 'login');
+                                    setError(null);
+                                    setSuccessMsg(null);
+                                }}
+                                className="text-accent hover:underline font-bold"
+                            >
+                                {mode === 'login' ? t('auth.signup_now') : t('auth.login_now')}
+                            </button>
+                        </p>
+                    </div>
                 </div>
             </div>
             

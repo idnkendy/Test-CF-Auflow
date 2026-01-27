@@ -9,13 +9,15 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
+// Fixed: Explicitly extending the imported 'Component' class to ensure methods like 'setState' and properties like 'props' are inherited and recognized correctly by the compiler.
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  public state: ErrorBoundaryState = {
+    hasError: false,
+    error: null,
+  };
+
   constructor(props: ErrorBoundaryProps) {
     super(props);
-    this.state = {
-      hasError: false,
-      error: null,
-    };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -32,12 +34,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   };
 
   handleReset = () => {
+      // Fixed: 'setState' is inherited from the base Component class.
       this.setState({ hasError: false, error: null });
       localStorage.removeItem('activeTool'); 
       window.location.href = '/'; 
   }
 
   render() {
+    // If an error occurred, render the fallback UI
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[50vh] p-6 text-center bg-surface dark:bg-[#121212] rounded-xl border border-border-color dark:border-gray-700 m-4 shadow-lg">
@@ -77,6 +81,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       );
     }
 
-    return this.props.children;
+    // Fixed: 'props' is inherited from the base Component class.
+    return this.props.children || null;
   }
 }

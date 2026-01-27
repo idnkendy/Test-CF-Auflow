@@ -19,6 +19,22 @@ const CheckIcon = () => (
     </svg>
 );
 
+// Helper to determine plan tier level
+const getPlanTier = (planId?: string) => {
+    if (!planId) return 0;
+    
+    // Tier 1: Starter / Weekly
+    if (planId === 'plan_starter' || planId === 'plan_global_weekly') return 1;
+    
+    // Tier 2: Pro / Monthly
+    if (planId === 'plan_pro' || planId === 'plan_global_monthly') return 2;
+    
+    // Tier 3: Ultra / Yearly
+    if (planId === 'plan_ultra' || planId === 'plan_global_yearly') return 3;
+    
+    return 0; // Unknown or Credit pack
+};
+
 interface PublicPricingProps {
     onGoHome: () => void;
     onAuthNavigate: (mode: 'login' | 'signup') => void;
@@ -33,13 +49,6 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
     const { t, language } = useLanguage();
     const [redirectingPlanId, setRedirectingPlanId] = useState<string | null>(null);
     
-    // Modal State for Missing Info
-    const [showInfoModal, setShowInfoModal] = useState(false);
-    const [pendingPlan, setPendingPlan] = useState<PricingPlan | null>(null);
-    const [infoForm, setInfoForm] = useState({ name: '', phone: '' });
-    const [isSavingInfo, setIsSavingInfo] = useState(false);
-    const [infoError, setInfoError] = useState<string | null>(null);
-
     // Select plan list based on language
     const activePlans = language === 'vi' ? plansVI : plansEN;
     
@@ -49,7 +58,6 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
             setRedirectingPlanId(plan.id);
             
             // 1. Try to get user from prop first (fastest)
-            // FIX: Initialize with null fallback to broaden type to User | null
             let currentUser = session?.user ?? null;
 
             // 2. If not found, fetch from Supabase (fallback)
@@ -96,56 +104,11 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
 
     const handlePlanClick = async (plan: PricingPlan) => {
         if (IS_PAYMENT_MAINTENANCE) return;
-
-        // Check if user needs to update info (Enforce for English/International users or general good practice)
-        // Only enforce if logged in
-        if (session?.user) {
-            try {
-                // Fetch fresh profile to ensure we aren't relying on stale props
-                const profile = await paymentService.getUserProfile(session.user.id);
-                
-                // If Name or Phone is missing
-                if (!profile?.full_name || !profile?.phone) {
-                    setPendingPlan(plan);
-                    setInfoForm({ 
-                        name: profile?.full_name || '', 
-                        phone: profile?.phone || '' 
-                    });
-                    setShowInfoModal(true);
-                    return; // Stop flow here, wait for modal
-                }
-            } catch (e) {
-                console.warn("Could not verify profile, proceeding...", e);
-            }
-        }
-
-        // If all good or not logged in (will be handled by processPlanSelection redirect to signup)
         await processPlanSelection(plan);
     };
 
-    const handleSaveInfo = async () => {
-        if (!infoForm.name.trim() || !infoForm.phone.trim()) {
-            setInfoError(t('pricing.modal.required'));
-            return;
-        }
-
-        setIsSavingInfo(true);
-        setInfoError(null);
-
-        try {
-            if (session?.user) {
-                await paymentService.updateUserProfile(session.user.id, infoForm.name, infoForm.phone);
-                setShowInfoModal(false);
-                if (pendingPlan) {
-                    await processPlanSelection(pendingPlan);
-                }
-            }
-        } catch (e: any) {
-            setInfoError(e.message || "Error updating profile");
-        } finally {
-            setIsSavingInfo(false);
-        }
-    };
+    // Calculate tiers
+    const currentTier = getPlanTier(userStatus?.activePlanId);
 
     return (
         <div className="bg-[#121212] font-display text-[#EAEAEA] min-h-screen flex flex-col relative">
@@ -225,8 +188,38 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                         const isCreditPlan = plan.type === 'credit';
                         // Check if subscriptionEnd exists and is not expired. Null means no sub (new user/forever free).
                         const hasValidSubscription = userStatus && userStatus.subscriptionEnd && !userStatus.isExpired;
-                        const isPlanRestricted = isCreditPlan && (!session || !hasValidSubscription);
                         
+                        // Logic for Subscription Tiering
+                        const targetTier = getPlanTier(plan.id);
+                        const isSubscription = plan.type === 'subscription';
+                        
+                        let isButtonDisabled = false;
+                        let buttonText = t('pricing.select_plan');
+
+                        // 1. Credit Plan Rules
+                        if (isCreditPlan) {
+                            if (!session) {
+                                // Guest needs to login first, but technically we allow clicking to trigger auth
+                                buttonText = t('pricing.select_plan');
+                            } else if (!hasValidSubscription) {
+                                isButtonDisabled = true;
+                                buttonText = language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan';
+                            }
+                        } 
+                        // 2. Subscription Plan Rules (Only if logged in and has active sub)
+                        else if (isSubscription && session && currentTier > 0) {
+                            if (targetTier === currentTier) {
+                                isButtonDisabled = true;
+                                buttonText = language === 'vi' ? 'Gói hiện tại' : 'Current Plan';
+                            } else if (targetTier < currentTier) {
+                                isButtonDisabled = true;
+                                buttonText = language === 'vi' ? 'Đã ở gói cao hơn' : 'Already on Higher Plan';
+                            } else {
+                                // Upgrade
+                                buttonText = language === 'vi' ? 'Nâng cấp' : 'Upgrade';
+                            }
+                        }
+
                         const isRedirecting = redirectingPlanId === plan.id;
 
                         return (
@@ -248,12 +241,10 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                 
                                 <div className="text-center mb-4 md:mb-6">
                                     <h3 className="text-xl md:text-lg lg:text-2xl font-bold text-white mb-2">{plan.name}</h3>
-                                    {/* Enforce min-height on description to align price sections */}
                                     <p className="text-gray-400 text-sm md:text-xs lg:text-sm min-h-[60px] flex items-center justify-center px-2">{plan.description}</p>
                                 </div>
 
                                 <div className="text-center mb-6 md:mb-8 relative">
-                                    {/* Enforce min-height on price container to align 'Receive Credits' box */}
                                     <div className="flex flex-col items-center justify-end min-h-[110px] pb-2">
                                         {plan.originalPrice ? (
                                             <div className="flex items-center gap-2 mb-1.5">
@@ -265,7 +256,6 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                                 </span>
                                             </div>
                                         ) : (
-                                            /* Spacer for alignment if no discount - adjusted for larger font size above */
                                             <div className="h-[36px] md:h-[32px] lg:h-[36px] mb-1.5"></div> 
                                         )}
                                         <div className="flex justify-center items-start">
@@ -275,13 +265,15 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                             </span>
                                             {language === 'vi' && <span className="text-base md:text-sm lg:text-lg text-gray-400 font-medium mt-2 ml-1.5">{plan.currency}</span>}
                                         </div>
-                                        <p className="text-gray-500 text-xs font-medium mt-2">{t('pricing.one_time')}</p>
+                                        <p className="text-gray-500 text-xs font-medium mt-2">
+                                            {plan.type === 'subscription' ? t('pricing.subscription') : t('pricing.one_time')}
+                                        </p>
                                     </div>
                                     
                                     <div className="mt-4 md:mt-6 border-t border-[#302839] pt-4 md:pt-6">
                                         <div className="inline-flex items-center justify-center gap-1.5 md:gap-1 lg:gap-1.5 xl:gap-2 bg-[#2a1a35] text-[#DA70D6] px-2 py-2.5 md:px-1.5 md:py-2 lg:px-3 lg:py-2.5 rounded-xl border border-[#DA70D6]/30 w-full whitespace-nowrap overflow-hidden">
-                                            <span className="text-xs md:text-[9px] lg:text-[10px] xl:text-xs uppercase tracking-wide font-semibold opacity-90 flex-shrink-0">{t('pricing.get_now')}</span>
-                                            <span className="text-lg md:text-sm lg:text-base xl:text-xl font-bold truncate">{new Intl.NumberFormat('en-US').format(plan.credits || 0)} Credits</span>
+                                            <span className="text-[10px] md:text-[9px] lg:text-[10px] xl:text-[11px] uppercase tracking-wide font-semibold opacity-90 flex-shrink-0">{t('pricing.get_now')}</span>
+                                            <span className="text-lg md:text-sm lg:text-base xl:text-lg font-bold truncate">{new Intl.NumberFormat('en-US').format(plan.credits || 0)} Credits</span>
                                         </div>
                                     </div>
                                 </div>
@@ -300,12 +292,12 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                 </ul>
 
                                 <button 
-                                    onClick={() => !isPlanRestricted && handlePlanClick(plan)}
-                                    disabled={IS_PAYMENT_MAINTENANCE || isPlanRestricted || isRedirecting}
+                                    onClick={() => !isButtonDisabled && handlePlanClick(plan)}
+                                    disabled={IS_PAYMENT_MAINTENANCE || isButtonDisabled || isRedirecting}
                                     className={`w-full font-bold py-3.5 px-6 md:py-2.5 md:px-4 lg:py-3.5 lg:px-6 rounded-xl transition-all duration-300 shadow-lg text-sm md:text-xs lg:text-sm flex justify-center items-center gap-2 ${
                                         IS_PAYMENT_MAINTENANCE
                                             ? 'bg-gray-300 dark:bg-gray-700 text-gray-500 cursor-not-allowed' 
-                                            : isPlanRestricted 
+                                            : isButtonDisabled 
                                                 ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed border border-gray-600'
                                                 : (plan.highlight 
                                                     ? 'gradient-button text-white hover:shadow-purple-500/25 hover:-translate-y-0.5' 
@@ -319,9 +311,7 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                                     ) : (
                                         IS_PAYMENT_MAINTENANCE 
                                             ? t('pricing.maintenance') 
-                                            : isPlanRestricted 
-                                                ? (language === 'vi' ? 'Cần có Gói d.vụ' : 'Requires Active Plan')
-                                                : t('pricing.select_plan')
+                                            : buttonText
                                     )}
                                 </button>
                             </div>
@@ -344,65 +334,6 @@ const PublicPricing: React.FC<PublicPricingProps> = ({ onGoHome, onAuthNavigate,
                     </div>
                 </div>
             </main>
-
-            {/* MANDATORY INFO MODAL */}
-            {showInfoModal && (
-                <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-sans">
-                    <div 
-                        className="bg-white dark:bg-[#1E1E1E] rounded-2xl max-w-sm w-full p-6 shadow-2xl animate-scale-up border border-gray-200 dark:border-[#302839] relative"
-                        onClick={(e) => e.stopPropagation()}
-                    >
-                        <button 
-                            onClick={() => setShowInfoModal(false)}
-                            className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 transition-colors"
-                        >
-                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                <path fillRule="evenodd" d="M4.293 4.293a1 1 0 011.414 0L10 8.586l4.293-4.293a1 1 0 111.414 1.414L11.414 10l4.293 4.293a1 1 0 01-1.414 1.414L10 11.414l-4.293 4.293a1 1 0 01-1.414-1.414L8.586 10 4.293 5.707a1 1 0 010-1.414z" clipRule="evenodd" />
-                            </svg>
-                        </button>
-
-                        <div className="text-center mb-6">
-                            <h3 className="text-xl font-bold text-text-primary dark:text-white mb-2">{t('pricing.modal.title')}</h3>
-                            <p className="text-sm text-text-secondary dark:text-gray-400">{t('pricing.modal.desc')}</p>
-                        </div>
-
-                        <div className="space-y-4">
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">{t('pricing.modal.name')}</label>
-                                <input 
-                                    type="text" 
-                                    value={infoForm.name}
-                                    onChange={(e) => setInfoForm(prev => ({ ...prev, name: e.target.value }))}
-                                    className="w-full bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all"
-                                    placeholder={t('pricing.modal.name')}
-                                />
-                            </div>
-                            <div>
-                                <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 mb-1 uppercase tracking-wide">{t('pricing.modal.phone')}</label>
-                                <input 
-                                    type="tel" 
-                                    value={infoForm.phone}
-                                    onChange={(e) => setInfoForm(prev => ({ ...prev, phone: e.target.value }))}
-                                    className="w-full bg-gray-50 dark:bg-black/30 border border-gray-200 dark:border-gray-700 rounded-lg p-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec] outline-none transition-all"
-                                    placeholder={t('pricing.modal.phone')}
-                                />
-                            </div>
-                            
-                            {infoError && (
-                                <p className="text-xs text-red-500 text-center">{infoError}</p>
-                            )}
-
-                            <button 
-                                onClick={handleSaveInfo}
-                                disabled={isSavingInfo}
-                                className="w-full py-3 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
-                            >
-                                {isSavingInfo ? <Spinner /> : t('pricing.modal.submit')}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
 
             {/* FOOTER */}
             <footer className="mt-16 border-t border-[#302839] py-12 px-4 bg-[#121212]">

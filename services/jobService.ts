@@ -2,10 +2,11 @@
 import { supabase } from './supabaseClient';
 import { GenerationJob } from '../types';
 import { refundCredits } from './paymentService';
+import { BACKEND_URL } from './config';
 
 const BUCKET_NAME = 'assets';
 // Proxy URL to bypass CORS for Google Storage URLs
-const PROXY_BASE_URL = "https://twilight-fire-b7d4.truongvohaiaune.workers.dev";
+const PROXY_BASE_URL = BACKEND_URL;
 
 // --- ERROR HANDLING HELPER (NEW) ---
 export const mapFriendlyErrorMessage = (errorMsg: string): string => {
