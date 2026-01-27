@@ -90,7 +90,7 @@ const AppContent: React.FC = () => {
   
   // Use a ref to track auth initialization to prevent double-firing in Strict Mode
   const authListenerRef = useRef<{ unsubscribe: () => void } | null>(null);
-  // Ref to throttle user status fetches
+  // NEW: Ref to throttle user status fetches (prevent 429)
   const lastFetchTimeRef = useRef<number>(0);
 
   const getEffectiveLanguage = () => getCurrentLocaleFromUrl() || language || 'vi';
@@ -304,9 +304,10 @@ const AppContent: React.FC = () => {
     };
   }, []); 
 
+  // --- THROTTLED FETCH USER STATUS ---
   const fetchUserStatus = useCallback(async (force = false) => {
     if (session?.user) {
-      // Simple throttling: prevent calls more than once every 2 seconds unless forced
+      // Throttle: chỉ cho phép gọi 1 lần mỗi 2 giây để tránh lỗi 429
       const now = Date.now();
       if (!force && now - lastFetchTimeRef.current < 2000) {
           return;
@@ -347,7 +348,7 @@ const AppContent: React.FC = () => {
   const handleDeductCredits = async (amount: number, description?: string): Promise<string> => {
       if (!session?.user) throw new Error("Vui lòng đăng nhập để sử dụng.");
       const logId = await deductCredits(session.user.id, amount, description || '');
-      await fetchUserStatus(true);
+      await fetchUserStatus(true); // Force update after deduction
       return logId;
   };
 
