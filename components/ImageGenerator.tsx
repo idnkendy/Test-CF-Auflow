@@ -40,13 +40,19 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [activeJobId, setActiveJobId] = useState<string | null>(null);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+    
+    // Quản lý ảnh đang được chọn để xem lớn
+    const [selectedIndex, setSelectedIndex] = useState(0);
 
-    // --- Dynamic Options with localized values ---
-    // The 'value' is now language-dependent to ensure the generated prompt matches the user's language setting.
+    // Tự động reset index khi có kết quả mới
+    useEffect(() => {
+        if (resultImages.length > 0) {
+            setSelectedIndex(0);
+        }
+    }, [resultImages.length]);
 
     const buildingTypeOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
@@ -97,16 +103,13 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         { value: t('opt.weather.after_rain'), label: t('opt.weather.after_rain') },
     ], [t]);
 
-    // Handle Default Prompt Switching
     useEffect(() => {
         const viDefault = 'Biến thành ảnh chụp thực tế nhà ở';
         const enDefault = 'Transform into a realistic house photo';
-        
-        // Only update if current prompt matches one of the defaults
         if (customPrompt === viDefault || customPrompt === enDefault || !customPrompt) {
              onStateChange({ customPrompt: t('img_gen.default_prompt') });
         }
-    }, [language, t]); // Run when language changes
+    }, [language, t]);
 
     const escapeRegExp = (string: string) => string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -124,29 +127,20 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             }
         };
 
-        // Construct potential old parts in BOTH languages to ensure cleanup works even after language switch
         const oldPartVi = getPromptPart(type, oldValue, 'vi');
         const oldPartEn = getPromptPart(type, oldValue, 'en');
-        
-        // Construct new part in CURRENT language
         const newPart = getPromptPart(type, newValue, language);
 
         let nextPrompt = customPrompt;
-
-        // Try to remove old part (check both VI and EN versions)
         if (oldPartVi && nextPrompt.includes(oldPartVi)) {
             nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartVi)}`), '').replace(new RegExp(`${escapeRegExp(oldPartVi)},?\\s*`), '');
         }
         if (oldPartEn && nextPrompt.includes(oldPartEn)) {
             nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartEn)}`), '').replace(new RegExp(`${escapeRegExp(oldPartEn)},?\\s*`), '');
         }
-
-        // Add new part
         if (newPart) {
             nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart;
         }
-
-        // Cleanup commas
         onStateChange({ customPrompt: nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ') });
     }, [customPrompt, onStateChange, language]);
 
@@ -179,9 +173,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
              }
              return;
         }
-        
         if (!customPrompt.trim()) { onStateChange({ error: t('common.error') }); return; }
-        
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
         setStatusMessage(t('common.processing'));
         
@@ -195,7 +187,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                  jobId = await jobService.createJob({ user_id: user.id, tool_id: Tool.ArchitecturalRendering, prompt: customPrompt, cost: cost, usage_log_id: logId });
-                 setActiveJobId(jobId);
             }
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
@@ -203,7 +194,6 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             const promptForService = `You are a professional architectural renderer. ${sourceImage ? `Based on source image, generate ${aspectRatio} render.` : ''} ${customPrompt}, photorealistic, high detail.`;
 
             let lastError: any = null;
-
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                 try {
                     const result = await externalVideoService.generateFlowImage(
@@ -214,22 +204,17 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         modelName,
                         (msg) => setStatusMessage(msg)
                     );
-
                     if (result.imageUrls && result.imageUrls.length > 0) {
                         let finalUrl = result.imageUrls[0];
-                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds?.length > 0;
-
-                        if (shouldUpscale) {
+                        if ((resolution === '2K' || resolution === '4K') && result.mediaIds?.length > 0) {
                             const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
                             const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
                             if (upscaleRes.imageUrl) finalUrl = upscaleRes.imageUrl;
                         }
-                        
                         return finalUrl;
                     }
                     return null;
                 } catch (e) {
-                    console.error(`Image generation ${index + 1} failed:`, e);
                     lastError = e;
                     return null;
                 }
@@ -249,40 +234,26 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         resultImageURL: url,
                     });
                 });
-
                 if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
-
                 if (failedCount > 0 && logId && user) {
                     const refundAmount = failedCount * unitCost;
                     await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    
-                    const errorMsg = t('msg.refund_success')
-                        .replace('{success}', successfulUrls.length.toString())
-                        .replace('{total}', numberOfImages.toString())
-                        .replace('{amount}', refundAmount.toString())
-                        .replace('{failed}', failedCount.toString());
-                    
-                    onStateChange({ error: errorMsg });
+                    onStateChange({ error: t('msg.refund_success').replace('{success}', successfulUrls.length.toString()).replace('{total}', numberOfImages.toString()).replace('{amount}', refundAmount.toString()).replace('{failed}', failedCount.toString()) });
                 }
-
             } else {
                 if (lastError) throw lastError;
                 throw new Error(t('err.gen.failed'));
             }
-
         } catch (err: any) {
             const rawMsg = err.message || "";
             let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
-            
             if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
                 onStateChange({ error: t(friendlyMsg) });
             }
-            
             if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
-            
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ (${rawMsg})`, logId);
@@ -307,7 +278,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     };
 
     const handleDownload = async () => {
-        const url = upscaledImage || resultImages[0];
+        const url = resultImages[selectedIndex];
         if (!url) return;
         setIsDownloading(true);
         await externalVideoService.forceDownload(url, "opzen-render.png");
@@ -319,102 +290,196 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     };
 
     return (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col h-full lg:flex-row gap-6 lg:gap-8 max-w-[1920px] mx-auto overflow-hidden">
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <div className="flex flex-col gap-2">
-                <h2 className="text-2xl md:text-3xl font-bold text-text-primary dark:text-white">{t('img_gen.title')}</h2>
-                <p className="text-sm md:text-base text-text-secondary dark:text-gray-400">{t('img_gen.subtitle')}</p>
-            </div>
             
-            <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-4 md:p-6 rounded-xl border border-border-color dark:border-gray-700">
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                    <div className="space-y-6">
-                        <div>
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step1')}</label>
-                            <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
-                        </div>
-                         <div>
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.ref_images')}</label>
-                            {resolution === 'Standard' ? (
-                                <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
-                                    <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
-                                    <p className="text-sm text-text-secondary dark:text-gray-400">{t('img_gen.ref_lock')}</p>
-                                    <button onClick={() => handleResolutionChange('1K')} className="text-xs text-[#7f13ec] hover:underline font-semibold">{t('img_gen.upgrade')}</button>
-                                </div>
-                            ) : (
-                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
-                            )}
-                        </div>
+            {/* SIDEBAR: LEFT (1/4 Width) */}
+            <aside className="w-full lg:w-[28%] xl:w-[22%] flex flex-col gap-6 overflow-y-auto pr-1 scrollbar-hide flex-shrink-0">
+                <div className="flex flex-col gap-1 mb-2">
+                    <h2 className="text-xl font-bold text-text-primary dark:text-white">{t('img_gen.title')}</h2>
+                    <p className="text-xs text-text-secondary dark:text-gray-400">{t('img_gen.subtitle')}</p>
+                </div>
+
+                <div className="space-y-6">
+                    <div>
+                        <label className="block text-sm font-bold text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step1')}</label>
+                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} className="!aspect-square" />
                     </div>
-                    <div className="space-y-4 flex flex-col">
-                        <div className="relative">
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step2')}</label>
-                            <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none resize-none text-sm" placeholder={t('img_gen.prompt_placeholder')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
-                            <button type="button" onClick={handleAutoPrompt} disabled={!sourceImage || isAutoPromptLoading || isLoading} className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${!sourceImage || isAutoPromptLoading || isLoading ? 'bg-gray-200 dark:bg-gray-800 text-gray-400 cursor-not-allowed' : 'bg-[#334155] hover:bg-[#475569] text-white shadow-sm'}`}>
-                                {isAutoPromptLoading ? <><Spinner /><span>{t('img_gen.analyzing')}</span></> : <><span className="material-symbols-outlined text-lg">auto_awesome</span><span>{t('img_gen.auto_prompt')}</span></>}
-                            </button>
-                        </div>
-                        <div className="pt-2">
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step3')}</label>
-                            <div className="space-y-4">
-                                <OptionSelector id="building-type-selector" label={t('opt.building_type')} options={buildingTypeOptions} value={buildingType} onChange={handleBuildingTypeChange} disabled={isLoading} variant="grid" />
-                                <OptionSelector id="style-selector" label={t('opt.style')} options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="grid" />
-                                <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                                    <OptionSelector id="context-selector" label={t('opt.context')} options={contextOptions} value={context} onChange={handleContextChange} disabled={isLoading} variant="select" />
-                                    <OptionSelector id="lighting-selector" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
-                                    <OptionSelector id="weather-selector" label={t('opt.weather')} options={weatherOptions} value={weather} onChange={handleWeatherChange} disabled={isLoading} variant="select" />
-                                </div>
+
+                    <div>
+                        <label className="block text-sm font-bold text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.ref_images')}</label>
+                        {resolution === 'Standard' ? (
+                            <div className="p-4 bg-gray-50 dark:bg-[#1A1A1A] border border-dashed border-gray-300 dark:border-[#302839] rounded-xl flex flex-col items-center justify-center text-center gap-2">
+                                <span className="material-symbols-outlined text-yellow-500 text-2xl">lock</span>
+                                <p className="text-[10px] text-gray-500">{t('img_gen.ref_lock')}</p>
+                                <button onClick={() => handleResolutionChange('1K')} className="text-[10px] text-[#7f13ec] font-bold underline">{t('img_gen.upgrade')}</button>
+                            </div>
+                        ) : (
+                            <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} gridClassName="grid-cols-2" />
+                        )}
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-bold text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step2')}</label>
+                        <textarea 
+                            rows={3} 
+                            className="w-full bg-surface dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-xl p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none resize-none text-sm transition-all" 
+                            placeholder={t('img_gen.prompt_placeholder')} 
+                            value={customPrompt} 
+                            onChange={(e) => onStateChange({ customPrompt: e.target.value })} 
+                            disabled={isLoading} 
+                        />
+                        <button type="button" onClick={handleAutoPrompt} disabled={!sourceImage || isAutoPromptLoading || isLoading} className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${!sourceImage || isAutoPromptLoading || isLoading ? 'bg-gray-100 dark:bg-gray-800 text-gray-400' : 'bg-[#2A2A2A] hover:bg-[#353535] text-white shadow-sm'}`}>
+                            {isAutoPromptLoading ? <Spinner /> : <span className="material-symbols-outlined text-base">auto_awesome</span>}
+                            <span>{isAutoPromptLoading ? t('img_gen.analyzing') : t('img_gen.auto_prompt')}</span>
+                        </button>
+                    </div>
+
+                    <div className="space-y-4">
+                        <label className="block text-sm font-bold text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step3')}</label>
+                        <div className="space-y-3">
+                            <OptionSelector id="building-type-selector" label={t('opt.building_type')} options={buildingTypeOptions} value={buildingType} onChange={handleBuildingTypeChange} disabled={isLoading} variant="select" />
+                            <OptionSelector id="style-selector" label={t('opt.style')} options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="select" />
+                            <div className="grid grid-cols-1 gap-3">
+                                <OptionSelector id="context-selector" label={t('opt.context')} options={contextOptions} value={context} onChange={handleContextChange} disabled={isLoading} variant="select" />
+                                <OptionSelector id="lighting-selector-custom" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
+                                <OptionSelector id="weather-selector-custom" label={t('opt.weather')} options={weatherOptions} value={weather} onChange={handleWeatherChange} disabled={isLoading} variant="select" />
                             </div>
                         </div>
-                        <div className="pt-4 grid grid-cols-2 gap-4">
-                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} disabled={isLoading} />
-                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({aspectRatio: val})} disabled={isLoading} />
+                    </div>
+
+                    <div className="space-y-4 pt-2">
+                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({aspectRatio: val})} disabled={isLoading} />
+                        <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} disabled={isLoading} />
+                    </div>
+
+                    {/* Bottom Actions fixed in sidebar */}
+                    <div className="pt-4 sticky bottom-0 bg-surface dark:bg-[#191919] z-10 pb-6">
+                        <div className="flex items-center justify-between bg-gray-50 dark:bg-[#121212] rounded-xl px-4 py-3 mb-3 border border-border-color dark:border-[#302839]">
+                            <div className="flex items-center gap-2 text-xs text-text-secondary dark:text-gray-300">
+                                <span className="material-symbols-outlined text-yellow-500 text-lg">monetization_on</span>
+                                <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+                            </div>
+                            <div className="text-[10px] font-bold text-[#7f13ec]">{t('common.available')}: {userCredits}</div>
                         </div>
-                        <div className="pt-4"><ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} /></div>
+                        <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim()} className="w-full flex justify-center items-center gap-3 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-800 text-white font-extrabold py-4 px-4 rounded-2xl transition-all text-base shadow-lg shadow-purple-500/20 transform active:scale-95">
+                            {isLoading ? <><Spinner /> <span>{statusMessage || t('common.processing')}</span></> : <><span className="material-symbols-outlined">rocket_launch</span> <span>{t('common.start_render')}</span></>}
+                        </button>
+                        {error && <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400 rounded-xl text-xs">{error}</div>}
                     </div>
                 </div>
+            </aside>
 
-                <div className="mt-4">
-                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-3 border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                            <span className="material-symbols-outlined text-yellow-500 text-lg">monetization_on</span>
-                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                        </div>
-                        <div className="text-xs">{userCredits < cost ? <span className="text-red-500 font-semibold">{t('common.insufficient')} ({t('common.available')}: {userCredits})</span> : <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>}</div>
-                    </div>
-                    <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim()} className="w-full flex justify-center items-center gap-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg transition-colors text-lg shadow-lg">
-                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('common.start_render')}
-                    </button>
-                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
-                </div>
-            </div>
-
-            <div>
-                <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-lg font-bold text-text-primary dark:text-white">{t('common.result')}</h3>
-                    {resultImages.length === 1 && (
-                        <div className="flex items-center gap-2">
-                            <button onClick={() => handleSendImageToSync(resultImages[0])} className="text-accent-600 bg-accent-50 hover:bg-accent-100 px-3 py-1.5 rounded-lg text-sm font-medium border border-accent-200">{t('tool.viewsync')}</button>
-                            <button onClick={handleDownload} disabled={isDownloading} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-1.5 rounded-lg text-sm font-medium shadow-sm flex items-center gap-2">
-                                {isDownloading ? <Spinner /> : null} {t('common.download')}
-                            </button>
-                        </div>
-                    )}
-                </div>
-                <div className="w-full aspect-[4/3] bg-gray-100 dark:bg-gray-800/50 rounded-2xl border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden relative">
+            {/* MAIN CONTENT: RIGHT (3/4 Width) */}
+            <main className="flex-1 flex flex-col gap-4 min-w-0">
+                
+                {/* 1. Large Image Frame */}
+                <div className="flex-1 bg-gray-100 dark:bg-[#121212] rounded-[32px] border border-border-color dark:border-[#302839] relative overflow-hidden flex items-center justify-center min-h-[400px] lg:min-h-[500px] shadow-inner">
                     {isLoading && (
-                        <div className="absolute inset-0 bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center">
-                            <div className="w-16 h-16 border-4 border-accent-200 border-t-accent-600 rounded-full animate-spin mb-4"></div>
-                            <p className="text-accent-600 dark:text-accent-400 font-medium animate-pulse">{statusMessage || t('common.processing')}</p>
+                        <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-md z-20 flex flex-col items-center justify-center text-center p-6">
+                            <div className="w-24 h-24 relative mb-6">
+                                <div className="absolute inset-0 rounded-full border-4 border-accent/10 border-t-accent animate-spin"></div>
+                                <div className="absolute inset-4 rounded-full border-4 border-purple-500/20 border-b-purple-500 animate-spin-slow"></div>
+                            </div>
+                            <p className="text-xl font-bold text-white mb-2">{statusMessage || t('common.processing')}</p>
+                            <p className="text-sm text-gray-400 animate-pulse">{t('video.loading.5')}</p>
                         </div>
                     )}
-                    {!isLoading && resultImages.length === 1 && sourceImage && <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />}
-                    {!isLoading && resultImages.length === 1 && !sourceImage && <img src={resultImages[0]} className="w-full h-full object-contain" />}
-                    {!isLoading && resultImages.length > 1 && <ResultGrid images={resultImages} toolName="architecture-render" onSendToViewSync={handleSendImageToSync} />}
-                    {!isLoading && resultImages.length === 0 && <div className="text-center opacity-50"><p className="text-gray-500">{t('msg.no_result_render')}</p></div>}
+
+                    {resultImages.length > 0 ? (
+                        <div className="w-full h-full p-2">
+                             {sourceImage ? (
+                                <ImageComparator 
+                                    originalImage={sourceImage.objectURL} 
+                                    resultImage={resultImages[selectedIndex]} 
+                                />
+                             ) : (
+                                <img 
+                                    src={resultImages[selectedIndex]} 
+                                    className="w-full h-full object-contain rounded-2xl" 
+                                    alt="Full View" 
+                                />
+                             )}
+                        </div>
+                    ) : (
+                        <div className="flex flex-col items-center opacity-30 select-none">
+                            <span className="material-symbols-outlined text-8xl mb-4 text-gray-500">photo_library</span>
+                            <p className="text-lg font-medium text-gray-500">{t('msg.no_result_render')}</p>
+                        </div>
+                    )}
                 </div>
-            </div>
+
+                {/* 2. Caption & Action Row (Matching User Spec) */}
+                <div className="flex items-center justify-between bg-white dark:bg-[#1A1A1A] p-5 rounded-2xl border border-border-color dark:border-[#302839] shadow-sm">
+                    <div className="flex items-center gap-3">
+                        <span className="material-symbols-outlined text-accent">info</span>
+                        <h3 className="font-bold text-text-primary dark:text-white text-base">
+                            {resultImages.length > 0 ? t('img_gen.default_prompt') : t('common.result')}
+                        </h3>
+                    </div>
+                    
+                    <div className="flex items-center gap-3">
+                        {resultImages.length > 0 && (
+                            <>
+                                <button 
+                                    onClick={() => handleSendImageToSync(resultImages[selectedIndex])}
+                                    className="p-2.5 rounded-xl bg-gray-100 dark:bg-[#252525] text-gray-600 dark:text-gray-300 hover:bg-accent/10 hover:text-accent transition-all"
+                                    title={t('tool.viewsync')}
+                                >
+                                    <span className="material-symbols-outlined text-xl">view_in_ar</span>
+                                </button>
+                                <button 
+                                    onClick={handleDownload}
+                                    disabled={isDownloading}
+                                    className="p-2.5 rounded-xl bg-gray-100 dark:bg-[#252525] text-gray-600 dark:text-gray-300 hover:bg-blue-500/10 hover:text-blue-500 transition-all flex items-center justify-center gap-2"
+                                    title={t('common.download')}
+                                >
+                                    {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-xl">download</span>}
+                                </button>
+                                <button 
+                                    onClick={() => setPreviewImage(resultImages[selectedIndex])}
+                                    className="p-2.5 rounded-xl bg-[#7f13ec] text-white hover:bg-[#690fca] transition-all shadow-md shadow-purple-500/20"
+                                    title="Zoom"
+                                >
+                                    <span className="material-symbols-outlined text-xl">zoom_in</span>
+                                </button>
+                            </>
+                        )}
+                    </div>
+                </div>
+
+                {/* 3. Thumbnail Gallery Strip (Matching User Spec) */}
+                <div className="bg-white dark:bg-[#1A1A1A] p-4 rounded-2xl border border-border-color dark:border-[#302839] shadow-sm">
+                    <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-[#333]">
+                        {resultImages.length > 0 ? (
+                            resultImages.map((url, idx) => (
+                                <button
+                                    key={idx}
+                                    onClick={() => setSelectedIndex(idx)}
+                                    className={`relative flex-shrink-0 w-32 md:w-40 lg:w-48 aspect-video rounded-xl overflow-hidden border-4 transition-all duration-300 transform ${
+                                        selectedIndex === idx 
+                                            ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105 shadow-xl' 
+                                            : 'border-transparent opacity-60 hover:opacity-100 hover:scale-102 grayscale-[50%] hover:grayscale-0'
+                                    }`}
+                                >
+                                    <img src={url} className="w-full h-full object-cover" alt={`Thumb ${idx + 1}`} />
+                                    {selectedIndex === idx && (
+                                        <div className="absolute inset-0 bg-accent/10 pointer-events-none"></div>
+                                    )}
+                                </button>
+                            ))
+                        ) : (
+                            <div className="flex gap-4 opacity-10">
+                                {[1, 2, 3, 4].map(i => (
+                                    <div key={i} className="w-32 md:w-40 lg:w-48 aspect-video rounded-xl bg-gray-400 animate-pulse"></div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </main>
         </div>
     );
 };
