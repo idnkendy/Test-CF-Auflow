@@ -49,6 +49,16 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         if (resultImages.length > 0) setSelectedIndex(0);
     }, [resultImages.length]);
 
+    // Tự động chuyển đổi Prompt mặc định khi đổi ngôn ngữ
+    useEffect(() => {
+        const viDefault = 'Biến thành ảnh chụp thực tế nhà ở';
+        const enDefault = 'Transform into realistic house photo';
+        
+        if (!customPrompt || customPrompt === viDefault || customPrompt === enDefault) {
+             onStateChange({ customPrompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
+
     const buildingTypeOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
         { value: t('opt.building.townhouse'), label: t('opt.building.townhouse') },
@@ -98,11 +108,72 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         { value: t('opt.weather.after_rain'), label: t('opt.weather.after_rain') },
     ], [t]);
 
-    const handleBuildingTypeChange = (newVal: string) => onStateChange({ buildingType: newVal });
-    const handleStyleChange = (newVal: string) => onStateChange({ style: newVal });
-    const handleContextChange = (newVal: string) => onStateChange({ context: newVal });
-    const handleLightingChange = (newVal: string) => onStateChange({ lighting: newVal });
-    const handleWeatherChange = (newVal: string) => onStateChange({ weather: newVal });
+    // --- PROMPT SYNC LOGIC ---
+    const escapeRegExp = (string: string) => {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    };
+
+    const updatePrompt = useCallback((type: 'style' | 'buildingType' | 'context' | 'lighting' | 'weather', newValue: string, oldValue: string) => {
+        const getPromptPart = (partType: string, value: string, lang: string): string => {
+            if (value === 'none' || !value) return '';
+            const isVi = lang === 'vi';
+            switch (partType) {
+                case 'buildingType': return isVi ? `công trình ${value}` : `${value} building`;
+                case 'style': return isVi ? `phong cách ${value}` : `${value} style`;
+                case 'context': return isVi ? `bối cảnh ${value}` : `in ${value} context`;
+                case 'lighting': return isVi ? `ánh sáng ${value}` : `with ${value} lighting`;
+                case 'weather': return isVi ? `thời tiết ${value}` : `weather ${value}`;
+                default: return '';
+            }
+        };
+
+        const oldPartVi = getPromptPart(type, oldValue, 'vi');
+        const oldPartEn = getPromptPart(type, oldValue, 'en');
+        const newPart = getPromptPart(type, newValue, language);
+
+        let nextPrompt = customPrompt;
+        
+        // Remove old segments if they exist (both languages to be safe)
+        if (oldPartVi && nextPrompt.includes(oldPartVi)) { 
+            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartVi)}`), '').replace(new RegExp(`${escapeRegExp(oldPartVi)},?\\s*`), ''); 
+        } 
+        if (oldPartEn && nextPrompt.includes(oldPartEn)) { 
+            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartEn)}`), '').replace(new RegExp(`${escapeRegExp(oldPartEn)},?\\s*`), ''); 
+        }
+        
+        // Append new segment
+        if (newPart) { 
+            nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart; 
+        }
+        
+        const cleanedPrompt = nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ');
+        onStateChange({ customPrompt: cleanedPrompt });
+    }, [customPrompt, onStateChange, language]);
+
+    const handleBuildingTypeChange = (newVal: string) => {
+        updatePrompt('buildingType', newVal, buildingType);
+        onStateChange({ buildingType: newVal });
+    };
+    
+    const handleStyleChange = (newVal: string) => {
+        updatePrompt('style', newVal, style);
+        onStateChange({ style: newVal });
+    };
+
+    const handleContextChange = (newVal: string) => {
+        updatePrompt('context', newVal, context);
+        onStateChange({ context: newVal });
+    };
+
+    const handleLightingChange = (newVal: string) => {
+        updatePrompt('lighting', newVal, lighting);
+        onStateChange({ lighting: newVal });
+    };
+
+    const handleWeatherChange = (newVal: string) => {
+        updatePrompt('weather', newVal, weather);
+        onStateChange({ weather: newVal });
+    };
     
     const handleResolutionChange = (val: ImageResolution) => { 
         onStateChange({ resolution: val });
@@ -186,9 +257,11 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                             <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
                         </div>
 
-                        <div className="p-3 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-black/20">
+                        <div>
                             <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">{t('img_gen.step2')}</label>
-                            <textarea rows={3} className="w-full bg-transparent outline-none text-sm resize-none" placeholder={t('img_gen.prompt_placeholder')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} />
+                            <div className="p-3 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-black/20">
+                                <textarea rows={3} className="w-full bg-transparent outline-none text-sm resize-none" placeholder={t('img_gen.prompt_placeholder')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} />
+                            </div>
                         </div>
 
                         <div className="space-y-4">
@@ -212,15 +285,15 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden">
                     <div className="p-0 flex flex-col h-full items-start">
                         
-                        {/* Image Area */}
-                        <div className="w-full bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex flex-col items-start min-h-[400px] lg:min-h-[600px]">
+                        {/* Image Area - Reduced height from 400/600 to 300/450 */}
+                        <div className="w-full bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex flex-col items-start min-h-[300px] lg:min-h-[450px]">
                             {resultImages.length > 0 ? (
                                 <div className="w-full p-0 animate-fade-in flex flex-col items-start relative">
-                                    <div className="w-full min-h-[400px] lg:min-h-[600px] flex items-center justify-center">
+                                    <div className="w-full min-h-[300px] lg:min-h-[450px] flex items-center justify-center">
                                         {sourceImage ? (
                                             <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[selectedIndex]} />
                                         ) : (
-                                            <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-[80vh] object-contain" />
+                                            <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-[70vh] object-contain" />
                                         )}
                                     </div>
                                     
@@ -232,7 +305,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                                     </div>
                                 </div>
                             ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center py-60 opacity-20 select-none">
+                                <div className="w-full h-full flex flex-col items-center justify-center py-40 opacity-20 select-none">
                                     <span className="material-symbols-outlined text-6xl mb-4">photo_library</span>
                                     <p className="text-base font-medium">{t('msg.no_result_render')}</p>
                                 </div>
