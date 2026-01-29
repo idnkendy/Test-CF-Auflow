@@ -6,7 +6,7 @@ import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
 import * as externalVideoService from '../services/externalVideoService';
 import { refundCredits } from '../services/paymentService';
-import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
+import { FileData, Tool, AspectRatio, ImageResolution, HistoryItem } from '../types';
 import { ImageGeneratorState } from '../state/toolState';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
@@ -44,10 +44,31 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
 
     useEffect(() => {
         if (resultImages.length > 0) setSelectedIndex(0);
     }, [resultImages.length]);
+
+    // Lấy 5 kết quả gần nhất từ lịch sử
+    const loadRecentHistory = async () => {
+        try {
+            const history = await historyService.getHistory(20, 0);
+            // Lọc ra các ảnh thuộc công cụ Render kiến trúc
+            const filtered = history
+                .filter(item => item.tool === Tool.ArchitecturalRendering && item.media_type === 'image')
+                .slice(0, 5);
+            setRecentHistory(filtered);
+        } catch (e) {
+            console.error("Failed to load recent history", e);
+        }
+    };
+
+    useEffect(() => {
+        if (!isLoading && resultImages.length === 0) {
+            loadRecentHistory();
+        }
+    }, [isLoading, resultImages.length]);
 
     // Tự động chuyển đổi Prompt mặc định khi đổi ngôn ngữ
     useEffect(() => {
@@ -285,7 +306,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                 <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden">
                     <div className="p-0 flex flex-col h-full items-start">
                         
-                        {/* Image Area - Reduced height from 400/600 to 300/450 */}
+                        {/* Image Area */}
                         <div className="w-full bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex flex-col items-start min-h-[300px] lg:min-h-[450px]">
                             {resultImages.length > 0 ? (
                                 <div className="w-full p-0 animate-fade-in flex flex-col items-start relative">
@@ -304,17 +325,37 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                                         <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2.5 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined">zoom_in</span></button>
                                     </div>
                                 </div>
+                            ) : isLoading ? (
+                                <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                    <Spinner />
+                                    <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
+                                </div>
+                            ) : recentHistory.length > 0 ? (
+                                // HIỂN THỊ KẾT QUẢ GẦN NHẤT
+                                <div className="w-full p-6 animate-fade-in">
+                                    <div className="flex items-center gap-2 mb-6">
+                                        <span className="material-symbols-outlined text-purple-500">history</span>
+                                        <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200 uppercase tracking-widest">Kết quả gần đây</h3>
+                                    </div>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                                        {recentHistory.map((item) => (
+                                            <div 
+                                                key={item.id} 
+                                                className="group relative aspect-video bg-white dark:bg-[#1A1A1A] rounded-xl overflow-hidden border border-gray-200 dark:border-[#302839] cursor-pointer hover:border-purple-500 transition-all"
+                                                onClick={() => setPreviewImage(item.media_url)}
+                                            >
+                                                <img src={item.media_url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all" alt="Recent" />
+                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2">
+                                                    <p className="text-[10px] text-white font-medium truncate">{item.prompt}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
                             ) : (
                                 <div className="w-full h-full flex flex-col items-center justify-center py-40 opacity-20 select-none">
                                     <span className="material-symbols-outlined text-6xl mb-4">photo_library</span>
                                     <p className="text-base font-medium">{t('msg.no_result_render')}</p>
-                                </div>
-                            )}
-
-                            {isLoading && (
-                                <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
-                                    <Spinner />
-                                    <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
                                 </div>
                             )}
                         </div>
