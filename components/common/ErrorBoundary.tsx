@@ -9,8 +9,8 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fixed: Explicitly extending the imported 'Component' class to ensure methods like 'setState' and properties like 'props' are inherited and recognized correctly by the compiler.
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+// Fixed: Explicitly extending React.Component to ensure methods like 'setState' and properties like 'props' are inherited and recognized correctly by the compiler.
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   public state: ErrorBoundaryState = {
     hasError: false,
     error: null,
@@ -34,7 +34,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   };
 
   handleReset = () => {
-      // Fixed: 'setState' is inherited from the base Component class.
+      // Fixed: 'setState' is inherited from the base React.Component class.
       this.setState({ hasError: false, error: null });
       localStorage.removeItem('activeTool'); 
       window.location.href = '/'; 
@@ -81,7 +81,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       );
     }
 
-    // Fixed: 'props' is inherited from the base Component class.
+    // Fixed: 'props' is inherited from the base React.Component class.
     return this.props.children || null;
   }
 }

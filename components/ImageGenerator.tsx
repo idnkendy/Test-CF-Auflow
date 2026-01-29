@@ -44,10 +44,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
     
-    // Quản lý ảnh đang được chọn để xem lớn
     const [selectedIndex, setSelectedIndex] = useState(0);
 
-    // Tự động reset index khi có kết quả mới
     useEffect(() => {
         if (resultImages.length > 0) {
             setSelectedIndex(0);
@@ -290,47 +288,50 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     };
 
     return (
-        <div className="flex flex-col h-full lg:flex-row gap-6 lg:gap-8 max-w-[1920px] mx-auto overflow-hidden">
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto overflow-hidden px-2 sm:px-4 md:px-6 h-full lg:h-[calc(100vh-140px)]">
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            {/* SIDEBAR: LEFT (1/4 Width) */}
-            <aside className="w-full lg:w-[28%] xl:w-[22%] flex flex-col gap-6 overflow-y-auto pr-1 scrollbar-hide flex-shrink-0">
-                <div className="flex flex-col gap-1 mb-2">
+            {/* SIDEBAR: LEFT (Fixed width for Tablet/Mobile, 1/3 for Desktop) */}
+            <aside className="w-full md:w-[300px] lg:w-1/3 xl:w-[30%] flex flex-col overflow-hidden flex-shrink-0 bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative">
+                
+                {/* Header Section */}
+                <div className="p-4 sm:p-5 md:p-6 border-b border-border-color dark:border-[#302839] flex-shrink-0">
                     <h2 className="text-xl font-bold text-text-primary dark:text-white">{t('img_gen.title')}</h2>
                     <p className="text-xs text-text-secondary dark:text-gray-400">{t('img_gen.subtitle')}</p>
                 </div>
 
-                <div className="space-y-6">
+                {/* Scrollable Content Area */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5 md:p-6 scrollbar-hide space-y-6">
                     <div>
                         <label className="block text-sm font-bold text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step1')}</label>
-                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} className="!aspect-square" />
+                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} className="!aspect-video" />
                     </div>
 
                     <div>
                         <label className="block text-sm font-bold text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.ref_images')}</label>
                         {resolution === 'Standard' ? (
-                            <div className="p-4 bg-gray-50 dark:bg-[#1A1A1A] border border-dashed border-gray-300 dark:border-[#302839] rounded-xl flex flex-col items-center justify-center text-center gap-2">
-                                <span className="material-symbols-outlined text-yellow-500 text-2xl">lock</span>
-                                <p className="text-[10px] text-gray-500">{t('img_gen.ref_lock')}</p>
+                            <div className="p-3 bg-gray-50 dark:bg-[#121212] border border-dashed border-gray-300 dark:border-[#302839] rounded-xl flex flex-col items-center justify-center text-center gap-1.5 min-h-[100px]">
+                                <span className="material-symbols-outlined text-yellow-500 text-xl">lock</span>
+                                <p className="text-[10px] text-gray-500 leading-tight px-4">{t('img_gen.ref_lock')}</p>
                                 <button onClick={() => handleResolutionChange('1K')} className="text-[10px] text-[#7f13ec] font-bold underline">{t('img_gen.upgrade')}</button>
                             </div>
                         ) : (
-                            <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} gridClassName="grid-cols-2" />
+                            <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} gridClassName="grid-cols-2 sm:grid-cols-3 md:grid-cols-2" />
                         )}
                     </div>
 
-                    <div>
+                    <div className="p-3 rounded-2xl border-2 border-dashed border-border-color dark:border-[#302839] bg-main-bg dark:bg-[#121212]">
                         <label className="block text-sm font-bold text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.step2')}</label>
                         <textarea 
-                            rows={3} 
+                            rows={4} 
                             className="w-full bg-surface dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-xl p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none resize-none text-sm transition-all" 
                             placeholder={t('img_gen.prompt_placeholder')} 
                             value={customPrompt} 
                             onChange={(e) => onStateChange({ customPrompt: e.target.value })} 
                             disabled={isLoading} 
                         />
-                        <button type="button" onClick={handleAutoPrompt} disabled={!sourceImage || isAutoPromptLoading || isLoading} className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${!sourceImage || isAutoPromptLoading || isLoading ? 'bg-gray-100 dark:bg-gray-800 text-gray-400' : 'bg-[#2A2A2A] hover:bg-[#353535] text-white shadow-sm'}`}>
+                        <button type="button" onClick={handleAutoPrompt} disabled={!sourceImage || isAutoPromptLoading || isLoading} className={`mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl text-xs font-bold transition-all duration-200 ${!sourceImage || isAutoPromptLoading || isLoading ? 'bg-gray-100 dark:bg-gray-800 text-gray-400' : 'bg-gray-800 hover:bg-gray-900 dark:bg-black text-white shadow-sm'}`}>
                             {isAutoPromptLoading ? <Spinner /> : <span className="material-symbols-outlined text-base">auto_awesome</span>}
                             <span>{isAutoPromptLoading ? t('img_gen.analyzing') : t('img_gen.auto_prompt')}</span>
                         </button>
@@ -341,7 +342,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         <div className="space-y-3">
                             <OptionSelector id="building-type-selector" label={t('opt.building_type')} options={buildingTypeOptions} value={buildingType} onChange={handleBuildingTypeChange} disabled={isLoading} variant="select" />
                             <OptionSelector id="style-selector" label={t('opt.style')} options={styleOptions} value={style} onChange={handleStyleChange} disabled={isLoading} variant="select" />
-                            <div className="grid grid-cols-1 gap-3">
+                            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-1 gap-3">
                                 <OptionSelector id="context-selector" label={t('opt.context')} options={contextOptions} value={context} onChange={handleContextChange} disabled={isLoading} variant="select" />
                                 <OptionSelector id="lighting-selector-custom" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={handleLightingChange} disabled={isLoading} variant="select" />
                                 <OptionSelector id="weather-selector-custom" label={t('opt.weather')} options={weatherOptions} value={weather} onChange={handleWeatherChange} disabled={isLoading} variant="select" />
@@ -354,42 +355,71 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                         <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
                         <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} disabled={isLoading} />
                     </div>
+                </div>
 
-                    {/* Bottom Actions fixed in sidebar */}
-                    <div className="pt-4 sticky bottom-0 bg-surface dark:bg-[#191919] z-10 pb-6">
-                        <div className="flex items-center justify-between bg-gray-50 dark:bg-[#121212] rounded-xl px-4 py-3 mb-3 border border-border-color dark:border-[#302839]">
-                            <div className="flex items-center gap-2 text-xs text-text-secondary dark:text-gray-300">
-                                <span className="material-symbols-outlined text-yellow-500 text-lg">monetization_on</span>
-                                <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                            </div>
-                            <div className="text-[10px] font-bold text-[#7f13ec]">{t('common.available')}: {userCredits}</div>
+                {/* Bottom Actions: Fixed and flush to bottom */}
+                <div className="sticky bottom-0 left-0 right-0 bg-white dark:bg-[#1A1A1A] z-20 pt-4 pb-4 px-4 sm:px-6 border-t border-border-color dark:border-[#302839] flex-shrink-0">
+                    <div className="flex items-center justify-between mb-3 px-1">
+                        <div className="flex items-center gap-1.5 text-[11px] text-text-secondary dark:text-gray-300">
+                            <span className="material-symbols-outlined text-yellow-500 text-base">monetization_on</span>
+                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
                         </div>
-                        <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim()} className="w-full flex justify-center items-center gap-3 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-800 text-white font-extrabold py-4 px-4 rounded-2xl transition-all text-base shadow-lg shadow-purple-500/20 transform active:scale-95">
-                            {isLoading ? <><Spinner /> <span>{statusMessage || t('common.processing')}</span></> : <><span className="material-symbols-outlined">rocket_launch</span> <span>{t('common.start_render')}</span></>}
-                        </button>
-                        {error && <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400 rounded-xl text-xs">{error}</div>}
+                        <div className="text-[9px] font-bold text-[#7f13ec] bg-purple-50 dark:bg-purple-900/20 px-2 py-0.5 rounded-full">{t('common.available')}: {userCredits}</div>
                     </div>
+                    <button onClick={handleGenerate} disabled={isLoading || !customPrompt.trim()} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-800 text-white font-bold py-3.5 px-4 rounded-xl transition-all text-sm shadow-md shadow-purple-500/10 transform active:scale-95">
+                        {isLoading ? <><Spinner /> <span className="text-xs">{statusMessage || t('common.processing')}</span></> : <><span className="material-symbols-outlined text-lg">rocket_launch</span> <span>{t('common.start_render')}</span></>}
+                    </button>
+                    {error && <div className="mt-2 p-2 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 text-red-600 dark:text-red-400 rounded-lg text-[10px] leading-tight">{error}</div>}
                 </div>
             </aside>
 
-            {/* MAIN CONTENT: RIGHT (3/4 Width) */}
-            <main className="flex-1 flex flex-col gap-4 min-w-0">
+            {/* MAIN CONTENT: RIGHT (Responsive Width) */}
+            <main className="flex-1 flex flex-col gap-4 min-w-0 bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl p-3 sm:p-4 md:p-6 shadow-sm overflow-hidden relative group">
                 
-                {/* 1. Large Image Frame */}
-                <div className="flex-1 bg-gray-100 dark:bg-[#121212] rounded-[32px] border border-border-color dark:border-[#302839] relative overflow-hidden flex items-center justify-center min-h-[400px] lg:min-h-[500px] shadow-inner">
+                {/* 1. Large Image Frame (TOP) */}
+                <div className="flex-1 bg-gray-100 dark:bg-[#121212] rounded-[24px] border border-border-color dark:border-[#302839] relative overflow-hidden flex items-center justify-center min-h-[300px] sm:min-h-[400px] lg:min-h-[450px] shadow-inner">
+                    
+                    {/* Action Overlay: Floating buttons inside viewer */}
+                    {resultImages.length > 0 && !isLoading && (
+                        <div className="absolute top-4 right-4 z-30 flex flex-col gap-2">
+                             <button 
+                                onClick={() => handleSendImageToSync(resultImages[selectedIndex])}
+                                className="p-2.5 rounded-xl bg-white/90 dark:bg-[#252525]/90 border border-white/20 text-gray-800 dark:text-gray-100 hover:bg-accent/10 hover:text-accent transition-all shadow-xl backdrop-blur-md"
+                                title={t('tool.viewsync')}
+                            >
+                                <span className="material-symbols-outlined text-xl">view_in_ar</span>
+                            </button>
+                            <button 
+                                onClick={handleDownload} 
+                                disabled={isDownloading}
+                                className="p-2.5 rounded-xl bg-white/90 dark:bg-[#252525]/90 border border-white/20 text-gray-800 dark:text-gray-100 hover:bg-blue-500/10 hover:text-blue-500 transition-all shadow-xl backdrop-blur-md"
+                                title={t('common.download')}
+                            >
+                                {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-xl">download</span>}
+                            </button>
+                            <button 
+                                onClick={() => setPreviewImage(resultImages[selectedIndex])}
+                                className="p-2.5 rounded-xl bg-[#7f13ec] text-white hover:bg-[#690fca] transition-all shadow-xl shadow-purple-500/20"
+                                title="Zoom"
+                            >
+                                <span className="material-symbols-outlined text-xl">zoom_in</span>
+                            </button>
+                        </div>
+                    )}
+
                     {isLoading && (
                         <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-md z-20 flex flex-col items-center justify-center text-center p-6">
-                            <div className="w-24 h-24 relative mb-6">
+                            <div className="w-16 h-16 sm:w-20 sm:h-20 relative mb-4">
                                 <div className="absolute inset-0 rounded-full border-4 border-accent/10 border-t-accent animate-spin"></div>
                                 <div className="absolute inset-4 rounded-full border-4 border-purple-500/20 border-b-purple-500 animate-spin-slow"></div>
                             </div>
-                            <p className="text-xl font-bold text-white mb-2">{statusMessage || t('common.processing')}</p>
-                            <p className="text-sm text-gray-400 animate-pulse">{t('video.loading.5')}</p>
+                            <p className="text-base sm:text-lg font-bold text-white mb-1">{statusMessage || t('common.processing')}</p>
+                            <p className="text-[10px] sm:text-xs text-gray-400 animate-pulse">{t('video.loading.5')}</p>
                         </div>
                     )}
 
                     {resultImages.length > 0 ? (
-                        <div className="w-full h-full p-2">
+                        <div className="w-full h-full p-1 sm:p-2 animate-fade-in">
                              {sourceImage ? (
                                 <ImageComparator 
                                     originalImage={sourceImage.objectURL} 
@@ -404,81 +434,36 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                              )}
                         </div>
                     ) : (
-                        <div className="flex flex-col items-center opacity-30 select-none">
-                            <span className="material-symbols-outlined text-8xl mb-4 text-gray-500">photo_library</span>
-                            <p className="text-lg font-medium text-gray-500">{t('msg.no_result_render')}</p>
+                        <div className="flex flex-col items-center opacity-20 select-none">
+                            <span className="material-symbols-outlined text-5xl sm:text-7xl mb-4 text-gray-500">photo_library</span>
+                            <p className="text-sm sm:text-base font-medium text-gray-500">{t('msg.no_result_render')}</p>
                         </div>
                     )}
                 </div>
 
-                {/* 2. Caption & Action Row (Matching User Spec) */}
-                <div className="flex items-center justify-between bg-white dark:bg-[#1A1A1A] p-5 rounded-2xl border border-border-color dark:border-[#302839] shadow-sm">
-                    <div className="flex items-center gap-3">
-                        <span className="material-symbols-outlined text-accent">info</span>
-                        <h3 className="font-bold text-text-primary dark:text-white text-base">
-                            {resultImages.length > 0 ? t('img_gen.default_prompt') : t('common.result')}
-                        </h3>
-                    </div>
-                    
-                    <div className="flex items-center gap-3">
-                        {resultImages.length > 0 && (
-                            <>
-                                <button 
-                                    onClick={() => handleSendImageToSync(resultImages[selectedIndex])}
-                                    className="p-2.5 rounded-xl bg-gray-100 dark:bg-[#252525] text-gray-600 dark:text-gray-300 hover:bg-accent/10 hover:text-accent transition-all"
-                                    title={t('tool.viewsync')}
-                                >
-                                    <span className="material-symbols-outlined text-xl">view_in_ar</span>
-                                </button>
-                                <button 
-                                    onClick={handleDownload}
-                                    disabled={isDownloading}
-                                    className="p-2.5 rounded-xl bg-gray-100 dark:bg-[#252525] text-gray-600 dark:text-gray-300 hover:bg-blue-500/10 hover:text-blue-500 transition-all flex items-center justify-center gap-2"
-                                    title={t('common.download')}
-                                >
-                                    {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-xl">download</span>}
-                                </button>
-                                <button 
-                                    onClick={() => setPreviewImage(resultImages[selectedIndex])}
-                                    className="p-2.5 rounded-xl bg-[#7f13ec] text-white hover:bg-[#690fca] transition-all shadow-md shadow-purple-500/20"
-                                    title="Zoom"
-                                >
-                                    <span className="material-symbols-outlined text-xl">zoom_in</span>
-                                </button>
-                            </>
-                        )}
-                    </div>
-                </div>
-
-                {/* 3. Thumbnail Gallery Strip (Matching User Spec) */}
-                <div className="bg-white dark:bg-[#1A1A1A] p-4 rounded-2xl border border-border-color dark:border-[#302839] shadow-sm">
-                    <div className="flex gap-4 overflow-x-auto pb-2 scrollbar-thin scrollbar-thumb-gray-200 dark:scrollbar-thumb-[#333]">
-                        {resultImages.length > 0 ? (
-                            resultImages.map((url, idx) => (
+                {/* 2. Thumbnail List Area (BOTTOM) */}
+                {resultImages.length > 0 && (
+                    <div className="bg-main-bg dark:bg-[#121212] p-2 sm:p-3 rounded-2xl border-2 border-border-color dark:border-[#302839] shadow-sm animate-slide-up">
+                        <div className="flex gap-2 sm:gap-3 overflow-x-auto pb-1 scrollbar-hide snap-x snap-mandatory">
+                            {resultImages.map((url, idx) => (
                                 <button
-                                    key={idx}
+                                    key={url}
                                     onClick={() => setSelectedIndex(idx)}
-                                    className={`relative flex-shrink-0 w-32 md:w-40 lg:w-48 aspect-video rounded-xl overflow-hidden border-4 transition-all duration-300 transform ${
+                                    className={`relative flex-shrink-0 w-24 sm:w-28 md:w-36 aspect-video rounded-lg overflow-hidden border-2 transition-all duration-300 transform snap-center ${
                                         selectedIndex === idx 
-                                            ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105 shadow-xl' 
-                                            : 'border-transparent opacity-60 hover:opacity-100 hover:scale-102 grayscale-[50%] hover:grayscale-0'
+                                            ? 'border-[#7f13ec] ring-2 ring-purple-500/10 scale-105 shadow-md z-10' 
+                                            : 'border-transparent opacity-60 hover:opacity-100 grayscale-[40%] hover:grayscale-0'
                                     }`}
                                 >
                                     <img src={url} className="w-full h-full object-cover" alt={`Thumb ${idx + 1}`} />
                                     {selectedIndex === idx && (
-                                        <div className="absolute inset-0 bg-accent/10 pointer-events-none"></div>
+                                        <div className="absolute inset-0 bg-accent/5 pointer-events-none"></div>
                                     )}
                                 </button>
-                            ))
-                        ) : (
-                            <div className="flex gap-4 opacity-10">
-                                {[1, 2, 3, 4].map(i => (
-                                    <div key={i} className="w-32 md:w-40 lg:w-48 aspect-video rounded-xl bg-gray-400 animate-pulse"></div>
-                                ))}
-                            </div>
-                        )}
+                            ))}
+                        </div>
                     </div>
-                </div>
+                )}
             </main>
         </div>
     );
