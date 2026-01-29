@@ -25,8 +25,8 @@ const ResolutionSelector: React.FC<ResolutionSelectorProps> = ({ value, onChange
   return (
     <div className="w-full">
         <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('opt.resolution')}</label>
-        {/* Optimized Grid */}
-        <div className={`grid gap-3 ${visibleOptions.length <= 2 ? 'grid-cols-2' : 'grid-cols-2 lg:grid-cols-4'}`}>
+        {/* Optimized Grid - Always 2 columns to form 2 rows for 4 items */}
+        <div className="grid gap-3 grid-cols-2">
             {visibleOptions.map(option => (
                 <button
                     key={option.value}

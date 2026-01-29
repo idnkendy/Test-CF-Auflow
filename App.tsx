@@ -445,11 +445,11 @@ const AppContent: React.FC = () => {
 
       if (session && view === 'app') {
           return (
-              <div className="h-[100dvh] bg-main-bg dark:bg-[#121212] font-sans text-text-primary dark:text-[#EAEAEA] flex flex-col transition-colors duration-300 overflow-hidden relative">
+              <div className="min-h-screen bg-main-bg dark:bg-[#121212] font-sans text-text-primary dark:text-[#EAEAEA] flex flex-col transition-colors duration-300 relative">
                   <Header onGoHome={handleGoHome} onThemeToggle={handleThemeToggle} theme={theme} onSignOut={handleSignOut} onOpenGallery={handleOpenGallery} onUpgrade={handleNavigateToPricing} onOpenProfile={handleOpenProfile} userStatus={userStatus} user={session.user} onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)} />
                   <Navigation activeTool={activeTool} setActiveTool={(tool) => { if (tool === Tool.VideoGeneration) { setView('video'); safeHistoryPush('/video'); } else { setActiveTool(tool); } setIsMobileNavOpen(false); }} isMobileOpen={isMobileNavOpen} onCloseMobile={() => setIsMobileNavOpen(false)} onGoHome={handleGoHome} />
-                  <div className="relative flex flex-col flex-grow overflow-hidden">
-                      <main ref={mainContentRef} className="flex-1 bg-surface/90 dark:bg-[#191919]/90 backdrop-blur-md overflow-y-auto scrollbar-hide p-3 sm:p-6 lg:p-8 relative z-0 transition-colors duration-300" style={{ WebkitOverflowScrolling: 'touch' }} >
+                  <div className="relative flex flex-col flex-grow">
+                      <main ref={mainContentRef} className="flex-1 bg-surface/90 dark:bg-[#191919]/90 backdrop-blur-md p-3 sm:p-6 lg:p-8 relative z-0 transition-colors duration-300">
                           {isExtendedTool && (
                               <button onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)} className="flex items-center gap-2 text-text-secondary dark:text-gray-400 hover:text-[#7f13ec] dark:hover:text-[#7f13ec] mb-6 transition-colors font-medium text-sm group" >
                                   <div className="p-1.5 rounded-full bg-gray-100 dark:bg-gray-800 group-hover:bg-[#7f13ec]/10 transition-colors"> <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}> <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /> </svg> </div> {t('common.back')}
