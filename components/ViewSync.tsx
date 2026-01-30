@@ -3,7 +3,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService'; // Flow Import
+import * as externalVideoService from '../services/externalVideoService';
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { ViewSyncState } from '../state/toolState';
 import { refundCredits } from '../services/paymentService';
@@ -17,6 +17,7 @@ import OptionSelector from './common/OptionSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import SafetyWarningModal from './common/SafetyWarningModal';
 import ImagePreviewModal from './common/ImagePreviewModal';
+import ImageComparator from './ImageComparator';
 import { useLanguage } from '../hooks/useLanguage';
 
 interface ViewSyncProps {
@@ -37,20 +38,24 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
     } = state;
 
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
+    const [selectedIndex, setSelectedIndex] = useState(0);
     
-    // NEW: State to track if we are in the selection screen or workspace
+    // Track if we are in the selection screen or workspace for Creative tab
     const [isCreativeModeSelected, setIsCreativeModeSelected] = useState(false);
     
-    // NEW: Track multiple generating views for Batch Mode
+    // Track multiple generating views for Batch Mode
     const [generatingViews, setGeneratingViews] = useState<Set<string>>(new Set());
 
     // Sync latest results for async updates
     const latestResultsRef = useRef(creativeResults);
     useEffect(() => { latestResultsRef.current = creativeResults; }, [creativeResults]);
+
+    useEffect(() => {
+        if (resultImages.length > 0) setSelectedIndex(0);
+    }, [resultImages.length]);
 
     // --- Translated Options ---
     const perspectiveAngles = useMemo(() => [
@@ -119,8 +124,6 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         }
     ], [t]);
 
-    // --- Dynamic Slots (WITH IDs) ---
-    // Added 'id' property to maintain consistency across language switches
     const interiorSlots = useMemo(() => [
         { id: 'living_room', name: t('sync.creative.slot.living_room'), icon: 'chair', action: 'sitting on sofa' },
         { id: 'bedroom', name: t('sync.creative.slot.bedroom'), icon: 'bed', action: 'resting on bed' },
@@ -155,17 +158,16 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         }
     };
     const unitCost = getCostPerImage(); 
-    
     const slots = creativeOption === 'architecture' ? architectureSlots : interiorSlots;
-    // Batch cost: 1 image per slot * unitCost
     const creativeTotalCost = slots.length * unitCost;
+
+    // Fix: Defined handleFileSelect to resolve the missing name error in the Creative workspace tab.
+    const handleFileSelect = (fileData: FileData | null) => {
+        onStateChange({ sourceImage: fileData, resultImages: [], creativeResults: {} });
+    };
 
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
-        // Nếu chuyển về Standard, xóa ảnh hướng dẫn (dù không còn UI vẽ nhưng vẫn clear state cho sạch)
-        if (val === 'Standard') {
-            onStateChange({ directionImage: null });
-        }
     };
 
     const handleSelectCreativeOption = (optionId: string) => {
@@ -177,40 +179,27 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
         setIsCreativeModeSelected(false);
     };
 
-    // Use ID instead of Name for unique key generation
     const getResultKey = (option: string, slotId: string) => `${option}-${slotId}`;
 
     // --- STANDARD SYNC GENERATE ---
     const handleGenerate = async () => {
         const totalCost = numberOfImages * unitCost;
         if (onDeductCredits && userCredits < totalCost) {
-             if (onInsufficientCredits) {
-                 onInsufficientCredits();
-             } else {
-                 onStateChange({ error: `${t('common.insufficient')}. Cần ${totalCost} credits.` });
-             }
+             if (onInsufficientCredits) onInsufficientCredits();
              return;
         }
-
         if (!sourceImage) {
             onStateChange({ error: t('err.input.image') });
             return;
         }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
         setStatusMessage(t('common.processing'));
-        setUpscaleWarning(null);
 
         let logId: string | null = null;
         let jobId: string | null = null;
 
-        // Use Flow for all resolutions
-        const useFlow = true;
-
         try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(totalCost, `Đồng bộ view (${numberOfImages} ảnh) - ${resolution}`);
-            }
-
+            if (onDeductCredits) logId = await onDeductCredits(totalCost, `Đồng bộ view (${numberOfImages} ảnh) - ${resolution}`);
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId) {
                 jobId = await jobService.createJob({
@@ -221,165 +210,70 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                     usage_log_id: logId
                 });
             }
-
             if (jobId) await jobService.updateJobStatus(jobId, 'processing');
 
             const promptParts = [];
             const atmosphere = atmosphericAngles.find(a => a.id === selectedAtmosphere);
             const framing = framingAngles.find(f => f.id === selectedFraming);
             
-            // Build Prompt based on Scene Type
             if (sceneType === 'interior') {
                 const interiorAngle = interiorViewAngles.find(a => a.id === selectedInteriorAngle);
-                if (interiorAngle && interiorAngle.id !== 'default') {
-                    promptParts.push(interiorAngle.prompt);
-                }
+                if (interiorAngle && interiorAngle.id !== 'default') promptParts.push(interiorAngle.prompt);
             } else {
                 const perspective = perspectiveAngles.find(p => p.id === selectedPerspective);
-                if (perspective && perspective.id !== 'default') {
-                    promptParts.push(`${perspective.promptClause}`);
-                }
+                if (perspective && perspective.id !== 'default') promptParts.push(`${perspective.promptClause}`);
             }
 
-            if (framing && framing.id !== 'none') {
-                promptParts.push(framing.promptClause);
-            }
-
-            if (atmosphere && atmosphere.id !== 'default') {
-                promptParts.push(`Render it ${atmosphere.promptClause}`);
-            }
-
+            if (framing && framing.id !== 'none') promptParts.push(framing.promptClause);
+            if (atmosphere && atmosphere.id !== 'default') promptParts.push(`Render it ${atmosphere.promptClause}`);
             if (customPrompt) promptParts.push(customPrompt);
             
-            // Base prompt construction
-            let finalPrompt = "";
-            if (promptParts.length > 0) {
-                finalPrompt = `Based on the building design in the reference image, ${promptParts.join(', ')}.`;
-            } else {
-                finalPrompt = "Enhance the quality and clarity of this view. Maintain the exact same architectural style and content.";
-            }
-            
-            finalPrompt += ` The image is based on the provided reference design, preserving all original architectural details and materials. Photorealistic architectural photography.`;
+            let finalPrompt = promptParts.length > 0 ? `Based on the building design in the reference image, ${promptParts.join(', ')}.` : "Enhance the quality and clarity of this view. Maintain the exact same architectural style and content.";
+            finalPrompt += ` Preserving all original architectural details and materials. Photorealistic architectural photography.`;
 
-            let imageUrls: string[] = [];
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+            const collectedUrls: string[] = [];
+            const inputImages: FileData[] = [sourceImage];
+            if (directionImage) inputImages.push(directionImage);
 
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                const collectedUrls: string[] = [];
-                const inputImages: FileData[] = [sourceImage];
-                if (directionImage) inputImages.push(directionImage);
-
-                let lastError: any = null;
-
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage(t('common.processing'));
-                        const result = await externalVideoService.generateFlowImage(
-                            finalPrompt,
-                            inputImages,
-                            aspectRatio, // Pass raw string
-                            1,
-                            modelName,
-                            (msg) => setStatusMessage(t('common.processing'))
-                        );
-
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-
-                            // Upscale Check
-                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-                            if (shouldUpscale) {
-                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes, aspectRatio);
-                                        if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
-                                    }
-                                } catch (e: any) {
-                                    throw new Error(`Lỗi Upscale: ${e.message}`);
-                                }
+            let lastError: any = null;
+            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
+                try {
+                    const result = await externalVideoService.generateFlowImage(finalPrompt, inputImages, aspectRatio, 1, modelName, (msg) => setStatusMessage(t('common.processing')));
+                    if (result.imageUrls && result.imageUrls.length > 0) {
+                        let finalUrl = result.imageUrls[0];
+                        if ((resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0) {
+                            const mediaId = result.mediaIds[0];
+                            if (mediaId) {
+                                const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                                const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes, aspectRatio);
+                                if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
                             }
-                            
-                            collectedUrls.push(finalUrl);
-                            onStateChange({ resultImages: [...collectedUrls] });
-                            
-                            historyService.addToHistory({ 
-                                tool: Tool.ViewSync, 
-                                prompt: `Flow (${modelName}): ${finalPrompt}`, 
-                                sourceImageURL: sourceImage.objectURL, 
-                                resultImageURL: finalUrl 
-                            });
-                            
-                            return finalUrl;
                         }
-                        return null;
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
-                        return null;
+                        collectedUrls.push(finalUrl);
+                        onStateChange({ resultImages: [...collectedUrls] });
+                        historyService.addToHistory({ tool: Tool.ViewSync, prompt: `Flow: ${finalPrompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: finalUrl });
+                        return finalUrl;
                     }
-                });
+                    return null;
+                } catch (e: any) { lastError = e; return null; }
+            });
 
-                const results = await Promise.all(promises);
-                imageUrls = results.filter((url): url is string => url !== null);
-                
-                const failedCount = numberOfImages - imageUrls.length;
-
-                if (imageUrls.length > 0) {
-                    // Success (at least partial)
-                    if (failedCount > 0 && logId && user) {
-                        const refundAmount = failedCount * unitCost;
-                        await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                        const errorMsg = t('msg.refund_success')
-                            .replace('{success}', imageUrls.length.toString())
-                            .replace('{total}', numberOfImages.toString())
-                            .replace('{amount}', refundAmount.toString())
-                            .replace('{failed}', failedCount.toString());
-                        onStateChange({ error: errorMsg });
-                    }
-                } else {
-                    // Total failure
-                    if (lastError) throw lastError;
-                    throw new Error("Không thể tạo ảnh nào. Vui lòng thử lại sau.");
-                }
-
-            } else {
-                // Fallback logic if any
-            }
-
-            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-            
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+            if (successfulUrls.length > 0) {
+                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
+            } else { if (lastError) throw lastError; throw new Error("Lỗi tạo ảnh."); }
         } catch (err: any) {
-            const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
-            
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
-                setShowSafetyModal(true);
-                onStateChange({ error: t('msg.safety_violation') });
-            } else {
-                onStateChange({ error: t(friendlyMsg) });
-            }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                // Refund full amount on total failure caught here
-                await refundCredits(user.id, totalCost, `Hoàn tiền: Lỗi đồng bộ view (${rawMsg})`, logId);
-            }
-            
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
-        } finally {
-            onStateChange({ isLoading: false });
-            setStatusMessage(null);
-        }
+            const friendlyKey = jobService.mapFriendlyErrorMessage(err.message || "");
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
+            else onStateChange({ error: t(friendlyKey) });
+        } finally { onStateChange({ isLoading: false }); setStatusMessage(null); }
     };
 
-    // --- HELPER: Construct Prompt for Single/Batch Creative ---
+    // --- CREATIVE VIEW HELPERS ---
     const getPromptForSlot = (slot: any) => {
         let fullPrompt = "";
-        
         if (creativeOption === 'architecture') {
             const viewDescription = slot.promptDescription || slot.name;
             const charPrompt = characterImage 
@@ -389,27 +283,10 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                 : "";
 
             if (language === 'vi') {
-                fullPrompt = `Bạn là một Kiến trúc sư chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu kiến trúc đại diện cho 100% hình khối và chi tiết thực tế. Nhiệm vụ của bạn là vẽ lại một view kiến trúc cụ thể (cận cảnh hoặc nghệ thuật) từ công trình này.
-YÊU CẦU BẮT BUỘC:
-- GIỮ NGUYÊN 100% mọi chi tiết kiến trúc, hình khối, vật liệu và cấu trúc từ ảnh mẫu.
-- TUYỆT ĐỐI KHÔNG vẽ thêm, không sáng tạo chi tiết mới, không thay đổi cấu kiện nếu không có trong ảnh gốc. Chỉ được phép lấy đúng những gì đang có trên công trình gốc để thể hiện.
-- Đối với các view CẬN CẢNH và NGHỆ THUẬT: Bạn chỉ được phép tập trung vào những thành phần hiện hữu của công trình, không được phép nội suy hay sử dụng chi tiết lạ.
-- Bạn chỉ được phép thay đổi góc máy, tiêu cự ống kính, và điều kiện ánh sáng để tạo ra bức ảnh nhiếp ảnh kiến trúc chuyên nghiệp.
-- VIEW CẦN TẠO: "${viewDescription}".
-${charPrompt}
-Kết quả phải là một ảnh chụp thực tế, 8k, sắc nét tuyệt đối.`;
+                fullPrompt = `Bạn là một Kiến trúc sư chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu kiến trúc đại diện cho 100% hình khối và chi tiết thực tế. Nhiệm vụ của bạn là vẽ lại một view kiến trúc cụ thể (cận cảnh hoặc nghệ thuật) từ công trình này.\nYÊU CẦU BẮT BUỘC:\n- GIỮ NGUYÊN 100% mọi chi tiết kiến trúc, hình khối, vật liệu và cấu trúc từ ảnh mẫu.\n- TUYỆT ĐỐI KHÔNG vẽ thêm, không sáng tạo chi tiết mới, không thay đổi cấu kiện nếu không có trong ảnh gốc. Chỉ được phép lấy đúng những gì đang có trên công trình gốc để thể hiện.\n- Đối với các view CẬN CẢNH và NGHỆ THUẬT: Bạn chỉ được phép tập trung vào những thành phần hiện hữu của công trình, không được phép nội suy hay sử dụng chi tiết lạ.\n- Bạn chỉ được phép thay đổi góc máy, tiêu cự ống kính, và điều kiện ánh sáng để tạo ra bức ảnh nhiếp ảnh kiến trúc chuyên nghiệp.\n- VIEW CẬN CẢNH CẦN TẠO: "${viewDescription}".\n${charPrompt}\nKết quả phải là một ảnh chụp thực tế, 8k, sắc nét tuyệt đối.`;
             } else {
-                 fullPrompt = `You are a professional Architect. You are provided with an architectural sample image representing 100% of the actual massing and details. Your task is to redraw a specific architectural view (close-up or artistic) from this building.
-MANDATORY REQUIREMENTS:
-- KEEP 100% of all architectural details, massing, materials, and structure from the sample image.
-- ABSOLUTELY DO NOT add, invent new details, or change components if they are not in the original image. You are only allowed to depict what is currently on the original building.
-- For CLOSE-UP and ARTISTIC views: You are only allowed to focus on existing components of the building, no interpolation or use of strange details.
-- You are only allowed to change camera angle, lens focal length, and lighting conditions to create a professional architectural photograph.
-- VIEW TO GENERATE: "${viewDescription}".
-${charPrompt}
-The result must be a photorealistic, 8k, absolutely sharp image.`;
+                 fullPrompt = `You are a professional Architect. You are provided with an architectural sample image representing 100% of the actual massing and details. Your task is to redraw a specific architectural view (close-up or artistic) from this building.\nMANDATORY REQUIREMENTS:\n- KEEP 100% of all architectural details, massing, materials, and structure from the sample image.\n- ABSOLUTELY DO NOT add, invent new details, or change components if they are not in the original image. You are only allowed to depict what is currently on the original building.\n- For CLOSE-UP and ARTISTIC views: You are only allowed to focus on existing components of the building, no interpolation or use of strange details.\n- You are only allowed to change camera angle, lens focal length, and lighting conditions to create a professional architectural photograph.\n- VIEW TO GENERATE: "${viewDescription}".\n${charPrompt}\nThe result must be a photorealistic, 8k, absolutely sharp image.`;
             }
-
         } else if (creativeOption === 'interior-from-arch') {
             const viewName = slot.name;
             const charPrompt = characterImage 
@@ -417,123 +294,53 @@ The result must be a photorealistic, 8k, absolutely sharp image.`;
                 : "";
 
             if (language === 'vi') {
-                fullPrompt = `Bạn là một Kiến trúc sư và Nhà thiết kế nội thất tài ba. Bạn được cung cấp một hình ảnh NGOẠI THẤT của một công trình kiến trúc. Nhiệm vụ của bạn là thiết kế và vẽ ra không gian NỘI THẤT bên trong công trình đó.
-YÊU CẦU BẮT BUỘC:
-- PHONG CÁCH: Nội thất phải hoàn toàn đồng nhất với phong cách kiến trúc ngoại thất (ví dụ: nếu kiến trúc hiện đại tối giản thì nội thất cũng phải hiện đại tối giản).
-- HỆ CỬA SỔ: Nếu không gian có cửa sổ, kiểu dáng khung cửa, vật liệu và tỷ lệ của cửa sổ PHẢI giống hệt với hệ cửa sổ thấy được ở mặt tiền kiến trúc trong ảnh gốc.
-- VẬT LIỆU: Sử dụng bảng vật liệu và màu sắc tương đồng với ngoại thất để tạo sự xuyên suốt.
-- KHÔNG GIAN CẦN TẠO: "${viewName}".
-${charPrompt}
-Kết quả là một bức ảnh chụp nhiếp ảnh nội thất chuyên nghiệp, 8k, ánh sáng ban ngày tự nhiên cực kỳ chân thực.`;
+                fullPrompt = `Bạn là một Kiến trúc sư và Nhà thiết kế nội thất tài ba. Bạn được cung cấp một hình ảnh NGOẠI THẤT của một công trình kiến trúc. Nhiệm vụ của bạn là thiết kế và vẽ ra không gian NỘI THẤT bên trong công trình đó.\nYÊU CẦU BẮT BUỘC:\n- PHONG CÁCH: Nội thất phải hoàn toàn đồng nhất với phong cách kiến trúc ngoại thất (ví dụ: nếu kiến trúc hiện đại tối giản thì nội thất cũng phải hiện đại tối giản).\n- HỆ CỬA SỔ: Nếu không gian có cửa sổ, kiểu dáng khung cửa, vật liệu và tỷ lệ của cửa sổ PHẢI giống hệt với hệ cửa sổ thấy được ở mặt tiền kiến trúc trong ảnh gốc.\n- VẬT LIỆU: Sử dụng bảng vật liệu và màu sắc tương đồng với ngoại thất để tạo sự xuyên suốt.\n- KHÔNG GIAN CẦN TẠO: "${viewName}".\n${charPrompt}\nKết quả là một bức ảnh chụp nhiếp ảnh nội thất chuyên nghiệp, 8k, ánh sáng ban ngày tự nhiên cực kỳ chân thực.`;
             } else {
-                 fullPrompt = `You are a talented Architect and Interior Designer. You are provided with an EXTERIOR image of an architectural building. Your task is to design and draw the INTERIOR space inside that building.
-MANDATORY REQUIREMENTS:
-- STYLE: The interior must be completely consistent with the exterior architectural style (e.g., if the architecture is modern minimalist, the interior must also be modern minimalist).
-- WINDOW SYSTEM: If the space has windows, the style of the window frames, materials, and proportions MUST be identical to the window system visible on the architectural facade in the original image.
-- MATERIALS: Use a material and color palette similar to the exterior to create continuity.
-- SPACE TO GENERATE: "${viewName}".
-${charPrompt}
-The result is a professional interior photograph, 8k, extremely realistic natural daylight.`;
+                 fullPrompt = `You are a talented Architect and Interior Designer. You are provided with an EXTERIOR image of an architectural building. Your task is to design and draw the INTERIOR space inside that building.\nMANDATORY REQUIREMENTS:\n- STYLE: The interior must be completely consistent with the exterior architectural style.\n- WINDOW SYSTEM: If the space has windows, the style of the window frames, materials, and proportions MUST be identical to the window system visible on the architectural facade in the original image.\n- MATERIALS: Use a material and color palette similar to the exterior to create continuity.\n- SPACE TO GENERATE: "${viewName}".\n${charPrompt}\nThe result is a professional interior photograph, 8k, extremely realistic natural daylight.`;
             }
-
         } else {
-            // Existing Interior Logic
             const action = slot.action || "active in the space";
-            let charPrompt = "";
-            if (characterImage) {
-                if (language === 'vi') {
-                     charPrompt = `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào không gian một cách tự nhiên. Nhân vật nên ${action}. Đảm bảo trang phục và ngoại hình của nhân vật thống nhất với ảnh nhân vật được cung cấp.`;
-                } else {
-                     charPrompt = `ADD CHARACTER: Naturally integrate the character from the second image into the space. The character should be ${action}. Ensure consistent clothing and appearance with the provided character image.`;
-                }
-            }
+            let charPrompt = characterImage 
+                ? (language === 'vi' 
+                    ? `THÊM NHÂN VẬT: Hãy đưa nhân vật trong ảnh thứ hai vào không gian một cách tự nhiên. Nhân vật nên ${action}. Đảm bảo trang phục và ngoại hình của nhân vật thống nhất với ảnh nhân vật được cung cấp.` 
+                    : `ADD CHARACTER: Naturally integrate the character from the second image into the space. The character should be ${action}. Ensure consistent clothing and appearance with the provided character image.`)
+                : "";
             
             if (language === 'vi') {
-                fullPrompt = `Bạn là một Kiến trúc sư nội thất chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu đại diện cho style, màu sắc và vật liệu. Nhiệm vụ của bạn là tưởng tượng và vẽ ra một không gian khác trong cùng ngôi nhà đó.
-YÊU CẦU BẮT BUỘC:
-- GIỮ NGUYÊN Style thiết kế (ví dụ: Japandi, Industrial, Tân cổ điển...).
-- GIỮ NGUYÊN Bảng màu chủ đạo (ví dụ: Gỗ óc chó + Da bò + Xám bê tông).
-- GIỮ NGUYÊN Tính chất vật liệu (độ bóng, độ nhám, vân gỗ).
-- KHÔNG GIAN CẦN TẠO: "${slot.name}".
-${charPrompt}
-Hãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, thực tế, 8k, ánh sáng ban ngày tự nhiên dịu nhẹ.`;
+                fullPrompt = `Bạn là một Kiến trúc sư nội thất chuyên nghiệp. Bạn được cung cấp một hình ảnh mẫu đại diện cho style, màu sắc và vật liệu. Nhiệm vụ của bạn là tưởng tượng và vẽ ra một không gian khác trong cùng ngôi nhà đó.\nYÊU CẦU BẮT BUỘC:\n- GIỮ NGUYÊN Style thiết kế.\n- GIỮ NGUYÊN Bảng màu chủ đạo.\n- GIỮ NGUYÊN Tính chất vật liệu.\n- KHÔNG GIAN CẦN TẠO: "${slot.name}".\n${charPrompt}\nHãy vẽ một bức ảnh chụp nhiếp ảnh kiến trúc chuyên nghiệp, thực tế, 8k, ánh sáng ban ngày tự nhiên dịu nhẹ.`;
             } else {
-                fullPrompt = `You are a professional Interior Architect. You are provided with a sample image representing style, color, and materials. Your task is to imagine and draw another space in the same house.
-MANDATORY REQUIREMENTS:
-- KEEP the design style (e.g., Japandi, Industrial, Neoclassical...).
-- KEEP the dominant color palette (e.g., Walnut wood + Cowhide + Concrete gray).
-- KEEP material properties (gloss, roughness, wood grain).
-- SPACE TO GENERATE: "${slot.name}".
-${charPrompt}
-Draw a professional architectural photograph, realistic, 8k, soft natural daylight.`;
+                fullPrompt = `You are a professional Interior Architect. You are provided with a sample image representing style, color, and materials. Your task is to imagine and draw another space in the same house.\nMANDATORY REQUIREMENTS:\n- KEEP the design style.\n- KEEP the dominant color palette.\n- KEEP material properties.\n- SPACE TO GENERATE: "${slot.name}".\n${charPrompt}\nDraw a professional architectural photograph, realistic, 8k, soft natural daylight.`;
             }
         }
-        
         return fullPrompt;
     };
 
-    // --- NEW: HANDLE SINGLE VIEW GENERATION ---
     const handleGenerateSingleView = async (slot: any) => {
         if (onDeductCredits && userCredits < unitCost) {
-             if (onInsufficientCredits) {
-                 onInsufficientCredits();
-             } else {
-                 onStateChange({ error: `${t('common.insufficient')}. Cần ${unitCost} credits.` });
-             }
+             if (onInsufficientCredits) onInsufficientCredits();
              return;
         }
-
         if (!sourceImage) {
             onStateChange({ error: t('err.input.image') });
             return;
         }
 
-        // Use ID for consistent key across languages
         const uniqueKey = getResultKey(creativeOption, slot.id);
         setGeneratingViews(prev => new Set(prev).add(uniqueKey));
         onStateChange({ error: null });
 
-        let logId: string | null = null;
-        let jobId: string | null = null;
-
         try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(unitCost, `Creative View: ${slot.name} (${resolution})`);
-            }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.ViewSync,
-                    prompt: `Creative View: ${slot.name}`,
-                    cost: unitCost,
-                    usage_log_id: logId
-                });
-            }
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-
+            if (onDeductCredits) await onDeductCredits(unitCost, `Creative View: ${slot.name} (${resolution})`);
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const inputImages = [sourceImage];
             if (characterImage) inputImages.push(characterImage);
 
             const fullPrompt = getPromptForSlot(slot);
-
-            const result = await externalVideoService.generateFlowImage(
-                fullPrompt,
-                inputImages,
-                aspectRatio,
-                1,
-                modelName
-            );
+            const result = await externalVideoService.generateFlowImage(fullPrompt, inputImages, aspectRatio, 1, modelName);
 
             if (result.imageUrls && result.imageUrls.length > 0) {
                 let finalUrl = result.imageUrls[0];
-                
-                // Upscale Check
-                const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-                if (shouldUpscale) {
+                if ((resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0) {
                      try {
                         const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
                         const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
@@ -541,40 +348,15 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
                     } catch (e) { console.error("Upscale failed", e); }
                 }
 
-                // Update results
                 const currentResults = latestResultsRef.current || {};
                 const newResults = { ...currentResults, [uniqueKey]: finalUrl };
                 onStateChange({ creativeResults: newResults });
-                
-                if (jobId) await jobService.updateJobStatus(jobId, 'completed', finalUrl);
-
-                historyService.addToHistory({ 
-                    tool: Tool.ViewSync, 
-                    prompt: `Creative: ${slot.name}`, 
-                    sourceImageURL: sourceImage.objectURL, 
-                    resultImageURL: finalUrl 
-                });
-            } else {
-                throw new Error("Không thể tạo ảnh.");
+                historyService.addToHistory({ tool: Tool.ViewSync, prompt: `Creative: ${slot.name}`, sourceImageURL: sourceImage.objectURL, resultImageURL: finalUrl });
             }
-
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
-            
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
-                setShowSafetyModal(true);
-                onStateChange({ error: t('msg.safety_violation') });
-            } else {
-                onStateChange({ error: t(friendlyMsg) });
-            }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                await refundCredits(user.id, unitCost, `Hoàn tiền: Lỗi view ${slot.name} (${rawMsg})`, logId);
-            }
-            
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            if (rawMsg.includes("SAFETY_POLICY_VIOLATION")) setShowSafetyModal(true);
+            else onStateChange({ error: t(jobService.mapFriendlyErrorMessage(rawMsg)) });
         } finally {
             setGeneratingViews(prev => {
                 const next = new Set(prev);
@@ -584,73 +366,35 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
         }
     };
 
-    // --- CREATIVE BATCH GENERATION ---
     const handleGenerateBatch = async () => {
         if (onDeductCredits && userCredits < creativeTotalCost) {
-             if (onInsufficientCredits) {
-                 onInsufficientCredits();
-             } else {
-                 onStateChange({ error: `${t('common.insufficient')}. Cần ${creativeTotalCost} credits.` });
-             }
+             if (onInsufficientCredits) onInsufficientCredits();
              return;
         }
-
         if (!sourceImage) {
             onStateChange({ error: t('err.input.image') });
             return;
         }
 
-        // Initialize loading state for all slots using unique keys (ID based)
         const allViewKeys = new Set(slots.map(s => getResultKey(creativeOption, s.id)));
         setGeneratingViews(allViewKeys);
         onStateChange({ error: null });
 
-        let logId: string | null = null;
-        let jobId: string | null = null;
-
         try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(creativeTotalCost, `Creative Batch: ${slots.length} views (${resolution})`);
-            }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.ViewSync,
-                    prompt: `Batch Generation: ${slots.length} views`,
-                    cost: creativeTotalCost,
-                    usage_log_id: logId
-                });
-            }
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-
+            if (onDeductCredits) await onDeductCredits(creativeTotalCost, `Creative Batch: ${slots.length} views (${resolution})`);
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const inputImages = [sourceImage];
             if (characterImage) inputImages.push(characterImage);
 
-            let lastError: any = null;
-
-            // Execute in parallel
             const promises = slots.map(async (slot) => {
                 const uniqueKey = getResultKey(creativeOption, slot.id);
                 try {
                     const fullPrompt = getPromptForSlot(slot);
-
-                    const result = await externalVideoService.generateFlowImage(
-                        fullPrompt,
-                        inputImages,
-                        aspectRatio,
-                        1, // 1 image per slot
-                        modelName
-                    );
+                    const result = await externalVideoService.generateFlowImage(fullPrompt, inputImages, aspectRatio, 1, modelName);
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
                         let finalUrl = result.imageUrls[0];
-                        // Upscale Check
-                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-                        if (shouldUpscale) {
+                        if ((resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0) {
                              try {
                                 const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
                                 const upscaleRes = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
@@ -658,24 +402,13 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
                             } catch (e) { console.error("Upscale failed", e); }
                         }
 
-                        // Use Ref to access latest results state without closure staleness
                         const currentResults = latestResultsRef.current || {};
                         const newResults = { ...currentResults, [uniqueKey]: finalUrl };
                         onStateChange({ creativeResults: newResults });
-                        
-                        historyService.addToHistory({ 
-                            tool: Tool.ViewSync, 
-                            prompt: `Creative: ${slot.name}`, 
-                            sourceImageURL: sourceImage.objectURL, 
-                            resultImageURL: finalUrl 
-                        });
-                        return true; // Success
+                        historyService.addToHistory({ tool: Tool.ViewSync, prompt: `Creative: ${slot.name}`, sourceImageURL: sourceImage.objectURL, resultImageURL: finalUrl });
                     }
-                    return false; // Failed
                 } catch (err) {
                     console.error(`Error generating view ${slot.name}:`, err);
-                    lastError = err;
-                    return false; // Failed
                 } finally {
                     setGeneratingViews(prev => {
                         const next = new Set(prev);
@@ -684,274 +417,192 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
                     });
                 }
             });
-
-            const results = await Promise.all(promises);
-            const successfulCount = results.filter(r => r).length;
-            const failedCount = slots.length - successfulCount;
-
-            if (successfulCount > 0) {
-                if (jobId) await jobService.updateJobStatus(jobId, 'completed');
-                
-                // Partial refund for Creative Batch
-                if (failedCount > 0 && logId && user) {
-                    const refundAmount = failedCount * unitCost;
-                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} view lỗi (Creative Batch)`, logId);
-                    const errorMsg = t('msg.refund_success')
-                        .replace('{success}', successfulCount.toString())
-                        .replace('{total}', slots.length.toString())
-                        .replace('{amount}', refundAmount.toString())
-                        .replace('{failed}', failedCount.toString());
-                    onStateChange({ error: errorMsg });
-                }
-            } else {
-                 if (lastError) throw lastError;
-                 throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
-            }
-
+            await Promise.all(promises);
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
-            
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
-                setShowSafetyModal(true);
-                onStateChange({ error: t('msg.safety_violation') });
-            } else {
-                onStateChange({ error: t(friendlyMsg) });
-            }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                await refundCredits(user.id, creativeTotalCost, `Hoàn tiền: Lỗi sáng tạo view (${rawMsg})`, logId);
-            }
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
-            setGeneratingViews(new Set()); // Clear all loading
+            if (rawMsg.includes("SAFETY_POLICY_VIOLATION")) setShowSafetyModal(true);
+            else onStateChange({ error: t(jobService.mapFriendlyErrorMessage(rawMsg)) });
+            setGeneratingViews(new Set());
         }
     };
-    
-    const handleFileSelect = (fileData: FileData | null) => onStateChange({ sourceImage: fileData, resultImages: [], directionImage: null });
-    const handleCharacterSelect = (fileData: FileData | null) => onStateChange({ characterImage: fileData });
 
-    const handleDownload = async (url: string, name: string) => {
-        setIsDownloading(true);
-        await externalVideoService.forceDownload(url, `creative-view-${name}-${Date.now()}.png`);
-        setIsDownloading(false);
+    // Fix: Refactored handleDownload to accept optional parameters and handle standard/creative views correctly. 
+    // This fixes the MouseEventHandler type mismatch error.
+    const handleDownload = async (url?: any, name?: any) => {
+        const actualUrl = typeof url === 'string' ? url : resultImages[selectedIndex];
+        const actualName = typeof name === 'string' ? name : 'synced-view';
+
+        if (actualUrl) {
+            setIsDownloading(true);
+            await externalVideoService.forceDownload(actualUrl, `view-sync-${actualName}-${Date.now()}.png`);
+            setIsDownloading(false);
+        }
     };
 
-    // --- NEW: HANDLE DOWNLOAD ALL FOR CREATIVE VIEW ---
     const handleDownloadAllCreative = async () => {
-        // Filter results specific to current mode to avoid downloading irrelevant cached images
         const currentModeKeys = slots.map(s => getResultKey(creativeOption, s.id));
         const urls = currentModeKeys.map(k => creativeResults[k]).filter(Boolean);
-        
         if (urls.length === 0) return;
-        
         setIsDownloading(true);
         for (const slot of slots) {
             const key = getResultKey(creativeOption, slot.id);
             const url = creativeResults[key];
             if (url) {
                 await externalVideoService.forceDownload(url, `creative-${slot.name}-${Date.now()}.png`);
-                // Add slight delay to prevent browser throttling downloads
                 await new Promise(r => setTimeout(r, 800)); 
             }
         }
         setIsDownloading(false);
     };
 
-    // --- NEW: HANDLE PREVIEW ZOOM WITH SCROLL TO TOP ---
     const handlePreview = (url: string) => {
         setPreviewImage(url);
-        // Scroll main viewport to top for better modal experience if needed, 
-        // though the new Portal Modal fixes the overlay issue regardless.
-        // But requested by user:
         window.scrollTo({ top: 0, behavior: 'smooth' });
-        const main = document.querySelector('main');
-        if (main) main.scrollTo({ top: 0, behavior: 'smooth' });
     };
 
     const selectedOptionData = creativeOptions.find(o => o.id === creativeOption);
     const hasCreativeResults = slots.some(s => !!creativeResults[getResultKey(creativeOption, s.id)]);
 
     return (
-        <div>
+        <div className="flex flex-col gap-0 w-full -mt-6">
+            <style>{`
+                .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+            `}</style>
+
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            {/* Tab Navigation */}
-            <div className="flex justify-center mb-8">
-                <div className="bg-gray-100 dark:bg-black/30 p-1 rounded-full inline-flex border border-gray-200 dark:border-white/10">
-                    <button 
-                        onClick={() => onStateChange({ activeTab: 'sync' })}
-                        className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${
-                            activeTab === 'sync' || !activeTab 
-                                ? 'bg-white dark:bg-[#7f13ec] text-black dark:text-white shadow-sm' 
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                        }`}
-                    >
-                        {t('sync.tab.sync')}
-                    </button>
-                    <button 
-                        onClick={() => onStateChange({ activeTab: 'creative' })}
-                        className={`px-6 py-2 rounded-full text-sm font-bold transition-all ${
-                            activeTab === 'creative' 
-                                ? 'bg-white dark:bg-[#7f13ec] text-black dark:text-white shadow-sm' 
-                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
-                        }`}
-                    >
-                        {t('sync.tab.creative')}
-                    </button>
+            <div className="flex justify-center mb-1">
+                <div className="bg-gray-100 dark:bg-black/30 p-0.5 rounded-full inline-flex border border-gray-200 dark:border-white/10">
+                    <button onClick={() => onStateChange({ activeTab: 'sync' })} className={`px-5 py-1.5 rounded-full text-sm font-bold transition-all ${activeTab === 'sync' || !activeTab ? 'bg-white dark:bg-[#7f13ec] text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{t('sync.tab.sync')}</button>
+                    <button onClick={() => onStateChange({ activeTab: 'creative' })} className={`px-5 py-1.5 rounded-full text-sm font-bold transition-all ${activeTab === 'creative' ? 'bg-white dark:bg-[#7f13ec] text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{t('sync.tab.creative')}</button>
                 </div>
             </div>
 
             {/* --- STANDARD SYNC VIEW --- */}
             {(activeTab === 'sync' || !activeTab) && (
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 animate-fade-in">
-                    <div className="space-y-4">
-                        <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                            <label className="block text-sm font-medium mb-2">{t('sync.step1')}</label>
-                            <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
-                        </div>
-                        <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 space-y-4">
-                            <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('sync.step2')}</label>
-                            
-                            {/* Scene Type Switcher */}
-                            <div className="flex bg-gray-100 dark:bg-gray-800 p-1 rounded-xl mb-4">
-                                <button 
-                                    onClick={() => onStateChange({ sceneType: 'exterior' })}
-                                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                                        sceneType === 'exterior' || !sceneType 
-                                            ? 'bg-white dark:bg-gray-600 shadow text-text-primary dark:text-white' 
-                                            : 'text-text-secondary dark:text-gray-400 hover:text-text-primary'
-                                    }`}
-                                >
-                                    {t('sync.scene.ext')}
-                                </button>
-                                <button 
-                                    onClick={() => onStateChange({ sceneType: 'interior' })}
-                                    className={`flex-1 py-2 rounded-lg text-sm font-semibold transition-colors ${
-                                        sceneType === 'interior' 
-                                            ? 'bg-white dark:bg-gray-600 shadow text-text-primary dark:text-white' 
-                                            : 'text-text-secondary dark:text-gray-400 hover:text-text-primary'
-                                    }`}
-                                >
-                                    {t('sync.scene.int')}
-                                </button>
-                            </div>
-
-                            {/* Dynamic Angle Selector based on Scene Type */}
-                            {(sceneType === 'exterior' || !sceneType) ? (
-                                <OptionSelector 
-                                    id="perspective" 
-                                    label={t('sync.angle.ext')}
-                                    options={perspectiveAngles.map(a => ({ value: a.id, label: a.label }))} 
-                                    value={selectedPerspective} 
-                                    onChange={(val) => onStateChange({ selectedPerspective: val })} 
-                                    variant="grid" 
-                                    disabled={!!directionImage || isLoading} 
-                                />
-                            ) : (
-                                <OptionSelector 
-                                    id="interior-angle" 
-                                    label={t('sync.angle.int')} 
-                                    options={interiorViewAngles.map(a => ({ value: a.id, label: a.label }))} 
-                                    value={selectedInteriorAngle} 
-                                    onChange={(val) => onStateChange({ selectedInteriorAngle: val })} 
-                                    variant="grid" 
-                                    disabled={!!directionImage || isLoading} 
-                                />
-                            )}
-
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                <OptionSelector 
-                                    id="framing" 
-                                    label={t('sync.framing')} 
-                                    options={framingAngles.map(a => ({ value: a.id, label: a.label }))} 
-                                    value={selectedFraming} 
-                                    onChange={(val) => onStateChange({ selectedFraming: val })} 
-                                    variant="select" 
-                                    disabled={isLoading} 
-                                />
-                                <OptionSelector 
-                                    id="atmosphere" 
-                                    label={t('sync.atmosphere')} 
-                                    options={atmosphericAngles.map(a => ({ value: a.id, label: a.label }))} 
-                                    value={selectedAtmosphere} 
-                                    onChange={(val) => onStateChange({ selectedAtmosphere: val })} 
-                                    variant="select" 
-                                    disabled={isLoading} 
-                                />
-                            </div>
-
-                            <textarea 
-                                rows={3} 
-                                className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm focus:ring-2 focus:ring-accent outline-none transition-all" 
-                                placeholder={t('sync.prompt_placeholder')}
-                                value={customPrompt} 
-                                onChange={(e) => onStateChange({ customPrompt: e.target.value })} 
-                            />
-                            
-                            <div className="grid grid-cols-2 gap-4">
-                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
-                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
-                            </div>
-                            <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
-                            
-                            <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-1 border border-gray-200 dark:border-gray-700">
-                                <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                                    <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                                    <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{unitCost * numberOfImages} Credits</span></span>
+                <div className="flex flex-col lg:flex-row gap-6 md:gap-8 w-full max-w-full items-stretch px-2 sm:px-4 mt-2">
+                    <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                        <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
+                            <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-3 border border-gray-200 dark:border-white/5">
+                                <div>
+                                    <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('sync.step1')}</label>
+                                    <ImageUpload onFileSelect={(f) => onStateChange({ sourceImage: f, resultImages: [], directionImage: null })} previewUrl={sourceImage?.objectURL} />
                                 </div>
-                                <div className="text-xs">
-                                    {userCredits < unitCost * numberOfImages ? (
-                                        <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
+                            </div>
+
+                            <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                                <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('sync.step2')}</label>
+                                <div className="flex bg-white dark:bg-[#121212] p-1 rounded-xl border border-gray-200 dark:border-[#302839]">
+                                    <button onClick={() => onStateChange({ sceneType: 'exterior' })} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${sceneType === 'exterior' || !sceneType ? 'bg-[#7f13ec] text-white shadow' : 'text-gray-400'}`}>{t('sync.scene.ext')}</button>
+                                    <button onClick={() => onStateChange({ sceneType: 'interior' })} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${sceneType === 'interior' ? 'bg-[#7f13ec] text-white shadow' : 'text-gray-400'}`}>{t('sync.scene.int')}</button>
+                                </div>
+                                <div className="space-y-3">
+                                    {(sceneType === 'exterior' || !sceneType) ? (
+                                        <OptionSelector id="perspective" label={t('sync.angle.ext')} options={perspectiveAngles.map(a => ({ value: a.id, label: a.label }))} value={selectedPerspective} onChange={(val) => onStateChange({ selectedPerspective: val })} variant="select" disabled={isLoading} />
                                     ) : (
-                                        <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
+                                        <OptionSelector id="interior-angle" label={t('sync.angle.int')} options={interiorViewAngles.map(a => ({ value: a.id, label: a.label }))} value={selectedInteriorAngle} onChange={(val) => onStateChange({ selectedInteriorAngle: val })} variant="select" disabled={isLoading} />
                                     )}
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <OptionSelector id="framing" label={t('sync.framing')} options={framingAngles.map(a => ({ value: a.id, label: a.label }))} value={selectedFraming} onChange={(val) => onStateChange({ selectedFraming: val })} variant="select" disabled={isLoading} />
+                                        <OptionSelector id="atmosphere" label={t('sync.atmosphere')} options={atmosphericAngles.map(a => ({ value: a.id, label: a.label }))} value={selectedAtmosphere} onChange={(val) => onStateChange({ selectedAtmosphere: val })} variant="select" disabled={isLoading} />
+                                    </div>
+                                </div>
+                                <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
+                                    <textarea rows={6} className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('sync.prompt_placeholder')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} />
                                 </div>
                             </div>
 
-                            <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg">
-                                {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('sync.btn_generate')}
-                            </button>
-                            {upscaleWarning && <p className="mt-2 text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
-                        </div>
-                    </div>
-                    <div className="aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                        {isLoading ? (
-                            <div className="flex flex-col items-center">
-                                <Spinner />
-                                <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
+                            <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
+                                <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
+                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
                             </div>
-                        ) : resultImages.length > 0 ? <ResultGrid images={resultImages} toolName="view-sync" /> : <p className="text-gray-400">{t('msg.no_result_render')}</p>}
-                    </div>
+                        </div>
+
+                        <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                            <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
+                                {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('sync.btn_generate')} | {unitCost * numberOfImages}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
+                            </button>
+                        </div>
+                    </aside>
+
+                    <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                        <div className="flex flex-col h-full overflow-hidden">
+                            <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                                {resultImages.length > 0 ? (
+                                    <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
+                                        <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                                            {sourceImage ? (
+                                                <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[selectedIndex]} />
+                                            ) : (
+                                                <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-full object-contain" />
+                                            )}
+                                        </div>
+                                        <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                            <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
+                                            <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212]">
+                                        <span className="material-symbols-outlined text-6xl mb-4">view_in_ar</span>
+                                        <p className="text-base font-medium">{t('msg.no_result_render')}</p>
+                                    </div>
+                                )}
+                                {isLoading && (
+                                    <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                        <Spinner />
+                                        <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
+                                    </div>
+                                )}
+                            </div>
+
+                            {resultImages.length > 0 && !isLoading && (
+                                <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
+                                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
+                                        {resultImages.map((url, idx) => (
+                                            <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-16 sm:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                                <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </main>
                 </div>
             )}
 
             {/* --- CREATIVE VIEW (NEW FLOW) --- */}
             {activeTab === 'creative' && !isCreativeModeSelected && (
-                // SELECTION SCREEN
-                <div className="flex flex-col gap-8 animate-fade-in py-4">
+                <div className="flex flex-col gap-6 animate-fade-in py-6 px-4">
                     <div className="text-center max-w-2xl mx-auto">
-                        <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">{t('sync.creative.title')}</h2>
-                        <p className="text-gray-500 dark:text-gray-400">{t('sync.creative.desc')}</p>
+                        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{t('sync.creative.title')}</h2>
+                        <p className="text-gray-500 dark:text-gray-400 text-sm">{t('sync.creative.desc')}</p>
                     </div>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 max-w-4xl mx-auto w-full">
                         {creativeOptions.map(opt => (
                             <button
                                 key={opt.id}
                                 onClick={() => handleSelectCreativeOption(opt.id)}
-                                className="group relative bg-white dark:bg-[#1E1E1E] rounded-2xl p-6 border border-gray-200 dark:border-[#302839] hover:border-[#7f13ec] dark:hover:border-[#7f13ec] transition-all duration-300 shadow-sm hover:shadow-xl text-left flex flex-col gap-4 h-full"
+                                className="group relative bg-white dark:bg-[#1E1E1E] rounded-2xl p-5 border border-gray-200 dark:border-[#302839] hover:border-[#7f13ec] dark:hover:border-[#7f13ec] transition-all duration-300 shadow-sm hover:shadow-xl text-left flex flex-col gap-4 h-full"
                             >
-                                <div className="w-14 h-14 rounded-xl bg-gray-50 dark:bg-[#252525] group-hover:bg-[#7f13ec]/10 flex items-center justify-center transition-colors">
-                                    <span className="material-symbols-outlined text-3xl text-gray-600 dark:text-gray-400 group-hover:text-[#7f13ec]">{opt.icon}</span>
+                                <div className="w-10 h-10 rounded-xl bg-gray-50 dark:bg-[#252525] group-hover:bg-[#7f13ec]/10 flex items-center justify-center transition-colors">
+                                    <span className="material-symbols-outlined text-xl text-gray-600 dark:text-gray-400 group-hover:text-[#7f13ec]">{opt.icon}</span>
                                 </div>
                                 <div>
-                                    <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-1 group-hover:text-[#7f13ec] transition-colors">{opt.label}</h3>
-                                    <p className="text-sm text-gray-500 dark:text-gray-400 leading-relaxed">{opt.longDesc || opt.desc}</p>
+                                    <h3 className="text-base font-bold text-gray-900 dark:text-white mb-1 group-hover:text-[#7f13ec] transition-colors">{opt.label}</h3>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">{opt.longDesc || opt.desc}</p>
                                 </div>
-                                <div className="mt-auto pt-4 flex items-center text-sm font-semibold text-[#7f13ec] opacity-0 group-hover:opacity-100 transition-opacity transform translate-y-2 group-hover:translate-y-0">
-                                    {t('sync.creative.btn_start')} <span className="material-symbols-outlined text-sm ml-1">arrow_forward</span>
+                                <div className="mt-auto pt-4 flex items-center text-xs font-bold text-[#7f13ec] opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
+                                    {t('sync.creative.btn_start')} <span className="material-symbols-outlined text-[14px] ml-1">arrow_forward</span>
                                 </div>
                             </button>
                         ))}
@@ -960,220 +611,90 @@ Draw a professional architectural photograph, realistic, 8k, soft natural daylig
             )}
 
             {activeTab === 'creative' && isCreativeModeSelected && (
-                // WORKSPACE SCREEN
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in">
-                    {/* LEFT SIDEBAR: CONTROLS */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in p-4 mt-2">
                     <div className="lg:col-span-4 flex flex-col gap-6">
-                        
-                        {/* 1. Back Button & Mode Info */}
                         <div className="bg-white dark:bg-[#1E1E1E] rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-[#302839]">
-                            <button 
-                                onClick={handleBackToSelection}
-                                className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white mb-4 transition-colors"
-                            >
-                                <span className="material-symbols-outlined text-lg">arrow_back</span>
-                                {t('sync.workspace.back')}
-                            </button>
-                            
+                            <button onClick={handleBackToSelection} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white mb-4 transition-colors font-bold"><span className="material-symbols-outlined text-lg">arrow_back</span> {t('sync.workspace.back')}</button>
                             <div className="flex items-center gap-3 p-3 bg-[#7f13ec]/5 dark:bg-[#7f13ec]/10 rounded-xl border border-[#7f13ec]/20">
-                                <div className="p-2 rounded-lg bg-[#7f13ec] text-white">
-                                    <span className="material-symbols-outlined text-xl">
-                                        {selectedOptionData?.icon || 'auto_awesome'}
-                                    </span>
-                                </div>
+                                <div className="p-2 rounded-lg bg-[#7f13ec] text-white"><span className="material-symbols-outlined text-xl">{selectedOptionData?.icon || 'auto_awesome'}</span></div>
                                 <div>
-                                    <div className="text-sm font-bold text-[#7f13ec] dark:text-[#a855f7]">
-                                        {selectedOptionData?.label}
-                                    </div>
-                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">
-                                        {selectedOptionData?.desc}
-                                    </div>
+                                    <div className="text-sm font-bold text-[#7f13ec] dark:text-[#a855f7]">{selectedOptionData?.label}</div>
+                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">{selectedOptionData?.desc}</div>
                                 </div>
                             </div>
                         </div>
 
-                        {/* 2. Upload & Settings */}
                         <div className="bg-white dark:bg-[#1E1E1E] rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-[#302839] space-y-6">
                             <div>
-                                <label className="flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">
-                                    <span>{t('sync.workspace.source')}</span>
-                                    {sourceImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">OK</span>}
-                                </label>
-                                <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-black/20 overflow-hidden">
-                                    <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
-                                </div>
+                                <label className="flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-200 mb-2"><span>{t('sync.workspace.source')}</span>{sourceImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">OK</span>}</label>
+                                <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-black/20 overflow-hidden"><ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} /></div>
                             </div>
-                            
                             <div>
-                                <label className="flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">
-                                    <span>{t('sync.workspace.char')}</span>
-                                    {characterImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">OK</span>}
-                                </label>
-                                <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-black/20 overflow-hidden">
-                                    <ImageUpload onFileSelect={handleCharacterSelect} previewUrl={characterImage?.objectURL} id="char-upload" />
-                                </div>
-                                <p className="text-[10px] text-gray-400 mt-1.5 px-1">
-                                    {t('sync.workspace.char_hint')}
-                                </p>
+                                <label className="flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-200 mb-2"><span>{t('sync.workspace.char')}</span>{characterImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">OK</span>}</label>
+                                <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-black/20 overflow-hidden"><ImageUpload onFileSelect={(f) => onStateChange({ characterImage: f })} previewUrl={characterImage?.objectURL} id="char-upload" /></div>
+                                <p className="text-[10px] text-gray-400 mt-1.5 px-1">{t('sync.workspace.char_hint')}</p>
                             </div>
-
                             <div className="pt-4 border-t border-gray-100 dark:border-[#302839]">
-                                {/* No NumberOfImagesSelector for Creative Batch (Implicitly all slots) */}
                                 <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={generatingViews.size > 0} />
                             </div>
-                            
-                            <div>
-                                <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={generatingViews.size > 0} />
-                            </div>
-
-                            <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-1 border border-gray-200 dark:border-gray-700">
-                                <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                                    <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                                    <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{creativeTotalCost} Credits</span></span>
-                                </div>
-                                <div className="text-xs">
-                                    {userCredits < creativeTotalCost ? (
-                                        <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
-                                    ) : (
-                                        <span className="text-green-600 dark:text-green-400">{t('common.available')}</span>
-                                    )}
-                                </div>
-                            </div>
-
-                            <button 
-                                onClick={handleGenerateBatch} 
-                                disabled={generatingViews.size > 0 || !sourceImage} 
-                                className="w-full py-3 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors flex justify-center items-center gap-2 shadow-lg"
-                            >
-                                {generatingViews.size > 0 ? (
-                                    <><Spinner /> {t('sync.workspace.generating_wait')}</>
-                                ) : (
-                                    t('sync.workspace.btn_generate_batch').replace('{count}', slots.length.toString())
-                                )}
-                            </button>
+                            <div><ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={generatingViews.size > 0} /></div>
+                            <button onClick={handleGenerateBatch} disabled={generatingViews.size > 0 || !sourceImage} className="w-full py-4 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-700 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 transform active:scale-95">{generatingViews.size > 0 ? <><Spinner /> {t('sync.workspace.generating_wait')}</> : t('sync.workspace.btn_generate_batch').replace('{count}', slots.length.toString())}</button>
                         </div>
                     </div>
 
-                    {/* RIGHT GRID: WORKSPACE */}
-                    <div className="lg:col-span-8">
-                        {/* Header for Results */}
+                    <div className="lg:col-span-8 flex flex-col">
                         <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-xl font-bold text-gray-900 dark:text-white">{t('sync.workspace.result_title')}</h3>
-                            
-                            {/* BULK DOWNLOAD BUTTON */}
+                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{t('sync.workspace.result_title')}</h3>
                             {hasCreativeResults && (
-                                <button 
-                                    onClick={handleDownloadAllCreative}
-                                    disabled={isDownloading}
-                                    className="flex items-center gap-2 px-4 py-2 bg-gray-800 dark:bg-white text-white dark:text-black hover:bg-gray-700 dark:hover:bg-gray-200 rounded-lg text-sm font-bold transition-all shadow-md disabled:opacity-50"
-                                >
+                                <button onClick={handleDownloadAllCreative} disabled={isDownloading} className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-black hover:opacity-90 rounded-xl text-sm font-bold transition-all shadow-md">
                                     {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-lg">download_for_offline</span>}
-                                    <span>{t('sync.workspace.download_all')} ({Object.values(creativeResults).filter(Boolean).length})</span>
+                                    <span>{t('sync.workspace.download_all')}</span>
                                 </button>
                             )}
                         </div>
-
-                        {error && (
-                            <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-900/30 text-red-700 dark:text-red-400 rounded-xl text-sm flex items-center gap-2">
-                                <span className="material-symbols-outlined text-lg">error</span>
-                                {error}
-                            </div>
-                        )}
-                        
                         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                            {slots.map((slot, index) => {
+                            {slots.map((slot) => {
                                 const key = getResultKey(creativeOption, slot.id);
                                 const resultUrl = creativeResults[key];
                                 const isGenerating = generatingViews.has(key);
-
                                 return (
-                                    <div 
-                                        key={index} 
-                                        className="group relative bg-[#1E1E1E] rounded-2xl overflow-hidden border border-[#302839] hover:border-gray-500 transition-all duration-300 shadow-lg h-full flex flex-col"
-                                    >
-                                        {/* Image Area */}
+                                    <div key={slot.id} className="group relative bg-[#1E1E1E] rounded-2xl overflow-hidden border border-[#302839] hover:border-[#7f13ec]/50 transition-all duration-300 shadow-lg flex flex-col h-full">
                                         <div className="aspect-square relative w-full bg-black/40 overflow-hidden">
                                             {resultUrl ? (
                                                 <>
-                                                    <img 
-                                                        src={resultUrl} 
-                                                        alt={slot.name} 
-                                                        className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105 cursor-pointer" 
-                                                        onClick={() => handlePreview(resultUrl)}
-                                                    />
-                                                    {/* Hover Overlay */}
-                                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-3 backdrop-blur-sm pointer-events-none">
+                                                    <img src={resultUrl} alt={slot.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 cursor-pointer" onClick={() => handlePreview(resultUrl)} />
+                                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 backdrop-blur-sm pointer-events-none">
                                                         <div className="flex gap-2 pointer-events-auto">
-                                                            <button 
-                                                                onClick={() => handlePreview(resultUrl)}
-                                                                className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-transform hover:scale-110"
-                                                                title="Xem chi tiết (Zoom)"
-                                                            >
-                                                                <span className="material-symbols-outlined">zoom_in</span>
-                                                            </button>
-                                                            <button 
-                                                                onClick={() => handleDownload(resultUrl, slot.name)}
-                                                                className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-transform hover:scale-110"
-                                                                title="Tải xuống"
-                                                            >
-                                                                <span className="material-symbols-outlined">download</span>
-                                                            </button>
+                                                            <button onClick={() => handlePreview(resultUrl)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-all hover:scale-110"><span className="material-symbols-outlined">zoom_in</span></button>
+                                                            <button onClick={() => handleDownload(resultUrl, slot.name)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-all hover:scale-110"><span className="material-symbols-outlined">download</span></button>
                                                         </div>
                                                     </div>
                                                 </>
                                             ) : isGenerating ? (
                                                 <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#151515]">
-                                                    {/* Shimmer Effect */}
-                                                    <div className="absolute inset-0 -translate-x-full animate-[shimmer_1.5s_infinite] bg-gradient-to-r from-transparent via-white/5 to-transparent"></div>
                                                     <Spinner />
-                                                    <span className="text-xs font-bold text-gray-400 mt-3 animate-pulse uppercase tracking-wider">{t('sync.workspace.generating')}</span>
+                                                    <span className="text-xs font-bold text-gray-500 mt-4 animate-pulse uppercase tracking-widest">{t('sync.workspace.generating')}</span>
                                                 </div>
                                             ) : (
-                                                // Empty State
-                                                <div className="w-full h-full flex flex-col items-center justify-center bg-[url('https://www.transparenttextures.com/patterns/cubes.png')] bg-fixed opacity-50">
-                                                    <div className="w-16 h-16 rounded-full bg-[#252525] flex items-center justify-center mb-2 shadow-inner border border-[#333]">
-                                                        <span className="material-symbols-outlined text-3xl text-gray-600">{slot.icon}</span>
-                                                    </div>
+                                                <div className="w-full h-full flex flex-col items-center justify-center opacity-30">
+                                                    <span className="material-symbols-outlined text-5xl text-gray-600 mb-2">{slot.icon}</span>
+                                                    <span className="text-xs font-bold text-gray-600 uppercase">{slot.name}</span>
                                                 </div>
                                             )}
-                                            
-                                            {/* Slot Label (Always Visible) */}
-                                            <div className="absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-                                                <div className="flex justify-between items-start">
-                                                    <div>
-                                                        <h4 className="text-sm font-bold text-white text-shadow-sm">{slot.name}</h4>
-                                                        {/* @ts-ignore */}
-                                                        {slot.sub && <p className="text-[10px] text-gray-300 font-medium">{slot.sub}</p>}
-                                                    </div>
-                                                    {resultUrl && (
-                                                        <span className="material-symbols-outlined text-green-400 text-sm bg-green-900/50 rounded-full p-0.5">check</span>
-                                                    )}
-                                                </div>
+                                            <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+                                                <h4 className="text-sm font-bold text-white shadow-sm">{slot.name}</h4>
+                                                {/* @ts-ignore */}
+                                                {slot.sub && <p className="text-[10px] text-gray-300 font-medium">{slot.sub}</p>}
                                             </div>
                                         </div>
-
-                                        {/* Added Footer Section: Cost & Single Action */}
-                                        <div className="p-3 border-t border-[#302839] bg-[#252525] flex flex-col gap-2">
-                                            <div className="flex justify-between items-center text-[10px] font-medium text-gray-400">
+                                        <div className="p-4 border-t border-[#302839] bg-[#222] flex flex-col gap-3">
+                                            <div className="flex justify-between items-center text-[10px] font-bold text-gray-500 uppercase tracking-widest">
                                                 <span>{t('sync.workspace.cost')}</span>
-                                                <div className="flex items-center gap-1 text-yellow-500">
-                                                    <span className="material-symbols-outlined text-xs">monetization_on</span>
-                                                    {unitCost} Credits
-                                                </div>
+                                                <span className="text-yellow-500 flex items-center gap-1"><span className="material-symbols-outlined text-xs">monetization_on</span> {unitCost}</span>
                                             </div>
-                                            <button 
-                                                onClick={() => handleGenerateSingleView(slot)}
-                                                disabled={isGenerating || !sourceImage}
-                                                className={`w-full py-1.5 rounded-lg text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-1.5 ${
-                                                    isGenerating || !sourceImage
-                                                        ? 'bg-[#333] text-gray-500 cursor-not-allowed'
-                                                        : resultUrl 
-                                                            ? 'bg-[#333] hover:bg-[#404040] text-gray-300 border border-[#404040]' 
-                                                            : 'bg-[#7f13ec] hover:bg-[#690fca] text-white hover:shadow-purple-500/20'
-                                                }`}
-                                            >
+                                            <button onClick={() => handleGenerateSingleView(slot)} disabled={isGenerating || !sourceImage} className={`w-full py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${resultUrl ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-[#7f13ec] hover:bg-[#690fca] text-white shadow-lg'}`}>
                                                 {isGenerating ? <Spinner /> : <span className="material-symbols-outlined text-sm">{resultUrl ? 'refresh' : 'auto_fix_high'}</span>}
-                                                <span>{isGenerating ? t('sync.workspace.generating') : (resultUrl ? t('sync.workspace.regenerate') : t('sync.workspace.generate'))}</span>
+                                                {isGenerating ? t('sync.workspace.generating') : (resultUrl ? t('sync.workspace.regenerate') : t('sync.workspace.generate'))}
                                             </button>
                                         </div>
                                     </div>

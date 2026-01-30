@@ -91,7 +91,7 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
     : t('header.forever');
 
   return (
-     <header className="bg-surface dark:bg-[#121212] sticky top-0 z-40 transition-colors duration-300 px-3 sm:px-6 lg:px-8 border-b border-border-color dark:border-[#302839] h-[72px]">
+     <header className="bg-surface dark:bg-[#121212] sticky top-0 z-40 transition-colors duration-300 px-3 sm:px-6 lg:px-8 border-b border-border-color dark:border-[#302839] h-[60px]">
         <nav className="flex justify-between items-center h-full">
             <div className="flex items-center gap-3 sm:gap-4">
                 <button 
@@ -102,28 +102,28 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                 </button>
 
                 <div className="flex items-center cursor-pointer group" onClick={onGoHome} title={t('nav.home')}>
-                    <Logo className="w-10 h-10 sm:w-12 sm:h-12 text-[#7f13ec]" />
-                    <span className="text-text-primary dark:text-white text-lg sm:text-xl font-bold tracking-tight ml-2 sm:ml-3 hidden sm:inline-block">{t('app.name')}</span>
+                    <Logo className="w-8 h-8 sm:w-10 sm:h-10 text-[#7f13ec]" />
+                    <span className="text-text-primary dark:text-white text-base sm:text-lg font-bold tracking-tight ml-2 sm:ml-3 hidden sm:inline-block">{t('app.name')}</span>
                 </div>
             </div>
             
             <div className="flex items-center space-x-2 sm:space-x-5">
                 <button 
                     onClick={toggleLanguage}
-                    className="relative bg-gray-100 dark:bg-[#252525] rounded-full border border-gray-200 dark:border-[#3a3a3a] h-10 w-24 cursor-pointer focus:outline-none hover:border-[#7f13ec]/50 transition-all duration-300 group shadow-inner p-1"
+                    className="relative bg-gray-100 dark:bg-[#252525] rounded-full border border-gray-200 dark:border-[#3a3a3a] h-8 w-20 cursor-pointer focus:outline-none hover:border-[#7f13ec]/50 transition-all duration-300 group shadow-inner p-1"
                     aria-label="Switch Language"
                 >
                     <div 
-                        className={`absolute top-1 bottom-1 left-1 w-10 bg-[#7f13ec] rounded-full shadow-md shadow-purple-500/30 transition-transform duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-                            language === 'en' ? 'translate-x-[3rem]' : 'translate-x-0'
+                        className={`absolute top-0.5 bottom-0.5 left-0.5 w-8 bg-[#7f13ec] rounded-full shadow-md shadow-purple-500/30 transition-transform duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+                            language === 'en' ? 'translate-x-[2.75rem]' : 'translate-x-0'
                         }`}
                     ></div>
                     <div className="absolute inset-0 grid grid-cols-2 z-10 select-none pointer-events-none">
                         <div className="flex items-center justify-center">
-                            <span className={`text-sm font-bold transition-colors duration-300 ${language === 'vi' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>VN</span>
+                            <span className={`text-[10px] font-bold transition-colors duration-300 ${language === 'vi' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>VN</span>
                         </div>
                         <div className="flex items-center justify-center">
-                            <span className={`text-sm font-bold transition-colors duration-300 ${language === 'en' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>EN</span>
+                            <span className={`text-[10px] font-bold transition-colors duration-300 ${language === 'en' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>EN</span>
                         </div>
                     </div>
                 </button>
@@ -131,19 +131,19 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                 {!isDropdownOpen && userStatus && (
                     <button
                         onClick={onUpgrade}
-                        className="hidden sm:flex items-center gap-1.5 pl-3 pr-1 py-1 rounded-full bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#333] shadow-sm hover:border-purple-500/40 transition-all duration-300 group"
+                        className="hidden sm:flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#333] shadow-sm hover:border-purple-500/40 transition-all duration-300 group"
                         title={t('header.topup_tooltip')}
                     >
-                        <div className="flex items-center gap-2 px-2">
-                            <div className="text-yellow-500 drop-shadow-sm"><CoinIcon /></div>
-                            <span className="font-bold text-sm text-gray-700 dark:text-gray-200 tabular-nums tracking-tight">
+                        <div className="flex items-center gap-1.5 px-1.5">
+                            <div className="text-yellow-500 scale-90"><CoinIcon /></div>
+                            <span className="font-bold text-xs text-gray-700 dark:text-gray-200 tabular-nums tracking-tight">
                                 {new Intl.NumberFormat('en-US').format(userStatus.credits)}
                             </span>
                         </div>
                         <div className="relative overflow-hidden rounded-full bg-gradient-to-r from-[#7f13ec] to-[#a855f7] text-white shadow-md group-hover:scale-105 transition-all duration-300">
-                            <div className="relative flex items-center gap-1 px-3 py-1.5">
-                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3 h-3"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg>
-                                <span className="text-xs font-bold uppercase tracking-wide">{t('header.topup')}</span>
+                            <div className="relative flex items-center gap-1 px-2 py-1">
+                                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg>
+                                <span className="text-[10px] font-bold uppercase tracking-wide">{t('header.topup')}</span>
                             </div>
                         </div>
                     </button>
@@ -151,7 +151,7 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
 
                 <button 
                     onClick={onThemeToggle} 
-                    className="p-2 rounded-full text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white transition-all" 
+                    className="p-1.5 rounded-full text-text-secondary dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-[#302839] hover:text-text-primary dark:hover:text-white transition-all" 
                     aria-label="Toggle theme"
                 >
                     {theme === 'light' ? <MoonIcon /> : <SunIcon />}
@@ -159,14 +159,14 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                 
                 <div className="relative" ref={dropdownRef}>
                     <button onClick={() => setIsDropdownOpen(!isDropdownOpen)} className="flex items-center gap-1 sm:gap-2 focus:outline-none">
-                        <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-gradient-to-tr from-[#8A2BE2] to-[#DA70D6] flex items-center justify-center text-white shadow-md ring-2 ring-white dark:ring-[#191919]">
-                            <span className="text-xs font-bold">{user?.email?.[0].toUpperCase()}</span>
+                        <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-[#8A2BE2] to-[#DA70D6] flex items-center justify-center text-white shadow-md ring-2 ring-white dark:ring-[#191919]">
+                            <span className="text-[10px] font-bold">{user?.email?.[0].toUpperCase()}</span>
                         </div>
                         <ChevronDownIcon />
                     </button>
 
                     {isDropdownOpen && (
-                        <div className="absolute right-0 mt-3 w-72 bg-surface dark:bg-[#191919] rounded-xl shadow-2xl border border-border-color dark:border-[#302839] py-1 z-50 animate-fade-in origin-top-right">
+                        <div className="absolute right-0 mt-2 w-72 bg-surface dark:bg-[#191919] rounded-xl shadow-2xl border border-border-color dark:border-[#302839] py-1 z-50 animate-fade-in origin-top-right">
                             <div className="px-5 py-4 border-b border-border-color dark:border-[#302839] bg-gray-50 dark:bg-[#202020]">
                                 {user && (
                                     <div className="mb-3">
@@ -193,14 +193,14 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                             <div className="py-1">
                                 {onOpenProfile && (
                                     <>
-                                        <button onClick={() => { onOpenProfile(); setIsDropdownOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3"><GiftIcon /> {t('nav.giftcode')}</button>
-                                        <button onClick={() => { onOpenProfile(); setIsDropdownOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3"><ProfileIcon /> {t('nav.profile')}</button>
+                                        <button onClick={() => { onOpenProfile(); setIsDropdownOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3"><GiftIcon /> {t('nav.giftcode')}</button>
+                                        <button onClick={() => { onOpenProfile(); setIsDropdownOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3"><ProfileIcon /> {t('nav.profile')}</button>
                                     </>
                                 )}
-                                {onOpenGallery && <button onClick={() => { onOpenGallery(); setIsDropdownOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3"><GalleryIcon /> {t('nav.gallery')}</button>}
+                                {onOpenGallery && <button onClick={() => { onOpenGallery(); setIsDropdownOpen(false); }} className="w-full text-left px-4 py-2 text-sm text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3"><GalleryIcon /> {t('nav.gallery')}</button>}
                             </div>
                             <div className="border-t border-border-color dark:border-[#302839] my-1"></div>
-                            <button onClick={onSignOut} className="w-full text-left px-4 py-2.5 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3 rounded-b-lg"><LogoutIcon /> {t('nav.logout')}</button>
+                            <button onClick={onSignOut} className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-[#302839] flex items-center gap-3 rounded-b-lg"><LogoutIcon /> {t('nav.logout')}</button>
                         </div>
                     )}
                 </div>

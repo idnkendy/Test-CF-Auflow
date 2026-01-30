@@ -8,7 +8,7 @@ const FloorPlanIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7" /></svg>
 );
 const RenovationIcon = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 00-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" /></svg>
 );
 const PhotoIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg>
@@ -70,7 +70,7 @@ const PlusCircleIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
 );
 const HomeIcon = (props: React.SVGProps<SVGSVGElement>) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>
+    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} {...props}><path strokeLinecap="round" strokeLinejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 0 001 1m-6 0h6" /></svg>
 );
 
 interface NavigationProps {
@@ -88,15 +88,12 @@ export const useUtilityTools = () => {
         icon: <PlusCircleIcon />,
         tools: [
             { tool: Tool.ReRender, label: t('ext.rerender.title'), desc: t('dash.rerender.desc'), icon: <BrushIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/RERENDER%20THUMB.jpeg' },
-            { tool: Tool.FloorPlan, label: t('ext.floorplan.title'), desc: t('dash.floorplan.desc'), icon: <FloorPlanIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render-mat-bang.png' },
             { tool: Tool.PromptSuggester, label: t('tool.prompt'), desc: t('dash.prompt.desc'), icon: <MagicTextIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/prompt-recommend.png' },
             { tool: Tool.EditByNote, label: t('tool.edit_note'), desc: t('dash.edit_note.desc'), icon: <AnnotationIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/edit-by-note.png' },
             { tool: Tool.LayoutGenerator, label: t('tool.layout'), desc: t('dash.layout.desc'), icon: <LayoutBoardIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/layout.png' },
             { tool: Tool.DrawingGenerator, label: t('tool.drawing'), desc: t('dash.drawing.desc'), icon: <BlueprintIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/tao-ban-ve.png' },
             { tool: Tool.DiagramGenerator, label: t('tool.diagram'), desc: t('dash.diagram.desc'), icon: <StructureIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/diagram.png' },
             { tool: Tool.RealEstatePoster, label: t('tool.poster'), desc: t('dash.poster.desc'), icon: <MarketingIcon />, image: 'https://images.unsplash.com/photo-1560518883-ce09059eeffa?q=80&w=600&auto=format&fit=crop' },
-            { tool: Tool.UrbanPlanning, label: t('tool.urban'), desc: t('dash.urban.desc'), icon: <UrbanIcon />, image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/render-quy-hoach.png' },
-            { tool: Tool.LandscapeRendering, label: t('tool.landscape'), desc: t('dash.landscape.desc'), icon: <LandscapeIcon />, image: 'https://images.unsplash.com/photo-1558293842-c0fd3db86157?q=80&w=600&auto=format&fit=crop' },
             { tool: Tool.Moodboard, label: t('tool.moodboard'), desc: t('dash.moodboard.desc'), icon: <MoodboardIcon />, image: 'https://images.unsplash.com/photo-1618221195710-dd6b41faaea6?q=80&w=600&auto=format&fit=crop' },
             { tool: Tool.Upscale, label: t('tool.upscale'), desc: t('dash.upscale.desc'), icon: <UpscaleIcon />, image: 'https://images.unsplash.com/photo-1518640467707-6811f4a6ab73?q=80&w=600&auto=format&fit=crop' },
             { tool: Tool.MaterialSwap, label: t('tool.material'), desc: t('dash.material.desc'), icon: <MaterialIcon />, image: 'https://images.unsplash.com/photo-1615529182904-14819c35db37?q=80&w=600&auto=format&fit=crop' },
@@ -116,8 +113,8 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
     useEffect(() => {
         const handleScroll = () => {
             const currentScrollY = window.scrollY;
-            // Chỉ bắt đầu ẩn thanh Nav sau khi đã cuộn qua Header (khoảng 72px)
-            if (currentScrollY > 72) {
+            // Chỉ bắt đầu ẩn thanh Nav sau khi đã cuộn qua Header (khoảng 60px)
+            if (currentScrollY > 60) {
                 if (currentScrollY > lastScrollY.current) {
                     setIsVisible(false); // Cuộn xuống -> Ẩn
                 } else {
@@ -135,7 +132,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
     
     const mainNavItems = [
         { tool: Tool.ArchitecturalRendering, label: t('tool.arch'), icon: <PhotoIcon /> },
-        { tool: Tool.InteriorRendering, label: t('tool.interior'), icon: <InteriorIcon /> },
+        { tool: Tool.FloorPlan, label: t('tool.floorplan'), icon: <FloorPlanIcon /> },
         { tool: Tool.Renovation, label: t('tool.renovation'), icon: <RenovationIcon /> },
         { tool: Tool.ViewSync, label: t('tool.viewsync'), icon: <ViewGridIcon /> },
         { tool: Tool.ImageEditing, label: t('tool.editor'), icon: <SparklesIcon /> },
@@ -147,7 +144,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
         <button
             key={item.tool}
             onClick={() => setActiveTool(item.tool)}
-            className={`group relative flex items-center gap-2 px-3 lg:px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
+            className={`group relative flex items-center gap-2 px-3 lg:px-4 py-1.5 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none
               ${activeTool === item.tool
                 ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10' 
                 : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'
@@ -155,7 +152,7 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
             title={item.label}
           >
             <span className={`relative z-10 transition-colors duration-300 ${activeTool === item.tool ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>
-                {React.cloneElement(item.icon, { className: "h-5 w-5 md:h-6 md:w-6" })}
+                {React.cloneElement(item.icon, { className: "h-4 w-4 md:h-5 md:w-5" })}
             </span>
             <span className={`relative z-10 hidden lg:inline`}>{item.label}</span>
           </button>
@@ -203,34 +200,34 @@ const Navigation: React.FC<NavigationProps> = ({ activeTool, setActiveTool, isMo
 
       {/* Desktop Horizontal Toolbar - Sticky with Auto-hide animation */}
       <nav 
-        className={`hidden md:flex w-full sticky top-[72px] z-30 bg-surface/90 dark:bg-[#121212]/95 backdrop-blur-xl border-b border-border-color dark:border-[#302839] shadow-sm justify-center h-[72px] transition-all duration-500 ease-in-out ${
+        className={`hidden md:flex w-full sticky top-[60px] z-30 bg-surface/90 dark:bg-[#121212]/95 backdrop-blur-xl border-b border-border-color dark:border-[#302839] shadow-sm justify-center h-[56px] transition-all duration-500 ease-in-out ${
             isVisible ? 'translate-y-0 opacity-100' : '-translate-y-full opacity-0'
         }`}
       >
         <div className="max-w-[1600px] w-full px-4 sm:px-6 lg:px-8 flex items-center justify-between">
             {onGoHome && (
                 <div className="absolute left-6 flex items-center">
-                    <button onClick={onGoHome} className="group relative flex items-center justify-center p-2 rounded-full transition-all duration-300 outline-none text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5" title={t('nav.home')}><HomeIcon className="h-6 w-6" /></button>
+                    <button onClick={onGoHome} className="group relative flex items-center justify-center p-1.5 rounded-full transition-all duration-300 outline-none text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5" title={t('nav.home')}><HomeIcon className="h-5 w-5" /></button>
                 </div>
             )}
             <div className="flex-1 flex justify-center">
-                <div className="flex items-center p-1.5 rounded-full bg-gray-50/80 dark:bg-white/5 border border-gray-200 dark:border-white/5 shadow-inner">
+                <div className="flex items-center p-1 rounded-full bg-gray-50/80 dark:bg-white/5 border border-gray-200 dark:border-white/5 shadow-inner">
                     {mainNavItems.map((item, index) => (
                         <React.Fragment key={item.tool}>
                             {renderItem(item)}
                             <div className="h-4 w-px bg-gray-300 dark:bg-white/10 mx-1"></div>
                         </React.Fragment>
                     ))}
-                    <button onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)} className={`group relative flex items-center gap-2 px-3 lg:px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none ${isExtendedToolActive ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10' : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'}`} title={t('tool.extended')}>
-                        <span className={`relative z-10 transition-colors duration-300 ${isExtendedToolActive ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>{React.cloneElement(utilityTools.icon, { className: "h-5 w-5 md:h-6 md:w-6" })}</span>
+                    <button onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)} className={`group relative flex items-center gap-2 px-3 lg:px-4 py-1.5 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none ${isExtendedToolActive ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10' : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'}`} title={t('tool.extended')}>
+                        <span className={`relative z-10 transition-colors duration-300 ${isExtendedToolActive ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}>{React.cloneElement(utilityTools.icon, { className: "h-4 w-4 md:h-5 md:w-5" })}</span>
                         <span className="relative z-10 hidden lg:inline">{t('tool.extended')}</span>
                     </button>
                 </div>
             </div>
             <div className="absolute right-6 flex items-center">
-                <div className="flex items-center p-1.5 rounded-full bg-gray-50/80 dark:bg-white/5 border border-gray-200 dark:border-white/5 shadow-inner">
-                    <button onClick={() => setActiveTool(Tool.History)} className={`group relative flex items-center gap-2 px-3 lg:px-4 py-2 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none ${activeTool === Tool.History ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10' : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'}`} title={t('nav.history')}>
-                        <span className={`relative z-10 transition-colors duration-300 ${activeTool === Tool.History ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}><HistoryIcon className="h-5 w-5 md:h-6 md:w-6" /></span>
+                <div className="flex items-center p-1 rounded-full bg-gray-50/80 dark:bg-white/5 border border-gray-200 dark:border-white/5 shadow-inner">
+                    <button onClick={() => setActiveTool(Tool.History)} className={`group relative flex items-center gap-2 px-3 lg:px-4 py-1.5 rounded-full transition-all duration-300 text-sm font-medium whitespace-nowrap outline-none ${activeTool === Tool.History ? 'text-white bg-gradient-to-r from-[#7f13ec] to-[#9d4edd] shadow-md shadow-purple-500/20 ring-1 ring-white/10' : 'text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white hover:bg-gray-200/50 dark:hover:bg-white/5'}`} title={t('nav.history')}>
+                        <span className={`relative z-10 transition-colors duration-300 ${activeTool === Tool.History ? 'text-white' : 'group-hover:text-[#7f13ec]'}`}><HistoryIcon className="h-4 w-4 md:h-5 md:w-5" /></span>
                         <span className={`relative z-10 hidden lg:inline`}>{t('nav.history')}</span>
                     </button>
                 </div>

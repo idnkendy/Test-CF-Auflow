@@ -32,247 +32,164 @@ const MaterialSwapper: React.FC<MaterialSwapperProps> = ({ state, onStateChange,
     const { prompt, sceneImage, materialImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+    const [selectedIndex, setSelectedIndex] = useState(0);
 
-    // Handle Default Prompt Switching
+    useEffect(() => {
+        if (resultImages.length > 0) setSelectedIndex(0);
+    }, [resultImages.length]);
+
     useEffect(() => {
         const viDefault = 'Thay thế sàn trong ảnh chính bằng vật liệu gỗ từ ảnh tham khảo.';
         const enDefault = 'Replace the floor in the main image with the wood material from the reference image.';
-        
-        // If current prompt is empty or matches one of the defaults, update it
         if (!prompt || prompt === viDefault || prompt === enDefault) {
              onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
         }
     }, [language]);
 
-    const getCostPerImage = () => {
-        switch (resolution) {
-            case 'Standard': return 5;
-            case '1K': return 10;
-            case '2K': return 20;
-            case '4K': return 30;
-            default: return 5;
-        }
-    };
-    
-    const unitCost = getCostPerImage();
-    const cost = numberOfImages * unitCost;
+    const cost = numberOfImages * (resolution === '4K' ? 30 : resolution === '2K' ? 20 : resolution === '1K' ? 10 : 5);
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             if (onInsufficientCredits) {
-                 onInsufficientCredits();
-             } else {
-                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
-             }
+             if (onInsufficientCredits) onInsufficientCredits();
              return;
         }
-
-        if (!prompt || !sceneImage || !materialImage) {
-            onStateChange({ error: 'Vui lòng điền đủ thông tin và tải ảnh.' });
-            return;
-        }
+        if (!sceneImage || !materialImage) return;
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
         setStatusMessage(t('common.processing'));
-        setUpscaleWarning(null);
 
-        let logId: string | null = null;
-        let jobId: string | null = null;
-        
         try {
-             if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Thay vật liệu (${numberOfImages} ảnh) - ${resolution}`);
-            }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.MaterialSwap,
-                    prompt: prompt,
-                    cost: cost,
-                    usage_log_id: logId
-                });
-            }
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-
-            const fullPrompt = `${prompt}. Maintain ${aspectRatio} ratio. Photorealistic quality.`;
-
+            if (onDeductCredits) await onDeductCredits(cost, `Thay vật liệu (${numberOfImages} ảnh) - ${resolution}`);
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const inputImages = [sceneImage, materialImage];
-            
-            let lastError: any = null;
 
-            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                try {
-                    const result = await externalVideoService.generateFlowImage(
-                        fullPrompt,
-                        inputImages,
-                        aspectRatio, // Pass actual ratio string directly
-                        1,
-                        modelName,
-                        (msg) => setStatusMessage(t('common.processing'))
-                    );
+            const result = await externalVideoService.generateFlowImage(
+                prompt, inputImages, aspectRatio, numberOfImages, modelName,
+                (msg) => setStatusMessage(msg)
+            );
 
-                    if (result.imageUrls && result.imageUrls.length > 0) {
-                        let finalUrl = result.imageUrls[0];
-                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-
-                        if (shouldUpscale) {
-                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                            const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes);
-                            if (upscaleResult && upscaleResult.imageUrl) {
-                                finalUrl = upscaleResult.imageUrl;
-                            }
-                        }
-                        return finalUrl;
-                    }
-                    return null;
-                } catch (e) {
-                    console.error(`Image ${index+1} failed`, e);
-                    lastError = e;
-                    return null;
-                }
-            });
-
-            const results = await Promise.all(promises);
-            const successfulUrls = results.filter((url): url is string => url !== null);
-            const failedCount = numberOfImages - successfulUrls.length;
-
-            if (successfulUrls.length > 0) {
-                onStateChange({ resultImages: successfulUrls });
-                successfulUrls.forEach(url => {
-                     historyService.addToHistory({ tool: Tool.MaterialSwap, prompt: fullPrompt, sourceImageURL: sceneImage.objectURL, resultImageURL: url });
-                });
-                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
-
-                if (failedCount > 0 && logId && user) {
-                    const refundAmount = failedCount * unitCost;
-                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${successfulUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                    });
-                }
-            } else {
-                if (lastError) throw lastError;
-                throw new Error("Không thể tạo ảnh nào.");
+            if (result.imageUrls) {
+                onStateChange({ resultImages: result.imageUrls });
+                result.imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.MaterialSwap, prompt: prompt, sourceImageURL: sceneImage.objectURL, resultImageURL: url }));
             }
-
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
-            
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
-                setShowSafetyModal(true);
-                onStateChange({ error: t('msg.safety_violation') });
-            } else {
-                onStateChange({ error: t(friendlyMsg) });
-            }
-            
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
-            
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi thay vật liệu toàn bộ (${rawMsg})`, logId);
-            }
+            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
+            else onStateChange({ error: t(friendlyKey) });
         } finally {
             onStateChange({ isLoading: false });
-            setStatusMessage(null);
         }
     };
 
     const handleDownload = async () => {
-        if (resultImages.length === 0) return;
-        setIsDownloading(true);
-        await externalVideoService.forceDownload(resultImages[0], `material-swap-${Date.now()}.png`);
-        setIsDownloading(false);
+        if (resultImages[selectedIndex]) {
+            setIsDownloading(true);
+            await externalVideoService.forceDownload(resultImages[selectedIndex], `material-${Date.now()}.png`);
+            setIsDownloading(false);
+        }
     };
 
     return (
-        <div>
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+            <style>{`
+                .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                @keyframes scale-up { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+                .animate-scale-up { animation: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            `}</style>
+
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <h2 className="text-2xl font-bold mb-4">{t('ext.material.title')}</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border">
-                    <ImageUpload onFileSelect={(f) => onStateChange({ sceneImage: f, resultImages: [] })} previewUrl={sceneImage?.objectURL} />
-                    <ImageUpload onFileSelect={(f) => onStateChange({ materialImage: f })} previewUrl={materialImage?.objectURL} />
-                    <textarea rows={3} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder={t('ext.material.prompt_ph')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
-                    <div className="grid grid-cols-2 gap-4">
-                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
-                    </div>
-                    <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} disabled={isLoading} />
-                    
-                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
+            
+            {/* SIDEBAR */}
+            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">1. Ảnh gốc không gian</label>
+                            <ImageUpload onFileSelect={(f) => onStateChange({ sceneImage: f, resultImages: [] })} previewUrl={sceneImage?.objectURL} />
                         </div>
-                        <div className="text-xs">
-                            {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
-                            ) : (
-                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
-                            )}
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">2. Ảnh mẫu vật liệu</label>
+                            <ImageUpload onFileSelect={(f) => onStateChange({ materialImage: f })} previewUrl={materialImage?.objectURL} />
                         </div>
                     </div>
 
-                    <button onClick={handleGenerate} disabled={isLoading || !sceneImage || !materialImage} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg shadow-lg">
-                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.material.btn_generate')}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">3. Mô tả yêu cầu</label>
+                            <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
+                                <textarea rows={5} className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('ext.material.prompt_ph')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
+                        <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} />
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
+                    </div>
+                </div>
+
+                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button onClick={handleGenerate} disabled={isLoading || !sceneImage || !materialImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('ext.material.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
                     </button>
-                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
-                    {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
-                <div>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold">{t('common.result')}</h3>
-                        {resultImages.length > 0 && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPreviewImage(resultImages[0])}
-                                    className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
-                                    title="Phóng to"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                                    </svg>
-                                </button>
-                                <button 
-                                    onClick={handleDownload} 
-                                    disabled={isDownloading}
-                                    className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
-                                >
-                                    {isDownloading ? <Spinner /> : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                        </svg>
+            </aside>
+
+            {/* MAIN CONTENT */}
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="flex flex-col h-full overflow-hidden">
+                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                        {resultImages.length > 0 ? (
+                            <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
+                                <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                                    {sceneImage ? (
+                                        <ImageComparator originalImage={sceneImage.objectURL} resultImage={resultImages[selectedIndex]} />
+                                    ) : (
+                                        <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-full object-contain" />
                                     )}
-                                    <span>{t('common.download')}</span>
-                                </button>
+                                </div>
+                                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
+                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                </div>
                             </div>
-                        )}
-                    </div>
-                    <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden">
-                        {isLoading ? (
-                            <div className="flex flex-col items-center">
-                                <Spinner />
-                                <p className="mt-2 text-gray-400">{statusMessage}</p>
-                            </div>
-                        ) : resultImages.length === 1 && sceneImage ? (
-                            <ImageComparator originalImage={sceneImage.objectURL} resultImage={resultImages[0]} />
-                        ) : resultImages.length > 1 ? (
-                            <ResultGrid images={resultImages} toolName="material-swap" />
                         ) : (
-                            <p className="text-gray-400">{t('msg.no_result_render')}</p>
+                            <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212]">
+                                <span className="material-symbols-outlined text-6xl mb-4">texture</span>
+                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
+                            </div>
+                        )}
+                        {isLoading && (
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                <Spinner />
+                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
+                            </div>
                         )}
                     </div>
+
+                    {resultImages.length > 0 && !isLoading && (
+                        <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
+                                {resultImages.map((url, idx) => (
+                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-16 sm:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                        <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
-            </div>
+            </main>
         </div>
     );
 };

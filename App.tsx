@@ -11,13 +11,10 @@ import ImageEditor from './components/ImageEditor';
 import ViewSync from './components/ViewSync';
 import Renovation from './components/Renovation';
 import FloorPlan from './components/FloorPlan';
-import UrbanPlanning from './components/UrbanPlanning';
-import LandscapeRendering from './components/LandscapeRendering';
 import MaterialSwapper from './components/MaterialSwapper';
 import Staging from './components/Staging';
 import Upscale from './components/Upscale';
 import HistoryPanel from './components/HistoryPanel';
-import InteriorGenerator from './components/InteriorGenerator';
 import MoodboardGenerator from './components/MoodboardGenerator';
 import AITechnicalDrawings from './components/AITechnicalDrawings';
 import SketchConverter from './components/SketchConverter';
@@ -74,6 +71,10 @@ const AppContent: React.FC = () => {
   
   const [activeTool, setActiveTool] = useState<Tool>(() => {
       const savedTool = localStorage.getItem('activeTool');
+      // If the saved tool is one of the merged ones, redirect to ArchitecturalRendering
+      if (savedTool === Tool.InteriorRendering || savedTool === Tool.UrbanPlanning || savedTool === Tool.LandscapeRendering) {
+          return Tool.ArchitecturalRendering;
+      }
       return (savedTool && Object.values(Tool).includes(savedTool as Tool)) 
         ? (savedTool as Tool) 
         : Tool.ArchitecturalRendering;
@@ -229,7 +230,6 @@ const AppContent: React.FC = () => {
             if (!mounted) return;
             
             // Only update session state if it actually changed meaningfully
-            // This prevents re-renders on TOKEN_REFRESHED unless user ID changed
             setSession(prevSession => {
                 if (prevSession?.access_token === newSession?.access_token) return prevSession;
                 return newSession;
@@ -273,7 +273,6 @@ const AppContent: React.FC = () => {
                     }
                     setLoadingSession(false);
                 } 
-                // CRITICAL: Handle Token Refresh silently without route changes
                 else if (event === 'TOKEN_REFRESHED') {
                     // Do nothing navigation-wise
                 }
@@ -305,16 +304,12 @@ const AppContent: React.FC = () => {
     };
   }, []); 
 
-  // --- STABLE FETCH USER STATUS ---
-  // Key Fix: Depend on userId string, NOT the entire session object. 
-  // This prevents re-fetching when 'session' object reference changes during token refresh.
   const userId = session?.user?.id;
   const userEmail = session?.user?.email;
   const userMetadata = session?.user?.user_metadata;
 
   const fetchUserStatus = useCallback(async (force = false) => {
     if (userId) {
-      // Throttle: Prevent spamming even if called explicitly
       const now = Date.now();
       if (!force && now - lastFetchTimeRef.current < 2000) {
           return;
@@ -331,9 +326,8 @@ const AppContent: React.FC = () => {
 
   useEffect(() => {
     fetchUserStatus();
-  }, [fetchUserStatus, activeTool]); // Only runs when User ID changes or Active Tool changes
+  }, [fetchUserStatus, activeTool]);
 
-  // --- AUTO-REFRESH ON WINDOW FOCUS ---
   useEffect(() => {
       const handleFocus = () => {
           if (userId) {
@@ -404,7 +398,6 @@ const AppContent: React.FC = () => {
   const userCredits = userStatus?.credits || 0;
   const isExtendedTool = utilityTools.tools.some(t => t.tool === activeTool);
 
-  // -- RENDER LOGIC --
   const renderContent = () => {
       const cleanPath = getPathWithoutLocale();
       if (cleanPath === '/terms-of-service') { return <TermsOfServicePage />; }
@@ -449,10 +442,10 @@ const AppContent: React.FC = () => {
                   <Header onGoHome={handleGoHome} onThemeToggle={handleThemeToggle} theme={theme} onSignOut={handleSignOut} onOpenGallery={handleOpenGallery} onUpgrade={handleNavigateToPricing} onOpenProfile={handleOpenProfile} userStatus={userStatus} user={session.user} onToggleNav={() => setIsMobileNavOpen(!isMobileNavOpen)} />
                   <Navigation activeTool={activeTool} setActiveTool={(tool) => { if (tool === Tool.VideoGeneration) { setView('video'); safeHistoryPush('/video'); } else { setActiveTool(tool); } setIsMobileNavOpen(false); }} isMobileOpen={isMobileNavOpen} onCloseMobile={() => setIsMobileNavOpen(false)} onGoHome={handleGoHome} />
                   <div className="relative flex flex-col flex-grow">
-                      <main ref={mainContentRef} className="flex-1 bg-surface/90 dark:bg-[#191919]/90 backdrop-blur-md p-3 sm:p-6 lg:p-8 relative z-0 transition-colors duration-300">
+                      <main ref={mainContentRef} className={`flex-1 bg-surface/90 dark:bg-[#191919]/90 backdrop-blur-md relative z-0 transition-colors duration-300 ${isExtendedTool ? 'px-3 pt-1 pb-3 sm:px-6 sm:pt-2 sm:pb-6 lg:px-8 lg:pt-2 lg:pb-8' : 'p-3 sm:p-6 lg:p-8'}`}>
                           {isExtendedTool && (
-                              <button onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)} className="flex items-center gap-2 text-text-secondary dark:text-gray-400 hover:text-[#7f13ec] dark:hover:text-[#7f13ec] mb-6 transition-colors font-medium text-sm group" >
-                                  <div className="p-1.5 rounded-full bg-gray-100 dark:bg-gray-800 group-hover:bg-[#7f13ec]/10 transition-colors"> <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}> <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /> </svg> </div> {t('common.back')}
+                              <button onClick={() => setActiveTool(Tool.ExtendedFeaturesDashboard)} className="flex items-center gap-2 text-text-secondary dark:text-gray-400 hover:text-[#7f13ec] dark:hover:text-[#7f13ec] mb-2 transition-colors font-medium text-[11px] group" >
+                                  <div className="p-1 rounded-full bg-gray-100 dark:bg-gray-800 group-hover:bg-[#7f13ec]/10 transition-colors"> <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}> <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" /> </svg> </div> {t('common.back')}
                               </button>
                           )}
                           <ErrorBoundary>
@@ -479,7 +472,7 @@ const AppContent: React.FC = () => {
                                     </div>
                                 </div>
                             )}
-                            {activeTool === Tool.Pricing ? ( <Checkout onPlanSelect={handleSelectPlanForPayment} /> ) : activeTool === Tool.FloorPlan ? ( <FloorPlan state={toolStates.FloorPlan} onStateChange={(newState) => handleToolStateChange(Tool.FloorPlan, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.Renovation ? ( <Renovation state={toolStates.Renovation} onStateChange={(newState) => handleToolStateChange(Tool.Renovation, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.ArchitecturalRendering ? ( <ImageGenerator state={toolStates.ArchitecturalRendering} onStateChange={(newState) => handleToolStateChange(Tool.ArchitecturalRendering, newState)} onSendToViewSync={handleSendToViewSync} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.InteriorRendering ? ( <InteriorGenerator state={toolStates.InteriorRendering} onStateChange={(newState) => handleToolStateChange(Tool.InteriorRendering, newState)} onSendToViewSync={handleSendToViewSync} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.UrbanPlanning ? ( <UrbanPlanning state={toolStates.UrbanPlanning} onStateChange={(newState) => handleToolStateChange(Tool.UrbanPlanning, newState)} onSendToViewSync={handleSendToViewSync} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.LandscapeRendering ? ( <LandscapeRendering state={toolStates.LandscapeRendering} onStateChange={(newState) => handleToolStateChange(Tool.LandscapeRendering, newState)} onSendToViewSync={handleSendToViewSync} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.AITechnicalDrawings ? ( <AITechnicalDrawings state={toolStates.AITechnicalDrawings} onStateChange={(newState) => handleToolStateChange(Tool.AITechnicalDrawings, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.SketchConverter ? ( <SketchConverter state={toolStates.SketchConverter} onStateChange={(newState) => handleToolStateChange(Tool.SketchConverter, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.ViewSync ? ( <ViewSync state={toolStates.ViewSync} onStateChange={(newState) => handleToolStateChange(Tool.ViewSync, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.MaterialSwap ? ( <MaterialSwapper state={toolStates.MaterialSwap} onStateChange={(newState) => handleToolStateChange(Tool.MaterialSwap, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.Staging ? ( <Staging state={toolStates.Staging} onStateChange={(newState) => handleToolStateChange(Tool.Staging, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.Upscale ? ( <Upscale state={toolStates.Upscale} onStateChange={(newState) => handleToolStateChange(Tool.Upscale, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.Moodboard ? ( <MoodboardGenerator state={toolStates.Moodboard} onStateChange={(newState) => handleToolStateChange(Tool.Moodboard, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.VideoGeneration ? ( <VideoGenerator state={toolStates.VideoGeneration} onStateChange={(newState) => handleToolStateChange(Tool.VideoGeneration, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.ImageEditing ? ( <ImageEditor state={toolStates.ImageEditing} onStateChange={(newState) => handleToolStateChange(Tool.ImageEditing, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.History ? ( <HistoryPanel /> ) : activeTool === Tool.Profile ? ( <UserProfile session={session} initialTab={toolStates.Profile.activeTab || 'profile'} onTabChange={(tab) => handleToolStateChange(Tool.Profile, { activeTab: tab })} onPurchaseSuccess={fetchUserStatus} /> ) : activeTool === Tool.LayoutGenerator ? ( <LayoutGenerator state={toolStates.LayoutGenerator} onStateChange={(newState) => handleToolStateChange(Tool.LayoutGenerator, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.DrawingGenerator ? ( <DrawingGenerator state={toolStates.DrawingGenerator} onStateChange={(newState) => handleToolStateChange(Tool.DrawingGenerator, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.DiagramGenerator ? ( <DiagramGenerator state={toolStates.DiagramGenerator} onStateChange={(newState) => handleToolStateChange(Tool.DiagramGenerator, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.RealEstatePoster ? ( <RealEstatePoster state={toolStates.RealEstatePoster} onStateChange={(newState) => handleToolStateChange(Tool.RealEstatePoster, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.EditByNote ? ( <EditByNote state={toolStates.EditByNote} onStateChange={(newState) => handleToolStateChange(Tool.EditByNote, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.ReRender ? ( <ReRender state={toolStates.ReRender} onStateChange={(newState) => handleToolStateChange(Tool.ReRender, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.PromptSuggester ? ( <PromptSuggester state={toolStates.PromptSuggester} onStateChange={(newState) => handleToolStateChange(Tool.PromptSuggester, newState)} onSendToViewSyncWithPrompt={handleSendToViewSyncWithPrompt} /> ) : null}
+                            {activeTool === Tool.Pricing ? ( <Checkout onPlanSelect={handleSelectPlanForPayment} /> ) : activeTool === Tool.FloorPlan ? ( <FloorPlan state={toolStates.FloorPlan} onStateChange={(newState) => handleToolStateChange(Tool.FloorPlan, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.Renovation ? ( <Renovation state={toolStates.Renovation} onStateChange={(newState) => handleToolStateChange(Tool.Renovation, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.ArchitecturalRendering ? ( <ImageGenerator state={toolStates.ArchitecturalRendering} onStateChange={(newState) => handleToolStateChange(Tool.ArchitecturalRendering, newState)} onSendToViewSync={handleSendToViewSync} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.AITechnicalDrawings ? ( <AITechnicalDrawings state={toolStates.AITechnicalDrawings} onStateChange={(newState) => handleToolStateChange(Tool.AITechnicalDrawings, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.SketchConverter ? ( <SketchConverter state={toolStates.SketchConverter} onStateChange={(newState) => handleToolStateChange(Tool.SketchConverter, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.ViewSync ? ( <ViewSync state={toolStates.ViewSync} onStateChange={(newState) => handleToolStateChange(Tool.ViewSync, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.MaterialSwap ? ( <MaterialSwapper state={toolStates.MaterialSwap} onStateChange={(newState) => handleToolStateChange(Tool.MaterialSwap, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.Staging ? ( <Staging state={toolStates.Staging} onStateChange={(newState) => handleToolStateChange(Tool.Staging, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.Upscale ? ( <Upscale state={toolStates.Upscale} onStateChange={(newState) => handleToolStateChange(Tool.Upscale, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.Moodboard ? ( <MoodboardGenerator state={toolStates.Moodboard} onStateChange={(newState) => handleToolStateChange(Tool.Moodboard, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.VideoGeneration ? ( <VideoGenerator state={toolStates.VideoGeneration} onStateChange={(newState) => handleToolStateChange(Tool.VideoGeneration, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.ImageEditing ? ( <ImageEditor state={toolStates.ImageEditing} onStateChange={(newState) => handleToolStateChange(Tool.ImageEditing, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.History ? ( <HistoryPanel /> ) : activeTool === Tool.Profile ? ( <UserProfile session={session} initialTab={toolStates.Profile.activeTab || 'profile'} onTabChange={(tab) => handleToolStateChange(Tool.Profile, { activeTab: tab })} onPurchaseSuccess={fetchUserStatus} /> ) : activeTool === Tool.LayoutGenerator ? ( <LayoutGenerator state={toolStates.LayoutGenerator} onStateChange={(newState) => handleToolStateChange(Tool.LayoutGenerator, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.DrawingGenerator ? ( <DrawingGenerator state={toolStates.DrawingGenerator} onStateChange={(newState) => handleToolStateChange(Tool.DrawingGenerator, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.DiagramGenerator ? ( <DiagramGenerator state={toolStates.DiagramGenerator} onStateChange={(newState) => handleToolStateChange(Tool.DiagramGenerator, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.RealEstatePoster ? ( <RealEstatePoster state={toolStates.RealEstatePoster} onStateChange={(newState) => handleToolStateChange(Tool.RealEstatePoster, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.EditByNote ? ( <EditByNote state={toolStates.EditByNote} onStateChange={(newState) => handleToolStateChange(Tool.EditByNote, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.ReRender ? ( <ReRender state={toolStates.ReRender} onStateChange={(newState) => handleToolStateChange(Tool.ReRender, newState)} userCredits={userCredits} onDeductCredits={handleDeductCredits} onInsufficientCredits={handleInsufficientCredits} /> ) : activeTool === Tool.PromptSuggester ? ( <PromptSuggester state={toolStates.PromptSuggester} onStateChange={(newState) => handleToolStateChange(Tool.PromptSuggester, newState)} onSendToViewSyncWithPrompt={handleSendToViewSyncWithPrompt} /> ) : null}
                           </ErrorBoundary>
                       </main>
                   </div>

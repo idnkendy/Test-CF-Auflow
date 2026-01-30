@@ -112,7 +112,7 @@ export const vi = {
   "history.modal.prompt": "Prompt",
   
   // Tools Labels
-  "tool.arch": "Render Kiến trúc",
+  "tool.arch": "Render Ảnh",
   "tool.interior": "Render Nội thất",
   "tool.renovation": "Cải Tạo AI",
   "tool.viewsync": "Đồng Bộ View",
@@ -171,7 +171,7 @@ export const vi = {
   "stats.time": "Thời gian tiết kiệm",
   "services.section_title": "Bộ công cụ thiết kế chuyên dụng",
   "services.section_desc": "Giải pháp toàn diện cho mọi giai đoạn của dự án",
-  "services.arch": "AI Render Ngoại thất",
+  "services.arch": "Render Ảnh",
   "services.arch_desc": "Dựng phối cảnh 3D chân thực từ bản vẽ 2D hoặc hình khối sơ phác.",
   "services.interior": "AI Render Nội thất",
   "services.interior_desc": "Tự động gợi ý phong cách, vật liệu và bố trí nội thất cho không gian sống.",
@@ -292,8 +292,12 @@ export const vi = {
   "pricing.faq_title": "Câu hỏi thường gặp",
 
   // --- IMAGE GENERATOR ---
-  "img_gen.title": "AI Render Kiến trúc",
-  "img_gen.subtitle": "Biến phác thảo thành hiện thực hoặc tạo ý tưởng mới từ mô tả văn bản.",
+  "img_gen.title": "Render Ảnh",
+  "img_gen.subtitle": "Chọn chế độ và tải lên ảnh phác thảo để bắt đầu Render AI.",
+  "img_gen.mode_arch": "Kiến trúc",
+  "img_gen.mode_interior": "Nội thất",
+  "img_gen.mode_urban": "Quy hoạch",
+  "img_gen.mode_landscape": "Sân vườn",
   "img_gen.step1": "1. Tải Lên Ảnh Phác Thảo (Sketch)",
   "img_gen.step2": "2. Mô tả ý tưởng (Prompt)",
   "img_gen.step3": "3. Tinh chỉnh chi tiết",
@@ -472,7 +476,7 @@ export const vi = {
   "sync.atm.night": "Ban đêm",
   "sync.atm.rainy": "Trời mưa",
   "sync.atm.misty": "Sương mù",
-  "sync.atm.after_rain": "Sau cơn mưa",
+  "sync.atm.after_rain": "Sau mưa",
 
   "sync.frame.none": "Không",
   "sync.frame.trees": "Xuyên qua tán cây",
@@ -601,6 +605,8 @@ export const vi = {
   "ext.moodboard.mode1": "Moodboard → Không gian",
   "ext.moodboard.mode2": "Không gian → Moodboard",
   "ext.moodboard.btn_generate": "Tạo Moodboard",
+  "moodboard.step1": "1. Tải Lên Ảnh Gốc",
+  "moodboard.step2": "2. Mô tả ý tưởng",
 
   "ext.staging.title": "AI Staging (Dàn dựng nội thất)",
   "ext.staging.step1": "1. Tải Lên Ảnh Không Gian Trống",
@@ -613,11 +619,11 @@ export const vi = {
   "ext.material.btn_generate": "Thực Hiện Thay Thế",
 
   "ext.upscale.title": "AI Upscale",
-  "ext.upscale.step1": "1. Upload Image to Upscale",
-  "ext.upscale.step2": "2. Select Mode",
+  "ext.upscale.step1": "1. Tải ảnh cần nâng cấp",
+  "ext.upscale.step2": "2. Chọn chế độ",
   "ext.upscale.fast": "Fast (4K Fast)",
   "ext.upscale.quality": "Detailed (4K Quality)",
-  "ext.upscale.btn_generate": "Execute Upscale",
+  "ext.upscale.btn_generate": "Thực hiện Upscale",
   
   // NEW KEYS FOR UPSCALE (VI)
   "ext.upscale.fast_desc": "Tăng độ nét cơ bản, giữ nguyên chi tiết gốc. Tốc độ cao.",
@@ -630,7 +636,7 @@ export const vi = {
   "ext.upscale.status_process_fast": "AI đang nâng cấp nhanh...",
   "ext.upscale.status_process_quality": "AI đang tái tạo chi tiết...",
   "ext.upscale.start_error": "Không thể bắt đầu tác vụ xử lý hình ảnh.",
-  "ext.upscale.timeout_error": "Quá thời gian xử lý.",
+  "ext.upscale.timeout_error": "Quá thời xử lý.",
 
   "ext.layout.title": "AI Tạo Layout & Presentation",
   "ext.layout.step1": "1. Tải Lên Phác Thảo / Render (Tùy chọn)",

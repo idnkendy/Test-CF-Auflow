@@ -32,328 +32,167 @@ const ReRender: React.FC<ReRenderProps> = ({ state, onStateChange, userCredits =
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
-    
-    // Logic tính phí: Bước 1 (Standard) + Bước 2 (Standard/Pro)
-    const getCostPerImage = () => {
-        switch (resolution) {
-            case 'Standard': return 5;
-            case '1K': return 10;
-            case '2K': return 20;
-            case '4K': return 30;
-            default: return 5;
-        }
-    };
-    const unitCost = getCostPerImage();
-    const cost = numberOfImages * unitCost;
+    const [selectedIndex, setSelectedIndex] = useState(0);
 
-    // Update default prompt when language changes, only if the user hasn't typed anything custom
-    // or if the current prompt matches the default of the other language
     useEffect(() => {
-        const viDefault = 'Biến ảnh thành ảnh thực tế';
-        const enDefault = 'Make it photorealistic';
-        
-        if (!prompt || prompt === viDefault || prompt === enDefault) {
-             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
-        }
-    }, [language]);
+        if (resultImages.length > 0) setSelectedIndex(0);
+    }, [resultImages.length]);
 
     const handleFileSelect = (fileData: FileData | null) => {
         onStateChange({ sourceImage: fileData, resultImages: [] });
     };
 
-    const handleResolutionChange = (val: ImageResolution) => {
-        onStateChange({ resolution: val });
-    };
+    useEffect(() => {
+        const viDefault = 'Biến ảnh thành ảnh thực tế';
+        const enDefault = 'Make it photorealistic';
+        if (!prompt || prompt === viDefault || prompt === enDefault) {
+             onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
+        }
+    }, [language]);
+
+    const cost = numberOfImages * (resolution === '4K' ? 30 : resolution === '2K' ? 20 : resolution === '1K' ? 10 : 5);
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             if (onInsufficientCredits) {
-                 onInsufficientCredits();
-             } else {
-                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
-             }
+             if (onInsufficientCredits) onInsufficientCredits();
              return;
         }
-
-        if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên ảnh để re-render.' });
-            return;
-        }
-
-        if (!prompt.trim()) {
-            onStateChange({ error: 'Vui lòng nhập mô tả yêu cầu.' });
-            return;
-        }
+        if (!sourceImage) return;
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        // Simplified status message
         setStatusMessage(t('common.processing'));
-        setUpscaleWarning(null);
-
-        // Prompt cứng cho Bước 1 (Sketch creation)
-        const step1Prompt = "Convert to watercolor sketch style, keep details";
-        
-        // Prompt cho Bước 2 (Kết hợp input user)
-        const step2Prompt = `Turn this sketch into a photorealistic image. ${prompt}`;
-
-        let logId: string | null = null;
-        let jobId: string | null = null;
 
         try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Re-Render (${numberOfImages} ảnh) - ${resolution}`);
-            }
+            if (onDeductCredits) await onDeductCredits(cost, `Re-Render (${numberOfImages} ảnh) - ${resolution}`);
             
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.ReRender,
-                    prompt: prompt,
-                    cost: cost,
-                    usage_log_id: logId
-                });
-            }
-            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-
-            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                try {
-                    // --- STEP 1: CREATE SKETCH (Standard Res) ---
-                    const step1Model = "GEM_PIX"; 
-                    
-                    const step1Result = await externalVideoService.generateFlowImage(
-                        step1Prompt, 
-                        [sourceImage], 
-                        aspectRatio,
-                        1, 
-                        step1Model, 
-                        undefined // No detailed progress update
-                    );
-
-                    if (!step1Result.imageUrls || step1Result.imageUrls.length === 0) {
-                        throw new Error("Lỗi tạo phác thảo ở bước 1.");
-                    }
-
-                    const sketchUrl = step1Result.imageUrls[0];
-                    const sketchFileData = await geminiService.getFileDataFromUrl(sketchUrl);
-
-                    // --- STEP 2: REALIZE (Target Res) ---
-                    const step2Model = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                    
-                    const step2Result = await externalVideoService.generateFlowImage(
-                        step2Prompt, 
-                        [sketchFileData], 
-                        aspectRatio,
-                        1, 
-                        step2Model, 
-                        undefined // No detailed progress update
-                    );
-
-                    if (!step2Result.imageUrls || step2Result.imageUrls.length === 0) {
-                        throw new Error("Lỗi render thực tế ở bước 2.");
-                    }
-
-                    let finalUrl = step2Result.imageUrls[0];
-
-                    // --- STEP 3: UPSCALE (Conditional) ---
-                    const shouldUpscale = (resolution === '2K' || resolution === '4K') && step2Result.mediaIds && step2Result.mediaIds.length > 0;
-                    
-                    if (shouldUpscale) {
-                        try {
-                            const mediaId = step2Result.mediaIds[0];
-                            if (mediaId) {
-                                const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                const upscaleRes = await externalVideoService.upscaleFlowImage(mediaId, step2Result.projectId, targetRes, aspectRatio);
-                                if (upscaleRes?.imageUrl) finalUrl = upscaleRes.imageUrl;
-                            }
-                        } catch (e: any) {
-                            console.error(`Lỗi Upscale ảnh ${index + 1}: ${e.message}`);
-                        }
-                    }
-                    
-                    return finalUrl;
-
-                } catch (e: any) {
-                    console.error(`Image ${index+1} failed`, e);
-                    throw e; // Re-throw to catch block
-                }
-            });
-
-            const results = await Promise.all(promises);
-            const successfulUrls = results.filter((url): url is string => url !== null);
+            const step1Result = await externalVideoService.generateFlowImage(
+                "Convert to watercolor sketch style, keep details", [sourceImage], aspectRatio, 1, "GEM_PIX"
+            );
             
-            if (successfulUrls.length > 0) {
-                onStateChange({ resultImages: successfulUrls });
+            if (step1Result.imageUrls?.length) {
+                const sketchFileData = await geminiService.getFileDataFromUrl(step1Result.imageUrls[0]);
+                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
                 
-                successfulUrls.forEach(url => {
-                    historyService.addToHistory({ 
-                        tool: Tool.ReRender, 
-                        prompt: `Re-Render: ${prompt}`, 
-                        sourceImageURL: sourceImage.objectURL, 
-                        resultImageURL: url 
-                    });
-                });
+                const step2Result = await externalVideoService.generateFlowImage(
+                    `Turn this sketch into a photorealistic image. ${prompt}`, [sketchFileData], aspectRatio, numberOfImages, modelName,
+                    (msg) => setStatusMessage(msg)
+                );
 
-                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
-
-                // Partial refund logic
-                const failedCount = numberOfImages - successfulUrls.length;
-                if (failedCount > 0 && logId && user) {
-                    const refundAmount = failedCount * unitCost;
-                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    
-                    const errorMsg = t('msg.refund_success')
-                        .replace('{success}', successfulUrls.length.toString())
-                        .replace('{total}', numberOfImages.toString())
-                        .replace('{amount}', refundAmount.toString())
-                        .replace('{failed}', failedCount.toString());
-                    
-                    onStateChange({ error: errorMsg });
+                if (step2Result.imageUrls) {
+                    onStateChange({ resultImages: step2Result.imageUrls });
+                    step2Result.imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.ReRender, prompt: prompt, sourceImageURL: sourceImage.objectURL, resultImageURL: url }));
                 }
-            } else {
-                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
-
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
-            
-            // --- SAFETY MODAL TRIGGER ---
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
-                setShowSafetyModal(true);
-                onStateChange({ error: t('msg.safety_violation') });
-            } else {
-                onStateChange({ error: friendlyMsg });
-            }
-            
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
-            
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Re-Render (${rawMsg})`, logId);
-                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
-            }
+            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
+            else onStateChange({ error: t(friendlyKey) });
         } finally {
             onStateChange({ isLoading: false });
-            setStatusMessage(null);
         }
     };
 
     const handleDownload = async () => {
-        if (resultImages.length === 0) return;
-        setIsDownloading(true);
-        await externalVideoService.forceDownload(resultImages[0], `re-render-${Date.now()}.png`);
-        setIsDownloading(false);
+        if (resultImages[selectedIndex]) {
+            setIsDownloading(true);
+            await externalVideoService.forceDownload(resultImages[selectedIndex], `rerender-${Date.now()}.png`);
+            setIsDownloading(false);
+        }
     };
 
     return (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+            <style>{`
+                .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+            `}</style>
+
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.rerender.title')}</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.rerender.step1')}</label>
-                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
-                    </div>
-                    
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.rerender.step2')}</label>
-                        <textarea
-                            rows={4}
-                            className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent focus:outline-none transition-all"
-                            placeholder={t('ext.rerender.prompt_ph')}
-                            value={prompt}
-                            onChange={(e) => onStateChange({ prompt: e.target.value })}
-                        />
-                    </div>
-                    
-                    <div className="grid grid-cols-2 gap-4">
+            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
                         <div>
-                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                        </div>
-                        <div>
-                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
-                        </div>
-                    </div>
-                    
-                    <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
-
-                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                        </div>
-                        <div className="text-xs">
-                            {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
-                            ) : (
-                                <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
-                            )}
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('ext.rerender.step1')}</label>
+                            <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                         </div>
                     </div>
 
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isLoading || !sourceImage}
-                        className="w-full flex justify-center items-center gap-3 bg-accent hover:bg-accent-600 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
-                    >
-                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.rerender.btn_generate')}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('ext.rerender.step2')}</label>
+                            <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
+                                <textarea rows={4} className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('ext.rerender.prompt_ph')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
+                        <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} />
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
+                    </div>
+                </div>
+
+                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('ext.rerender.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
                     </button>
-                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
-                    {upscaleWarning && <div className="text-xs text-yellow-500 text-center">{upscaleWarning}</div>}
                 </div>
+            </aside>
 
-                <div>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
-                        {resultImages.length > 0 && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPreviewImage(resultImages[0])}
-                                    className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
-                                    title="Phóng to"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                                    </svg>
-                                </button>
-                                <button 
-                                    onClick={handleDownload} 
-                                    disabled={isDownloading}
-                                    className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
-                                >
-                                    {isDownloading ? <Spinner /> : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                        </svg>
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm min-h-full overflow-hidden">
+                <div className="p-0 flex flex-col h-full items-start">
+                    <div className="w-full bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex flex-col items-start min-h-[400px]">
+                        {resultImages.length > 0 ? (
+                            <div className="w-full p-0 animate-fade-in flex flex-col items-start relative">
+                                <div className="w-full min-h-[300px] sm:min-h-[450px] lg:min-h-[550px] flex items-center justify-center">
+                                    {sourceImage ? (
+                                        <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[selectedIndex]} />
+                                    ) : (
+                                        <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-[75vh] object-contain" />
                                     )}
-                                    <span>{t('common.download')}</span>
-                                </button>
+                                </div>
+                                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
+                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                </div>
                             </div>
-                        )}
-                    </div>
-                    <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                        {isLoading ? (
-                            <div className="flex flex-col items-center">
-                                <Spinner />
-                                <p className="mt-2 text-gray-400">{statusMessage}</p>
-                            </div>
-                        ) : resultImages.length === 1 && sourceImage ? (
-                            <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[0]} />
-                        ) : resultImages.length > 0 ? (
-                             <ResultGrid images={resultImages} toolName="re-render" />
                         ) : (
-                             <p className="text-text-secondary dark:text-gray-400 text-center p-4">{t('msg.no_result_render')}</p>
+                            <div className="w-full h-full flex flex-col items-center justify-center py-40 opacity-20 select-none bg-main-bg dark:bg-[#121212]">
+                                <span className="material-symbols-outlined text-6xl mb-4">brush</span>
+                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
+                            </div>
+                        )}
+                        {isLoading && (
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                <Spinner />
+                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
+                            </div>
                         )}
                     </div>
+
+                    {resultImages.length > 0 && !isLoading && (
+                        <div className="w-full p-3 sm:p-4 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
+                            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+                                {resultImages.map((url, idx) => (
+                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-24 sm:w-32 aspect-video rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                        <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                 </div>
-            </div>
+            </main>
         </div>
     );
 };

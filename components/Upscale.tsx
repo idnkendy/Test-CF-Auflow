@@ -11,32 +11,19 @@ import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import ImageComparator from './ImageComparator';
 import ImagePreviewModal from './common/ImagePreviewModal';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal'; 
 import { useLanguage } from '../hooks/useLanguage';
 import { BACKEND_URL } from '../services/config';
 
-// --- CONFIGURATION ---
 const UPSCALE_QUALITY_WEBAPP_ID = "1977269629011808257";
 const UPSCALE_FAST_WEBAPP_ID = "1983430456135852034";
-// API Key has been removed and moved to Backend
 
-// Helper to fetch from local proxy
 const fetchProxy = async (endpoint: string, body: any) => {
-    // Determine backend URL (local dev vs prod)
-    // Clean URL
     const baseUrl = BACKEND_URL.replace(/\/$/, ""); 
     const path = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
     const url = `${baseUrl}${path}`;
-
-    const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-    });
-
-    if (!response.ok) {
-        throw new Error(`Proxy error: ${response.status}`);
-    }
+    const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!response.ok) throw new Error(`Proxy error: ${response.status}`);
     return await response.json();
 };
 
@@ -54,144 +41,58 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
-    
-    // Internal state for RunningHub tracking
+    const [showSafetyModal, setShowSafetyModal] = useState(false); 
     const [runningHubTaskId, setRunningHubTaskId] = useState<string | null>(null);
-    const [currentJobId, setCurrentJobId] = useState<string | null>(null);
     const pollingIntervalRef = useRef<number | null>(null);
 
-    // Cost logic
     const cost = detailMode === 'fast' ? 20 : 30;
 
-    // Cleanup polling on unmount
     useEffect(() => {
-        return () => {
-            if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-            }
-        };
+        return () => { if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current); };
     }, []);
 
-    // Helper: Upload to Supabase Storage
     const uploadToSupabase = async (fileData: FileData): Promise<string> => {
-        try {
-            const { data: { user } } = await supabase.auth.getUser();
-            if (!user) throw new Error("Vui lòng đăng nhập để sử dụng tính năng này.");
-
-            // Convert blob URL to Blob for upload
-            const res = await fetch(fileData.objectURL);
-            const blob = await res.blob();
-            
-            const fileExt = blob.type.split('/')[1] || 'png';
-            const fileName = `${user.id}/uploads/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-
-            const { error: uploadError } = await supabase.storage
-                .from('assets')
-                .upload(fileName, blob, {
-                    contentType: blob.type,
-                    upsert: false
-                });
-
-            if (uploadError) throw uploadError;
-
-            const { data } = supabase.storage
-                .from('assets')
-                .getPublicUrl(fileName);
-
-            return data.publicUrl;
-        } catch (error: any) {
-            console.error("Supabase Upload Error:", error);
-            throw new Error(error.message || 'Lỗi tải ảnh lên máy chủ.');
-        }
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error("Vui lòng đăng nhập.");
+        const res = await fetch(fileData.objectURL);
+        const blob = await res.blob();
+        const fileExt = blob.type.split('/')[1] || 'png';
+        const fileName = `${user.id}/uploads/${Date.now()}_${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+        const { error: uploadError } = await supabase.storage.from('assets').upload(fileName, blob, { contentType: blob.type, upsert: false });
+        if (uploadError) throw uploadError;
+        const { data } = supabase.storage.from('assets').getPublicUrl(fileName);
+        return data.publicUrl;
     };
 
-    // Polling Effect
     useEffect(() => {
         if (!runningHubTaskId) return;
-
         let attempts = 0;
-        const maxAttempts = 120; // ~10 minutes
-
         pollingIntervalRef.current = window.setInterval(async () => {
-            if (attempts >= maxAttempts) {
-                handleError(t('ext.upscale.timeout_error'));
-                return;
-            }
+            if (attempts >= 120) { handleError(t('ext.upscale.timeout_error')); return; }
             attempts++;
-
             try {
-                // Call Backend Proxy for Check
-                const data = await fetchProxy('/upscale-check', { 
-                    taskId: runningHubTaskId 
-                });
-
-                if (data?.code === 0) {
-                    const resultIndex = 0;
-                    const processedImageUrl = data.data?.[resultIndex]?.fileUrl;
-
-                    if (processedImageUrl) {
-                        handleSuccess(processedImageUrl);
-                    }
-                } else if (data?.code !== 1) { 
-                     // Handle other codes if necessary
-                }
-            } catch (e) {
-                console.error("Polling error", e);
-            }
+                const data = await fetchProxy('/upscale-check', { taskId: runningHubTaskId });
+                if (data?.code === 0 && data.data?.[0]?.fileUrl) handleSuccess(data.data[0].fileUrl);
+            } catch (e) {}
         }, 5000);
-
-        return () => {
-            if (pollingIntervalRef.current) {
-                clearInterval(pollingIntervalRef.current);
-                pollingIntervalRef.current = null;
-            }
-        };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+        return () => { if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current); };
     }, [runningHubTaskId]);
 
     const handleSuccess = async (resultUrl: string) => {
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
         setRunningHubTaskId(null);
-        
         onStateChange({ upscaledImages: [resultUrl], isLoading: false });
         setStatusMessage(null);
-
-        if (sourceImage) {
-            historyService.addToHistory({ 
-                tool: Tool.Upscale, 
-                prompt: `Upscale (${detailMode})`, 
-                sourceImageURL: sourceImage.objectURL, 
-                resultImageURL: resultUrl 
-            });
-        }
-
-        if (currentJobId) {
-            await jobService.updateJobStatus(currentJobId, 'completed', resultUrl);
-            setCurrentJobId(null);
-        }
+        if (sourceImage) historyService.addToHistory({ tool: Tool.Upscale, prompt: `Upscale (${detailMode})`, sourceImageURL: sourceImage.objectURL, resultImageURL: resultUrl });
     };
 
     const handleError = async (msg: string) => {
         if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
         setRunningHubTaskId(null);
-        
-        const friendlyMsgKey = jobService.mapFriendlyErrorMessage(msg);
-        let displayMsg = t(friendlyMsgKey);
-        
-        // --- SAFETY MODAL TRIGGER (Async/Polling) ---
-        if (friendlyMsgKey === "SAFETY_POLICY_VIOLATION") {
-            setShowSafetyModal(true);
-            displayMsg = t('msg.safety_violation');
-        }
-        
-        onStateChange({ isLoading: false, error: displayMsg });
+        let friendlyKey = jobService.mapFriendlyErrorMessage(msg);
+        if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
+        onStateChange({ isLoading: false, error: t(friendlyKey) });
         setStatusMessage(null);
-
-        if (currentJobId) {
-            await jobService.updateJobStatus(currentJobId, 'failed', undefined, msg);
-            setCurrentJobId(null);
-        }
     };
 
     const handleFileSelect = (fileData: FileData | null) => {
@@ -200,243 +101,155 @@ const Upscale: React.FC<UpscaleProps> = ({ state, onStateChange, userCredits = 0
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             if (onInsufficientCredits) {
-                 onInsufficientCredits();
-             } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
-             }
+             if (onInsufficientCredits) onInsufficientCredits();
              return;
         }
-
-        if (!sourceImage) {
-            onStateChange({ error: t('ext.upscale.upload_error') });
-            return;
-        }
+        if (!sourceImage) return;
 
         onStateChange({ isLoading: true, error: null, upscaledImages: [] });
-        setStatusMessage(detailMode === 'fast' ? t('ext.upscale.status_init') : t('ext.upscale.status_init_pro'));
-
-        let logId: string | null = null;
-        let jobId: string | null = null;
+        setStatusMessage(t('ext.upscale.status_init'));
 
         try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Upscale (${detailMode})`);
-            }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.Upscale,
-                    prompt: `Upscale image (${detailMode})`,
-                    cost: cost,
-                    usage_log_id: logId
-                });
-                setCurrentJobId(jobId);
-            }
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-
-            // 1. Upload to Supabase Storage
-            setStatusMessage(t('ext.upscale.status_upload'));
+            if (onDeductCredits) await onDeductCredits(cost, `Upscale (${detailMode})`);
             const publicImageUrl = await uploadToSupabase(sourceImage);
+            let payload = detailMode === 'fast' 
+                ? { webappId: UPSCALE_FAST_WEBAPP_ID, nodeInfoList: [{ nodeId: "15", fieldName: "image", fieldValue: publicImageUrl }] }
+                : { webappId: UPSCALE_QUALITY_WEBAPP_ID, nodeInfoList: [{ nodeId: "41", fieldName: "image", fieldValue: publicImageUrl }, { nodeId: "71", fieldName: "value", fieldValue: "0.25" }] };
 
-            // 2. Prepare RunningHub Payload
-            setStatusMessage(t('ext.upscale.status_send'));
-            let runningHubPayload;
-            
-            if (detailMode === 'fast') {
-                runningHubPayload = {
-                    webappId: UPSCALE_FAST_WEBAPP_ID,
-                    // ApiKey injected at Backend
-                    nodeInfoList: [{ nodeId: "15", fieldName: "image", fieldValue: publicImageUrl, description: "Load Image" }]
-                };
-            } else {
-                runningHubPayload = {
-                    webappId: UPSCALE_QUALITY_WEBAPP_ID,
-                    // ApiKey injected at Backend
-                    nodeInfoList: [
-                        { nodeId: "41", fieldName: "image", fieldValue: publicImageUrl, description: "Ảnh gốc" },
-                        { nodeId: "71", fieldName: "value", fieldValue: "0.25", description: "Mức độ thay đổi" }
-                    ]
-                };
-            }
-
-            // 3. Call Backend Proxy
-            const data = await fetchProxy('/upscale-create', runningHubPayload);
-
-            if (!data || (data.code && data.code !== 0) || !data.data?.taskId) {
-                throw new Error(data.msg || t('ext.upscale.start_error'));
-            }
-
-            // 4. Start Polling (Triggered by state change)
-            setRunningHubTaskId(data.data.taskId);
-            setStatusMessage(detailMode === 'fast' ? t('ext.upscale.status_process_fast') : t('ext.upscale.status_process_quality'));
-
-        } catch (err: any) {
-            let msg = err.message || "";
-            let friendlyKey = jobService.mapFriendlyErrorMessage(msg);
-            let displayMsg = t(friendlyKey);
-            
-            // --- SAFETY MODAL TRIGGER (Sync/Initial) ---
-            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
-                setShowSafetyModal(true);
-                displayMsg = t('msg.safety_violation');
-            }
-            
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Upscale (${msg})`, logId);
-                if (friendlyKey !== "SAFETY_POLICY_VIOLATION") {
-                    displayMsg += t('video.msg.refund');
-                }
-            }
-            
-            onStateChange({ error: displayMsg, isLoading: false });
-            setStatusMessage(null);
-            
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, msg);
-            setCurrentJobId(null);
-        }
+            const data = await fetchProxy('/upscale-create', payload);
+            if (data?.code === 0 && data.data?.taskId) {
+                setRunningHubTaskId(data.data.taskId);
+                setStatusMessage(detailMode === 'fast' ? t('ext.upscale.status_process_fast') : t('ext.upscale.status_process_quality'));
+            } else throw new Error(data.msg || "Lỗi khởi tạo.");
+        } catch (err: any) { handleError(err.message || ""); }
     };
 
     const handleDownload = async () => {
-        if (upscaledImages.length === 0) return;
-        const url = upscaledImages[0];
-        const filename = `upscaled-${detailMode}-${Date.now()}.png`;
-
-        setIsDownloading(true);
-        await externalVideoService.forceDownload(url, filename);
-        setIsDownloading(false);
+        if (upscaledImages.length > 0) {
+            setIsDownloading(true);
+            await externalVideoService.forceDownload(upscaledImages[0], `upscaled-${Date.now()}.png`);
+            setIsDownloading(false);
+        }
     };
 
     return (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+            <style>{`
+                .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+            `}</style>
+
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.upscale.title')}</h2>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                    <div>
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.upscale.step1')}</label>
-                        <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
+            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('ext.upscale.step1')}</label>
+                            <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
+                        </div>
                     </div>
 
-                    <div className="space-y-3">
-                        <label className="block text-sm font-medium text-text-secondary dark:text-gray-400">{t('ext.upscale.step2')}</label>
-                        <div className="grid grid-cols-2 gap-3">
-                            <button
-                                onClick={() => onStateChange({ detailMode: 'fast' })}
-                                disabled={isLoading}
-                                className={`p-4 rounded-xl border text-left transition-all duration-200 ${
-                                    detailMode === 'fast'
-                                        ? 'bg-[#7f13ec]/10 border-[#7f13ec] shadow-md'
-                                        : 'bg-surface dark:bg-gray-800 border-border-color dark:border-gray-700 hover:border-gray-400'
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">2. {t('ext.upscale.step2')}</label>
+                        <div className="grid grid-cols-1 gap-4">
+                            {/* FAST MODE */}
+                            <button 
+                                onClick={() => onStateChange({ detailMode: 'fast' })} 
+                                disabled={isLoading} 
+                                className={`group p-5 rounded-2xl border-2 transition-all text-left flex flex-col gap-3 relative overflow-hidden ${
+                                    detailMode === 'fast' 
+                                        ? 'bg-[#7f13ec]/5 border-[#7f13ec] shadow-lg shadow-[#7f13ec]/10' 
+                                        : 'bg-white dark:bg-[#1E1E1E] border-gray-200 dark:border-[#302839] hover:border-gray-400 dark:hover:border-[#404040]'
                                 }`}
                             >
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="material-symbols-outlined text-yellow-500">bolt</span>
-                                    <span className={`font-bold ${detailMode === 'fast' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>{t('ext.upscale.fast')}</span>
+                                <div className="flex items-center gap-3">
+                                    <span className={`material-symbols-outlined text-2xl ${detailMode === 'fast' ? 'text-yellow-500' : 'text-gray-400 group-hover:text-yellow-500'}`}>bolt</span>
+                                    <div className="font-extrabold text-base dark:text-white">
+                                        <span className={detailMode === 'fast' ? 'text-[#a855f7]' : ''}>Fast</span> (4K Fast)
+                                    </div>
                                 </div>
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">{t('ext.upscale.fast_desc')}</p>
-                                <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
-                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 20 Credits
+                                <div className="text-xs text-text-secondary dark:text-gray-400 leading-relaxed pr-2">
+                                    {t('ext.upscale.fast_desc')}
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-gray-100 dark:bg-[#2A2A2A] px-2.5 py-1 rounded-lg w-fit border border-gray-200 dark:border-[#333]">
+                                    <span className="material-symbols-outlined text-sm text-yellow-500">monetization_on</span>
+                                    <span className="text-xs font-bold dark:text-gray-200">20 Credits</span>
                                 </div>
                             </button>
 
-                            <button
-                                onClick={() => onStateChange({ detailMode: 'quality' })}
-                                disabled={isLoading}
-                                className={`p-4 rounded-xl border text-left transition-all duration-200 ${
-                                    detailMode === 'quality'
-                                        ? 'bg-[#7f13ec]/10 border-[#7f13ec] shadow-md'
-                                        : 'bg-surface dark:bg-gray-800 border-border-color dark:border-gray-700 hover:border-gray-400'
+                            {/* QUALITY MODE */}
+                            <button 
+                                onClick={() => onStateChange({ detailMode: 'quality' })} 
+                                disabled={isLoading} 
+                                className={`group p-5 rounded-2xl border-2 transition-all text-left flex flex-col gap-3 relative overflow-hidden ${
+                                    detailMode === 'quality' 
+                                        ? 'bg-[#7f13ec]/5 border-[#7f13ec] shadow-lg shadow-[#7f13ec]/10' 
+                                        : 'bg-white dark:bg-[#1E1E1E] border-gray-200 dark:border-[#302839] hover:border-gray-400 dark:hover:border-[#404040]'
                                 }`}
                             >
-                                <div className="flex items-center gap-2 mb-1">
-                                    <span className="material-symbols-outlined text-purple-500">auto_awesome</span>
-                                    <span className={`font-bold ${detailMode === 'quality' ? 'text-[#7f13ec]' : 'text-text-primary dark:text-white'}`}>{t('ext.upscale.quality')}</span>
+                                <div className="flex items-center gap-3">
+                                    <span className={`material-symbols-outlined text-2xl ${detailMode === 'quality' ? 'text-[#a855f7]' : 'text-gray-400 group-hover:text-[#a855f7]'}`}>auto_awesome</span>
+                                    <div className="font-extrabold text-base dark:text-white">
+                                        Detailed (4K Quality)
+                                    </div>
                                 </div>
-                                <p className="text-xs text-text-secondary dark:text-gray-400 mb-2">{t('ext.upscale.quality_desc')}</p>
-                                <div className="inline-flex items-center gap-1 bg-gray-200 dark:bg-gray-700 px-2 py-0.5 rounded text-xs font-bold text-text-primary dark:text-white">
-                                    <span className="material-symbols-outlined text-[10px] text-yellow-500">monetization_on</span> 30 Credits
+                                <div className="text-xs text-text-secondary dark:text-gray-400 leading-relaxed pr-2">
+                                    {t('ext.upscale.quality_desc')}
+                                </div>
+                                <div className="flex items-center gap-1.5 bg-gray-100 dark:bg-[#2A2A2A] px-2.5 py-1 rounded-lg w-fit border border-gray-200 dark:border-[#333]">
+                                    <span className="material-symbols-outlined text-sm text-yellow-500">monetization_on</span>
+                                    <span className="text-xs font-bold dark:text-gray-200">30 Credits</span>
                                 </div>
                             </button>
                         </div>
                     </div>
+                </div>
 
-                    <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
-                        <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                            <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                            <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                        </div>
-                        <div className="text-xs">
-                            {userCredits < cost ? (
-                                <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
-                            ) : (
-                                <span className="text-green-600 dark:text-green-400">{t('common.available')}</span>
-                            )}
-                        </div>
-                    </div>
-
-                    <button
-                        onClick={handleGenerate}
-                        disabled={isLoading || !sourceImage}
-                        className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
-                    >
-                        {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.upscale.btn_generate')}
+                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('ext.upscale.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
                     </button>
-                    {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
                 </div>
+            </aside>
 
-                <div>
-                    <div className="flex justify-between items-center mb-4">
-                        <h3 className="text-xl font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
-                        {upscaledImages.length > 0 && (
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={() => setPreviewImage(upscaledImages[0])}
-                                    className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
-                                    title="Phóng to"
-                                >
-                                    <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                        <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
-                                    </svg>
-                                </button>
-                                <button 
-                                    onClick={handleDownload} 
-                                    disabled={isDownloading}
-                                    className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
-                                >
-                                    {isDownloading ? <Spinner /> : (
-                                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                        </svg>
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="flex flex-col h-full overflow-hidden">
+                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                        {upscaledImages.length > 0 ? (
+                            <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
+                                <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                                    {sourceImage ? (
+                                        <ImageComparator originalImage={sourceImage.objectURL} resultImage={upscaledImages[0]} />
+                                    ) : (
+                                        <img src={upscaledImages[0]} alt="Result" className="max-w-full max-h-full object-contain" />
                                     )}
-                                    <span>{t('common.download')}</span>
-                                </button>
+                                </div>
+                                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
+                                    <button onClick={() => setPreviewImage(upscaledImages[0])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center py-40 opacity-20 select-none bg-main-bg dark:bg-[#121212] flex-grow">
+                                <span className="material-symbols-outlined text-6xl mb-4">hd</span>
+                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
                             </div>
                         )}
-                    </div>
-                    <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                        {isLoading ? (
-                            <div className="flex flex-col items-center">
+                        {isLoading && (
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
                                 <Spinner />
-                                <p className="mt-2 text-gray-400 text-sm animate-pulse">{statusMessage}</p>
+                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
                             </div>
-                        ) : upscaledImages.length > 0 && sourceImage ? (
-                            <ImageComparator originalImage={sourceImage.objectURL} resultImage={upscaledImages[0]} />
-                        ) : (
-                             <div className="text-center text-text-secondary dark:text-gray-400 p-4">
-                                <span className="material-symbols-outlined text-4xl mb-2 opacity-50">compare</span>
-                                <p>{t('msg.no_result_render')}</p>
-                             </div>
                         )}
                     </div>
                 </div>
-            </div>
+            </main>
         </div>
     );
 };

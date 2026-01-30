@@ -113,7 +113,7 @@ export const en = {
   "history.modal.prompt": "Prompt",
   
   // Tools Labels
-  "tool.arch": "Arch Rendering",
+  "tool.arch": "Image Render",
   "tool.interior": "Interior Rendering",
   "tool.renovation": "AI Renovation",
   "tool.viewsync": "View Sync",
@@ -139,7 +139,6 @@ export const en = {
   "tool.fengshui": "Feng Shui Analysis",
 
   // --- DASHBOARD DESCRIPTIONS ---
-  "dash.title": "Extended Utility Hub",
   "dash.subtitle": "Explore specialized AI tools supporting every stage of design, planning, and concept realization.",
   "dash.rerender.desc": "Transform sketches/renders into sharp photorealistic images.",
   "dash.floorplan.desc": "Convert 2D CAD drawings into 3D colored floor plans.",
@@ -172,7 +171,7 @@ export const en = {
   "stats.time": "Time Saved",
   "services.section_title": "Specialized Design Toolkit",
   "services.section_desc": "Comprehensive solutions for every project stage",
-  "services.arch": "AI Exterior Render",
+  "services.arch": "Image Render",
   "services.arch_desc": "Create realistic 3D perspectives from 2D drawings or rough massing.",
   "services.interior": "AI Interior Render",
   "services.interior_desc": "Automatically suggest styles, materials, and layouts for living spaces.",
@@ -300,8 +299,12 @@ export const en = {
   "pricing.modal.required": "All fields are required.",
 
   // --- IMAGE GENERATOR ---
-  "img_gen.title": "AI Architectural Rendering",
-  "img_gen.subtitle": "Turn sketches into reality or generate new ideas from text descriptions.",
+  "img_gen.title": "Image Render",
+  "img_gen.subtitle": "Select a mode and upload a sketch to start AI Rendering.",
+  "img_gen.mode_arch": "Exterior",
+  "img_gen.mode_interior": "Interior",
+  "img_gen.mode_urban": "Urban",
+  "img_gen.mode_landscape": "Landscape",
   "img_gen.step1": "1. Upload Sketch",
   "img_gen.step2": "2. Describe Idea (Prompt)",
   "img_gen.step3": "3. Fine-tune Details",
@@ -497,11 +500,11 @@ export const en = {
   "sync.int.topdown": "Top Down",
 
   // Creative View Options
-  "sync.creative.opt.interior": "Interior Views",
+  "sync.creative.opt.interior": "Interior",
   "sync.creative.opt.interior_desc": "Generate room angles",
   "sync.creative.opt.interior_long": "Automatically create different interior perspectives (Living Room, Kitchen, Bedroom...) from the same design style.",
   
-  "sync.creative.opt.arch": "Architectural Views",
+  "sync.creative.opt.arch": "Architecture",
   "sync.creative.opt.arch_desc": "Exterior visualization",
   "sync.creative.opt.arch_long": "Create diverse exterior perspectives (Bird's eye, Facade, Close-up...) maintaining architectural language.",
   
@@ -609,6 +612,8 @@ export const en = {
   "ext.moodboard.mode1": "Moodboard → Space",
   "ext.moodboard.mode2": "Space → Moodboard",
   "ext.moodboard.btn_generate": "Create Moodboard",
+  "moodboard.step1": "1. Upload Source Image",
+  "moodboard.step2": "2. Describe Idea",
 
   "ext.staging.title": "AI Virtual Staging",
   "ext.staging.step1": "1. Upload Empty Space Photo",

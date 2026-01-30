@@ -87,6 +87,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+    const [selectedIndex, setSelectedIndex] = useState(0);
 
     // Editor State
     const [activeTool, setActiveTool] = useState<EditorTool>('move');
@@ -117,6 +118,10 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             onStateChange({ resolution: 'Standard' });
         }
     }, []);
+
+    useEffect(() => {
+        if (resultImages.length > 0) setSelectedIndex(0);
+    }, [resultImages.length]);
 
     useEffect(() => {
         if (isEditorOpen) {
@@ -564,13 +569,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                     objectURL: '' 
                 };
             } else {
-                // If user didn't open editor but somehow has annotations or just wants to use source (fallback)
-                // However, the logic implies using notes. If annotations exist but no preview, we should really force a flatten if we could.
-                // For now, assume if annotations exist, user clicked Done, so preview exists.
                 if (annotations.length > 0 && !annotatedPreview) {
-                     // This is a safety edge case. If we are here, we might fail to show arrows.
-                     // Just use source image but prompt will likely fail to see arrows.
-                     // Ideally we prevent this state.
                      compositeImage = sourceImage;
                 } else {
                      compositeImage = sourceImage;
@@ -686,14 +685,14 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
 
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
             
             // --- SAFETY MODAL TRIGGER ---
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
                 setShowSafetyModal(true);
                 onStateChange({ error: t('msg.safety_violation') });
             } else {
-                onStateChange({ error: friendlyMsg });
+                onStateChange({ error: friendlyKey });
             }
             
             // DB records specific raw message
@@ -702,7 +701,7 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
             const { data: { user } } = await supabase.auth.getUser();
             if (user && logId && onDeductCredits) {
                 await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa ghi chú (${rawMsg})`, logId);
-                if (friendlyMsg !== "SAFETY_POLICY_VIOLATION") friendlyMsg += " (Credits đã được hoàn trả)";
+                if (friendlyKey !== "SAFETY_POLICY_VIOLATION") friendlyKey += " (Credits đã được hoàn trả)";
             }
         } finally {
             onStateChange({ isLoading: false });
@@ -711,30 +710,29 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
     };
 
     const handleDownload = async () => {
-        if (resultImages.length === 0) return;
-        setIsDownloading(true);
-        // Only download the first one for simplicity, or handle batch download if needed
-        await externalVideoService.forceDownload(resultImages[0], "edited-image.png");
-        setIsDownloading(false);
-    };
-
-    const scrollToTop = () => {
-        const mainContainer = document.querySelector('main');
-        if (mainContainer) {
-            mainContainer.scrollTo({ top: 0, behavior: 'smooth' });
-        } else {
-            window.scrollTo({ top: 0, behavior: 'smooth' });
+        if (resultImages[selectedIndex]) {
+            setIsDownloading(true);
+            await externalVideoService.forceDownload(resultImages[selectedIndex], "edited-image.png");
+            setIsDownloading(false);
         }
     };
 
     return (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+            <style>{`
+                .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+            `}</style>
+
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
             {isEditorOpen && sourceImage && createPortal(
                 <div className="fixed inset-0 z-[9999] bg-[#121212] flex flex-col animate-fade-in select-none touch-none overflow-hidden">
-                    
                     <div className="h-16 bg-[#191919] border-b border-[#302839] flex items-center px-4 justify-between gap-4 z-50 flex-shrink-0">
                         <div className="flex items-center gap-2 text-white font-bold min-w-fit">
                             <span className="material-symbols-outlined text-[#7f13ec]">edit_note</span>
@@ -742,248 +740,72 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                         </div>
 
                         <div className="flex bg-[#252525] rounded-lg p-1 gap-1 border border-[#302839]">
-                            <button
-                                onClick={() => setActiveTool('move')}
-                                className={`p-2 rounded-md transition-all ${activeTool === 'move' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                                title={t('editnote.tool.move')}
-                            >
-                                <span className="material-symbols-outlined text-xl">pan_tool_alt</span>
-                            </button>
-                            <button
-                                onClick={() => setActiveTool('arrow')}
-                                className={`p-2 rounded-md transition-all ${activeTool === 'arrow' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                                title={t('editnote.tool.arrow')}
-                            >
-                                <span className="material-symbols-outlined text-xl">arrow_outward</span>
-                            </button>
-                            <button
-                                onClick={() => setActiveTool('text')}
-                                className={`p-2 rounded-md transition-all ${activeTool === 'text' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`}
-                                title={t('editnote.tool.text')}
-                            >
-                                <span className="material-symbols-outlined text-xl">text_fields</span>
-                            </button>
+                            <button onClick={() => setActiveTool('move')} className={`p-2 rounded-md transition-all ${activeTool === 'move' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`} title={t('editnote.tool.move')}><span className="material-symbols-outlined text-xl">pan_tool_alt</span></button>
+                            <button onClick={() => setActiveTool('arrow')} className={`p-2 rounded-md transition-all ${activeTool === 'arrow' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`} title={t('editnote.tool.arrow')}><span className="material-symbols-outlined text-xl">arrow_outward</span></button>
+                            <button onClick={() => setActiveTool('text')} className={`p-2 rounded-md transition-all ${activeTool === 'text' ? 'bg-[#303030] text-white shadow-sm' : 'text-gray-400 hover:text-white'}`} title={t('editnote.tool.text')}><span className="material-symbols-outlined text-xl">text_fields</span></button>
                         </div>
 
                         <div className="flex-grow flex items-center gap-4 sm:gap-8 justify-center overflow-x-auto no-scrollbar px-2">
                             <div className="flex flex-col w-24 sm:w-32">
-                                <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between">
-                                    <span>{t('editnote.fontsize')}</span>
-                                    <span>{currentFontSize}</span>
-                                </label>
-                                <input 
-                                    type="range" 
-                                    min="12" max="72" 
-                                    value={currentFontSize} 
-                                    onChange={handleFontSizeChange}
-                                    className="h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-[#7f13ec]"
-                                />
+                                <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between"><span>{t('editnote.fontsize')}</span><span>{currentFontSize}</span></label>
+                                <input type="range" min="12" max="72" value={currentFontSize} onChange={handleFontSizeChange} className="h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-[#7f13ec]" />
                             </div>
-
                             <div className="flex flex-col w-24 sm:w-32">
-                                <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between">
-                                    <span>{t('editnote.strokewidth')}</span>
-                                    <span>{currentStrokeWidth}</span>
-                                </label>
-                                <input 
-                                    type="range" 
-                                    min="2" max="30" 
-                                    value={currentStrokeWidth} 
-                                    onChange={handleStrokeWidthChange}
-                                    className="h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-[#7f13ec]"
-                                />
+                                <label className="text-[10px] text-gray-400 font-medium mb-1 flex justify-between"><span>{t('editnote.strokewidth')}</span><span>{currentStrokeWidth}</span></label>
+                                <input type="range" min="2" max="30" value={currentStrokeWidth} onChange={handleStrokeWidthChange} className="h-1 bg-gray-600 rounded-lg appearance-none cursor-pointer accent-[#7f13ec]" />
                             </div>
-
                             <div className="flex gap-2 items-center border-l border-[#302839] pl-4">
                                 {COLORS.map(color => (
-                                    <button
-                                        key={color.id}
-                                        onMouseDown={(e) => e.preventDefault()}
-                                        onClick={() => handleColorSelect(color.value)}
-                                        className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 transition-all ${currentColor === color.value ? 'border-white scale-110 ring-1 ring-white/30' : 'border-transparent hover:scale-105'}`}
-                                        style={{ backgroundColor: color.value }}
-                                        title={color.label}
-                                    />
+                                    <button key={color.id} onMouseDown={(e) => e.preventDefault()} onClick={() => handleColorSelect(color.value)} className={`w-5 h-5 sm:w-6 sm:h-6 rounded-full border-2 transition-all ${currentColor === color.value ? 'border-white scale-110 ring-1 ring-white/30' : 'border-transparent hover:scale-105'}`} style={{ backgroundColor: color.value }} title={color.label} />
                                 ))}
                             </div>
-
                             <div className="flex items-center border-l border-[#302839] pl-4">
-                                <button
-                                    onClick={deleteSelected}
-                                    disabled={!selectedId}
-                                    className={`p-2 rounded-lg transition-all ${
-                                        selectedId 
-                                            ? 'text-red-500 hover:bg-red-500/10 hover:shadow-sm cursor-pointer' 
-                                            : 'text-gray-600 cursor-not-allowed'
-                                    }`}
-                                    title={t('editnote.delete')}
-                                >
-                                    <span className="material-symbols-outlined text-xl">delete</span>
-                                </button>
+                                <button onClick={deleteSelected} disabled={!selectedId} className={`p-2 rounded-lg transition-all ${selectedId ? 'text-red-500 hover:bg-red-500/10 hover:shadow-sm cursor-pointer' : 'text-gray-600 cursor-not-allowed'}`} title={t('editnote.delete')}><span className="material-symbols-outlined text-xl">delete</span></button>
                             </div>
                         </div>
 
                         <div className="flex items-center gap-2 sm:gap-3 min-w-fit">
-                            <button
-                                onClick={undoLast}
-                                className="p-2 text-gray-400 hover:text-white hover:bg-[#302839] rounded-lg transition-colors"
-                                title={t('editnote.undo')}
-                            >
-                                <span className="material-symbols-outlined text-xl">undo</span>
-                            </button>
-                            <button 
-                                onClick={() => { 
-                                    setAnnotations([]);
-                                    setIsEditorOpen(false); 
-                                }}
-                                className="px-4 py-2 text-sm text-gray-300 hover:text-white font-medium hover:bg-[#302839] rounded-lg transition-colors"
-                            >
-                                {t('editnote.cancel')}
-                            </button>
-                            <button 
-                                onClick={handleCloseEditor}
-                                className="px-4 py-2 text-sm bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold rounded-lg transition-colors shadow-lg"
-                            >
-                                {t('editnote.done')}
-                            </button>
+                            <button onClick={undoLast} className="p-2 text-gray-400 hover:text-white hover:bg-[#302839] rounded-lg transition-colors" title={t('editnote.undo')}><span className="material-symbols-outlined text-xl">undo</span></button>
+                            <button onClick={() => { setAnnotations([]); setIsEditorOpen(false); }} className="px-4 py-2 text-sm text-gray-300 hover:text-white font-medium hover:bg-[#302839] rounded-lg transition-colors">{t('editnote.cancel')}</button>
+                            <button onClick={handleCloseEditor} className="px-4 py-2 text-sm bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold rounded-lg transition-colors shadow-lg">{t('editnote.done')}</button>
                         </div>
                     </div>
 
-                    <div 
-                        className="flex-grow bg-[#0f0f0f] relative overflow-hidden flex items-center justify-center cursor-crosshair h-full w-full"
-                        onMouseDown={handleMouseDown}
-                        onMouseMove={handleMouseMove}
-                        onMouseUp={handleMouseUp}
-                        onTouchStart={handleMouseDown}
-                        onTouchMove={handleMouseMove}
-                        onTouchEnd={handleMouseUp}
-                    >
-                        <div 
-                            ref={containerRef}
-                            className={`relative shadow-2xl transition-transform duration-75 origin-center ${activeTool === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}`}
-                            style={{ 
-                                transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})`
-                            }}
-                        >
-                            <img 
-                                ref={imageRef}
-                                src={sourceImage.objectURL} 
-                                alt="Editing Source" 
-                                className="max-w-none pointer-events-none"
-                                style={{ maxHeight: '85vh', maxWidth: '90vw' }}
-                                draggable={false}
-                            />
-                            
+                    <div className="flex-grow bg-[#0f0f0f] relative overflow-hidden flex items-center justify-center cursor-crosshair h-full w-full" onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={handleMouseUp} onTouchStart={handleMouseDown} onTouchMove={handleMouseMove} onTouchEnd={handleMouseUp}>
+                        <div ref={containerRef} className={`relative shadow-2xl transition-transform duration-75 origin-center ${activeTool === 'move' ? 'cursor-grab active:cursor-grabbing' : ''}`} style={{ transform: `translate(${panOffset.x}px, ${panOffset.y}px) scale(${zoom})` }}>
+                            <img ref={imageRef} src={sourceImage.objectURL} alt="Editing Source" className="max-w-none pointer-events-none" style={{ maxHeight: '85vh', maxWidth: '90vw' }} draggable={false} />
                             <svg className="absolute inset-0 w-full h-full pointer-events-none overflow-visible">
-                                <defs>
-                                    {COLORS.map(color => (
-                                        <React.Fragment key={color.id}>
-                                            <marker id={`arrowhead-${color.id}`} markerWidth="3" markerHeight="3" refX="2.5" refY="1.5" orient="auto">
-                                                <polygon points="0 0, 3 1.5, 0 3" fill={color.value} />
-                                            </marker>
-                                        </React.Fragment>
-                                    ))}
-                                </defs>
+                                <defs>{COLORS.map(color => (<React.Fragment key={color.id}><marker id={`arrowhead-${color.id}`} markerWidth="3" markerHeight="3" refX="2.5" refY="1.5" orient="auto"><polygon points="0 0, 3 1.5, 0 3" fill={color.value} /></marker></React.Fragment>))}</defs>
                                 {annotations.filter(a => a.type === 'arrow').map(arrow => {
                                     const colorObj = COLORS.find(c => c.value === arrow.color) || COLORS[0];
                                     const sw = arrow.strokeWidth || 8;
                                     const isSelected = selectedId === arrow.id;
-                                    
                                     return (
-                                        <g 
-                                            key={arrow.id} 
-                                            onMouseDown={(e) => handleAnnotationDragStart(arrow.id, e)}
-                                            className="pointer-events-auto cursor-move group"
-                                        >
-                                            <line 
-                                                x1={`${arrow.x * 100}%`} y1={`${arrow.y * 100}%`}
-                                                x2={`${arrow.toX! * 100}%`} y2={`${arrow.toY! * 100}%`}
-                                                stroke="transparent"
-                                                strokeWidth={sw + 20}
-                                            />
-                                            <line 
-                                                x1={`${arrow.x * 100}%`} y1={`${arrow.y * 100}%`}
-                                                x2={`${arrow.toX! * 100}%`} y2={`${arrow.toY! * 100}%`}
-                                                stroke={arrow.color}
-                                                strokeWidth={sw}
-                                                markerEnd={`url(#arrowhead-${colorObj.id})`}
-                                                className="transition-colors"
-                                                style={{ filter: isSelected ? 'drop-shadow(0 0 4px white)' : 'none' }}
-                                            />
-                                            {isSelected && (
-                                                <circle cx={`${arrow.toX! * 100}%`} cy={`${arrow.toY! * 100}%`} r="8" fill="white" stroke="#7f13ec" strokeWidth="2" />
-                                            )}
+                                        <g key={arrow.id} onMouseDown={(e) => handleAnnotationDragStart(arrow.id, e)} className="pointer-events-auto cursor-move group">
+                                            <line x1={`${arrow.x * 100}%`} y1={`${arrow.y * 100}%`} x2={`${arrow.toX! * 100}%`} y2={`${arrow.toY! * 100}%`} stroke="transparent" strokeWidth={sw + 20} />
+                                            <line x1={`${arrow.x * 100}%`} y1={`${arrow.y * 100}%`} x2={`${arrow.toX! * 100}%`} y2={`${arrow.toY! * 100}%`} stroke={arrow.color} strokeWidth={sw} markerEnd={`url(#arrowhead-${colorObj.id})`} className="transition-colors" style={{ filter: isSelected ? 'drop-shadow(0 0 4px white)' : 'none' }} />
+                                            {isSelected && (<circle cx={`${arrow.toX! * 100}%`} cy={`${arrow.toY! * 100}%`} r="8" fill="white" stroke="#7f13ec" strokeWidth="2" />)}
                                         </g>
                                     );
                                 })}
                             </svg>
-
                             {annotations.filter(a => a.type === 'text').map(note => {
                                 const isSelected = selectedId === note.id;
                                 return (
-                                    <div
-                                        key={note.id}
-                                        className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 cursor-move group`}
-                                        style={{ left: `${note.x * 100}%`, top: `${note.y * 100}%` }}
-                                        onMouseDown={(e) => handleAnnotationDragStart(note.id, e)}
-                                    >
-                                        <div className={`
-                                            flex items-center gap-1 p-1 rounded-lg transition-all
-                                            ${isSelected 
-                                                ? 'border-2 border-dashed border-blue-400 bg-black/20' 
-                                                : 'border-2 border-dashed border-gray-400/50 hover:border-gray-400'
-                                            }
-                                        `}>
-                                            {isSelected && (
-                                                <div className="cursor-move p-1 text-white bg-blue-50 rounded-sm self-start mt-1">
-                                                    <span className="material-symbols-outlined text-xs block">open_with</span>
-                                                </div>
-                                            )}
-                                            <textarea 
-                                                autoFocus={note.text === ''}
-                                                value={note.text}
-                                                onChange={(e) => handleTextChange(note.id, e.target.value)}
-                                                placeholder="Nhập..."
-                                                ref={(el) => {
-                                                    if (el) {
-                                                        el.style.height = 'auto';
-                                                        el.style.height = `${el.scrollHeight}px`;
-                                                    }
-                                                }}
-                                                style={{ 
-                                                    color: note.color, 
-                                                    fontSize: `${note.fontSize}px`,
-                                                    minWidth: '100px',
-                                                    lineHeight: '1.3',
-                                                    padding: '4px'
-                                                }}
-                                                className={`
-                                                    bg-transparent border-none outline-none font-bold text-center placeholder-gray-500/50 resize-none overflow-hidden block
-                                                `}
-                                                onMouseDown={(e) => e.stopPropagation()} 
-                                            />
-                                            {isSelected && (
-                                                <button 
-                                                    onMouseDown={(e) => { e.stopPropagation(); deleteSelected(); }}
-                                                    className="p-1 text-white bg-red-500 rounded-sm hover:bg-red-600 self-start mt-1"
-                                                >
-                                                    <span className="material-symbols-outlined text-xs block">close</span>
-                                                </button>
-                                            )}
+                                    <div key={note.id} className={`absolute pointer-events-auto transform -translate-x-1/2 -translate-y-1/2 cursor-move group`} style={{ left: `${note.x * 100}%`, top: `${note.y * 100}%` }} onMouseDown={(e) => handleAnnotationDragStart(note.id, e)}>
+                                        <div className={`flex items-center gap-1 p-1 rounded-lg transition-all ${isSelected ? 'border-2 border-dashed border-blue-400 bg-black/20' : 'border-2 border-dashed border-gray-400/50 hover:border-gray-400'}`}>
+                                            {isSelected && (<div className="cursor-move p-1 text-white bg-blue-50 rounded-sm self-start mt-1"><span className="material-symbols-outlined text-xs block">open_with</span></div>)}
+                                            <textarea autoFocus={note.text === ''} value={note.text} onChange={(e) => handleTextChange(note.id, e.target.value)} placeholder="Nhập..." ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = `${el.scrollHeight}px`; } }} style={{ color: note.color, fontSize: `${note.fontSize}px`, minWidth: '100px', lineHeight: '1.3', padding: '4px' }} className={`bg-transparent border-none outline-none font-bold text-center placeholder-gray-500/50 resize-none overflow-hidden block`} onMouseDown={(e) => e.stopPropagation()} />
+                                            {isSelected && (<button onMouseDown={(e) => { e.stopPropagation(); deleteSelected(); }} className="p-1 text-white bg-red-500 rounded-sm hover:bg-red-600 self-start mt-1"><span className="material-symbols-outlined text-xs block">close</span></button>)}
                                         </div>
                                     </div>
                                 );
                             })}
                         </div>
-
                         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-[#191919]/90 backdrop-blur-md p-1.5 rounded-full border border-[#302839] shadow-xl z-20">
-                            <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-2 hover:bg-[#302839] rounded-full text-white">
-                                <span className="material-symbols-outlined text-lg">remove</span>
-                            </button>
+                            <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="p-2 hover:bg-[#302839] rounded-full text-white"><span className="material-symbols-outlined text-lg">remove</span></button>
                             <span className="text-xs font-bold w-12 text-center text-white">{Math.round(zoom * 100)}%</span>
-                            <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-2 hover:bg-[#302839] rounded-full text-white">
-                                <span className="material-symbols-outlined text-lg">add</span>
-                            </button>
+                            <button onClick={() => setZoom(z => Math.min(3, z + 0.1))} className="p-2 hover:bg-[#302839] rounded-full text-white"><span className="material-symbols-outlined text-lg">add</span></button>
                             <button onClick={() => { setZoom(1.0); setPanOffset({x:0, y:0}); }} className="px-3 py-1 hover:bg-[#302839] rounded-full text-xs text-gray-400 font-medium">{t('editnote.reset')}</button>
                         </div>
                     </div>
@@ -991,149 +813,123 @@ const EditByNote: React.FC<EditByNoteProps> = ({ state, onStateChange, userCredi
                 document.body
             )}
 
-            <div className="flex flex-col gap-2 flex-shrink-0">
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white">{t('ext.editnote.title')}</h2>
-                <p className="text-sm text-text-secondary dark:text-gray-300">{t('ext.editnote.subtitle')}</p>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 h-full">
-                <div className="flex flex-col gap-6">
-                    <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 h-full flex flex-col">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-text-primary dark:text-white">{t('ext.editnote.step1')}</h3>
-                            {annotations.length > 0 && <span className="bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded">✓</span>}
-                        </div>
-                        
-                        <div className="flex-grow flex flex-col justify-center min-h-[300px]">
+            {/* SIDEBAR */}
+            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
+                    
+                    {/* SEGMENT 1: SOURCE & ANNOTATION */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('ext.editnote.step1')}</label>
+                            
+                            {/* Preview with Edit Overlay Button */}
                             {sourceImage ? (
-                                <div className="relative w-full h-full rounded-lg overflow-hidden group border border-border-color dark:border-gray-700 bg-black/20">
+                                <div className="relative w-full aspect-video rounded-lg overflow-hidden group border border-border-color dark:border-gray-700 bg-black/20 mb-3">
                                     <img 
                                         src={annotatedPreview || sourceImage.objectURL} 
                                         alt="Preview" 
-                                        className="w-full h-full object-contain max-h-[500px]"
+                                        className="w-full h-full object-contain"
                                     />
-                                    <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm">
+                                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center backdrop-blur-sm gap-2">
                                         <button 
                                             onClick={handleTriggerChangeImage}
-                                            className="bg-white/20 hover:bg-white/30 text-white font-bold py-2 px-6 rounded-full shadow-lg backdrop-blur-md flex items-center gap-2 transition-all border border-white/30"
+                                            className="bg-white/20 hover:bg-white/30 text-white font-bold py-1.5 px-3 rounded-full shadow-lg backdrop-blur-md flex items-center gap-1 transition-all border border-white/30 text-xs"
                                         >
-                                            <span className="material-symbols-outlined text-lg">image</span>
+                                            <span className="material-symbols-outlined text-sm">image</span>
                                             {t('editnote.change_image')}
                                         </button>
-                                    </div>
-                                    
-                                    <div className="hidden">
-                                        <ImageUpload onFileSelect={handleFileSelect} id="hidden-change-image" />
+                                        <button
+                                            onClick={handleOpenEditor}
+                                            className="bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-1.5 px-3 rounded-full shadow-lg flex items-center gap-1 transition-all text-xs"
+                                        >
+                                            <span className="material-symbols-outlined text-sm">draw</span>
+                                            {t('ext.editnote.btn_edit')}
+                                        </button>
                                     </div>
                                 </div>
                             ) : (
                                 <ImageUpload onFileSelect={handleFileSelect} />
                             )}
-                        </div>
+                            
+                            {/* Hidden input for changing image */}
+                            <div className="hidden">
+                                <ImageUpload onFileSelect={handleFileSelect} id="hidden-change-image" />
+                            </div>
 
-                        {sourceImage && (
-                            <div className="mt-6 space-y-4">
-                                <p className="text-sm text-text-secondary dark:text-gray-400 italic text-center">
+                            {sourceImage && (
+                                <div className="flex items-center gap-2 text-[10px] text-text-secondary dark:text-gray-400 italic bg-white dark:bg-[#121212] p-2 rounded-lg border border-gray-200 dark:border-gray-700">
+                                    <span className="material-symbols-outlined text-sm text-[#7f13ec]">info</span>
                                     {t('editnote.hint')}
-                                </p>
-                                <button
-                                    onClick={handleOpenEditor}
-                                    className="w-full bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg shadow-purple-500/20 flex items-center justify-center gap-2"
-                                >
-                                    <span className="material-symbols-outlined">draw</span>
-                                    {t('ext.editnote.btn_edit')}
-                                </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* SEGMENT 2: OUTPUT SETTINGS */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
+                        <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
+                    </div>
+                </div>
+
+                {/* STICKY FOOTER */}
+                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button 
+                        onClick={handleGenerate} 
+                        disabled={isLoading || !sourceImage || annotations.length === 0} 
+                        className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('ext.editnote.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
+                    </button>
+                </div>
+            </aside>
+
+            {/* MAIN CONTENT */}
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm min-h-full overflow-hidden">
+                <div className="p-0 flex flex-col h-full items-start">
+                    <div className="w-full bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex flex-col items-start min-h-[400px]">
+                        {resultImages.length > 0 ? (
+                            <div className="w-full p-0 animate-fade-in flex flex-col items-start relative">
+                                <div className="w-full min-h-[300px] sm:min-h-[450px] lg:min-h-[550px] flex items-center justify-center">
+                                    {sourceImage ? (
+                                        <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[selectedIndex]} />
+                                    ) : (
+                                        <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-[75vh] object-contain" />
+                                    )}
+                                </div>
+                                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
+                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center py-40 opacity-20 select-none bg-main-bg dark:bg-[#121212]">
+                                <span className="material-symbols-outlined text-6xl mb-4">edit_note</span>
+                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
+                            </div>
+                        )}
+                        {isLoading && (
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                <Spinner />
+                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
                             </div>
                         )}
                     </div>
-                </div>
 
-                <div className="flex flex-col gap-6">
-                    <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700 h-full flex flex-col">
-                        <div className="flex justify-between items-center mb-4">
-                            <h3 className="text-lg font-bold text-text-primary dark:text-white">{t('ext.editnote.result')}</h3>
-                             {resultImages.length > 0 && (
-                                <div className="flex items-center gap-2">
-                                     {resultImages.length === 1 && (
-                                        <button
-                                            onClick={() => setPreviewImage(resultImages[0])}
-                                            className="p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg text-text-primary dark:text-white transition-colors"
-                                            title="Phóng to"
-                                        >
-                                            <span className="material-symbols-outlined text-lg">zoom_in</span>
-                                        </button>
-                                     )}
-                                    <button 
-                                        onClick={handleDownload} 
-                                        className="flex items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white px-3 py-1.5 rounded-lg font-bold shadow-lg text-sm transition-colors"
-                                    >
-                                        {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
-                                        <span>{t('common.download')}</span>
+                    {resultImages.length > 0 && !isLoading && (
+                        <div className="w-full p-3 sm:p-4 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
+                            <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
+                                {resultImages.map((url, idx) => (
+                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-24 sm:w-32 aspect-video rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                        <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
                                     </button>
-                                </div>
-                            )}
-                        </div>
-                        
-                        <div className="flex-grow w-full bg-black/5 dark:bg-black/20 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden min-h-[300px] relative">
-                            {isLoading && (
-                                <div className="absolute inset-0 bg-black/60 flex flex-col items-center justify-center z-10 backdrop-blur-sm">
-                                    <Spinner />
-                                    <p className="text-white mt-3 font-medium">{statusMessage || t('common.processing')}</p>
-                                </div>
-                            )}
-                            
-                            {!isLoading && resultImages.length === 1 && sourceImage ? (
-                                 <ImageComparator 
-                                    originalImage={sourceImage?.objectURL || ''}
-                                    resultImage={resultImages[0]}
-                                 />
-                            ) : !isLoading && resultImages.length > 1 ? (
-                                <ResultGrid images={resultImages} toolName="edit-by-note" />
-                            ) : !isLoading && resultImages.length === 0 ? (
-                                <div className="text-center text-text-secondary dark:text-gray-500 p-8">
-                                    <div className="w-16 h-16 bg-gray-200 dark:bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-4">
-                                        <span className="material-symbols-outlined text-3xl opacity-50">image</span>
-                                    </div>
-                                    <p className="font-medium">{t('msg.no_result_render')}</p>
-                                </div>
-                            ) : null}
-                        </div>
-
-                        <div className="mt-6 pt-6 border-t border-gray-200 dark:border-gray-700 space-y-4">
-                            <div className="grid grid-cols-2 gap-4">
-                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                                ))}
                             </div>
-                            
-                            <ResolutionSelector 
-                                value={resolution} 
-                                onChange={handleResolutionChange} 
-                                disabled={isLoading} 
-                            />
-
-                            <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
-                                <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                                    <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                                    <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                                </div>
-                                <span className={`text-xs font-bold ${userCredits < cost ? 'text-red-500' : 'text-green-500'}`}>
-                                    {userCredits < cost ? t('common.insufficient') : t('common.available')}
-                                </span>
-                            </div>
-
-                            <button
-                                onClick={handleGenerate}
-                                disabled={isLoading || !sourceImage || annotations.length === 0}
-                                className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-xl transition-all shadow-lg"
-                            >
-                                {isLoading ? <><Spinner /> {t('common.processing')}</> : t('ext.editnote.btn_generate')}
-                            </button>
-                            {error && <div className="text-xs text-red-500 text-center bg-red-50 dark:bg-red-900/10 p-2 rounded-lg border border-red-100 dark:border-red-900/20">{error}</div>}
-                            {upscaleWarning && <p className="text-xs text-yellow-500 text-center mt-2">{upscaleWarning}</p>}
                         </div>
-                    </div>
+                    )}
                 </div>
-            </div>
+            </main>
         </div>
     );
 };

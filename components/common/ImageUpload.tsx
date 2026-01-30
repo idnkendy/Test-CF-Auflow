@@ -10,6 +10,7 @@ interface ImageUploadProps {
   maskPreviewUrl?: string | null;
   directionPreviewUrl?: string | null;
   className?: string;
+  variant?: 'default' | 'compact';
 }
 
 // Helper: Resize and Compress Image
@@ -95,13 +96,13 @@ const XIcon = () => (
     </svg>
 );
 
-const CloudUploadIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-gray-300 dark:text-gray-600 group-hover:text-accent transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+const CloudUploadIcon = ({ size = "h-8 w-8" }: { size?: string }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={`${size} text-gray-300 dark:text-gray-600 group-hover:text-accent transition-colors`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
         <path strokeLinecap="round" strokeLinejoin="round" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
     </svg>
 );
 
-const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl, maskPreviewUrl, directionPreviewUrl, className }) => {
+const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl, maskPreviewUrl, directionPreviewUrl, className, variant = 'default' }) => {
     const { t } = useLanguage();
     const [error, setError] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
@@ -176,7 +177,7 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
 
     if (previewUrl) {
         return (
-            <div className={`relative group w-full aspect-video bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm ${className || ''}`}>
+            <div className={`relative group w-full ${variant === 'compact' ? 'h-32' : 'aspect-video'} bg-gray-100 dark:bg-gray-800 rounded-xl overflow-hidden border border-gray-200 dark:border-gray-700 shadow-sm ${className || ''}`}>
                 <img src={previewUrl} alt="Preview" className="w-full h-full object-contain" />
                 {maskPreviewUrl && (
                     <img 
@@ -226,27 +227,27 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
     return (
         <div className={className}>
             <div 
-                className={`group relative w-full aspect-video bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-accent hover:bg-accent/5 transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer p-6 ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
+                className={`group relative w-full ${variant === 'compact' ? 'h-32' : 'aspect-video'} bg-gray-50 dark:bg-gray-800/50 rounded-xl border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-accent hover:bg-accent/5 transition-all duration-300 flex flex-col items-center justify-center text-center cursor-pointer p-4 ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
                 onClick={handleContainerClick}
                 onDragOver={handleDragOver}
                 onDrop={handleDrop}
             >
                 {isProcessing ? (
                     <div className="flex flex-col items-center">
-                        <svg className="animate-spin h-8 w-8 text-accent mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <svg className="animate-spin h-6 w-6 text-accent mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        <p className="text-sm text-gray-500">{t('upload.processing')}</p>
+                        <p className="text-xs text-gray-500">{t('upload.processing')}</p>
                     </div>
                 ) : (
                     <>
-                        <div className="p-3 bg-white dark:bg-gray-700 rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform duration-300">
-                            <CloudUploadIcon />
+                        <div className={`${variant === 'compact' ? 'p-2 mb-1' : 'p-3 mb-2'} bg-white dark:bg-gray-700 rounded-full shadow-sm group-hover:scale-110 transition-transform duration-300`}>
+                            <CloudUploadIcon size={variant === 'compact' ? "h-5 w-5" : "h-8 w-8"} />
                         </div>
-                        <p className="font-medium text-gray-700 dark:text-gray-200 text-sm group-hover:text-accent transition-colors">{t('upload.click')}</p>
-                        <p className="text-xs text-gray-400 mt-1">{t('upload.drag')}</p>
-                        <p className="text-[10px] text-gray-400 mt-2 uppercase tracking-wide">JPG, PNG, WEBP</p>
+                        <p className={`font-bold text-gray-700 dark:text-gray-200 ${variant === 'compact' ? 'text-[10px]' : 'text-sm'} group-hover:text-accent transition-colors`}>{t('upload.click')}</p>
+                        {variant !== 'compact' && <p className="text-xs text-gray-400 mt-0.5">{t('upload.drag')}</p>}
+                        <p className="text-[9px] text-gray-400 mt-1.5 uppercase tracking-widest font-medium">JPG, PNG, WEBP</p>
                     </>
                 )}
                 
@@ -261,8 +262,8 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onFileSelect, id, previewUrl,
                 />
             </div>
             {error && (
-                <div className="mt-2 flex items-center gap-2 text-red-500 text-xs bg-red-50 dark:bg-red-900/10 p-2 rounded border border-red-100 dark:border-red-900/30">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                <div className="mt-2 flex items-center gap-2 text-red-500 text-[10px] bg-red-50 dark:bg-red-900/10 p-2 rounded border border-red-100 dark:border-red-900/30">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                     </svg>
                     {error}

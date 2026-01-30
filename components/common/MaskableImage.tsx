@@ -4,75 +4,84 @@ import { FileData } from '../../types';
 
 interface MaskableImageProps {
   image: FileData;
+  initialMask?: FileData | null;
   onMaskChange: (mask: FileData | null) => void;
   maskColor?: string;
 }
 
-const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, maskColor }) => {
+const MaskableImage: React.FC<MaskableImageProps> = ({ image, initialMask, onMaskChange, maskColor }) => {
   const imageRef = useRef<HTMLImageElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState(40);
   const [mode, setMode] = useState<'draw' | 'erase'>('draw');
+  const [isCanvasReady, setIsCanvasReady] = useState(false);
 
   const [cursorPosition, setCursorPosition] = useState({ x: -100, y: -100 });
   const [isCursorVisible, setIsCursorVisible] = useState(false);
 
-  // Hàm căn chỉnh Canvas khớp tuyệt đối với ảnh
+  const updateMaskData = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (canvas) {
+      const dataUrl = canvas.toDataURL('image/png');
+      const base64 = dataUrl.split(',')[1];
+      onMaskChange({
+        base64,
+        mimeType: 'image/png',
+        objectURL: dataUrl
+      });
+    }
+  }, [onMaskChange]);
+
   const alignCanvas = useCallback(() => {
     const canvas = canvasRef.current;
     const imageEl = imageRef.current;
-    const container = containerRef.current;
+    const wrapper = wrapperRef.current;
 
-    if (canvas && imageEl && container) {
-      const setSize = () => {
-        // Lấy kích thước thực tế của ảnh đang hiển thị
-        const imageRect = imageEl.getBoundingClientRect();
-        const containerRect = container.getBoundingClientRect();
+    if (canvas && imageEl && wrapper) {
+      const width = imageEl.clientWidth;
+      const height = imageEl.clientHeight;
 
-        // Cập nhật độ phân giải canvas bằng đúng kích thước ảnh
-        canvas.width = imageRect.width;
-        canvas.height = imageRect.height;
-        
-        // Đặt vị trí canvas đè khít lên ảnh
-        canvas.style.position = 'absolute';
-        canvas.style.top = `${imageRect.top - containerRect.top}px`;
-        canvas.style.left = `${imageRect.left - containerRect.left}px`;
-        canvas.style.width = `${imageRect.width}px`;
-        canvas.style.height = `${imageRect.height}px`;
-      };
+      if (width === 0 || height === 0) return;
 
-      if (imageEl.complete && imageEl.naturalHeight !== 0) {
-        setSize();
-      } else {
-        imageEl.onload = setSize;
+      if (canvas.width !== width || canvas.height !== height) {
+        canvas.width = width;
+        canvas.height = height;
+        wrapper.style.width = `${width}px`;
+        wrapper.style.height = `${height}px`;
+        setIsCanvasReady(true);
       }
     }
   }, []);
 
+  // Khôi phục mask cũ khi canvas đã sẵn sàng
+  useEffect(() => {
+    if (isCanvasReady && initialMask && canvasRef.current) {
+        const canvas = canvasRef.current;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+            const img = new Image();
+            img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+                // Cập nhật lại dữ liệu mask ban đầu để đảm bảo state đồng bộ
+                updateMaskData();
+            };
+            img.src = initialMask.objectURL;
+        }
+    }
+  }, [isCanvasReady, initialMask, updateMaskData]);
+
   useEffect(() => {
     alignCanvas();
-    
-    // ResizeObserver: Tự động chỉnh lại canvas nếu kích thước ảnh thay đổi
-    const resizeObserver = new ResizeObserver(() => {
-        alignCanvas();
-    });
-
-    if (containerRef.current) {
-        resizeObserver.observe(containerRef.current);
-    }
-    if (imageRef.current) {
-        resizeObserver.observe(imageRef.current);
-    }
-
+    const resizeObserver = new ResizeObserver(() => alignCanvas());
+    if (imageRef.current) resizeObserver.observe(imageRef.current);
     window.addEventListener('resize', alignCanvas);
-    window.addEventListener('scroll', alignCanvas, true); 
-
     return () => {
       window.removeEventListener('resize', alignCanvas);
-      window.removeEventListener('scroll', alignCanvas, true);
       resizeObserver.disconnect();
     };
   }, [image, alignCanvas]);
@@ -81,7 +90,6 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     event.preventDefault();
     const nativeEvent = event.nativeEvent;
     if (nativeEvent instanceof MouseEvent && nativeEvent.button !== 0) return;
-    
     setIsDrawing(true);
     draw(event.nativeEvent);
   };
@@ -89,24 +97,10 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
   const stopDrawing = () => {
     if (!isDrawing) return;
     setIsDrawing(false);
-    const canvas = canvasRef.current;
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        ctx.beginPath();
-        const dataUrl = canvas.toDataURL('image/png');
-        const base64 = dataUrl.split(',')[1];
-        onMaskChange({
-          base64,
-          mimeType: 'image/png',
-          objectURL: dataUrl
-        });
-      }
-    }
+    updateMaskData();
   };
 
   const draw = (event: MouseEvent | TouchEvent) => {
-    event.preventDefault();
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -116,7 +110,6 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     const clientX = 'touches' in event ? event.touches[0].clientX : event.clientX;
     const clientY = 'touches' in event ? event.touches[0].clientY : event.clientY;
     
-    // Tọa độ vẽ tính theo canvas (đã được alignCanvas đồng bộ)
     const x = clientX - rect.left;
     const y = clientY - rect.top;
 
@@ -124,11 +117,7 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     
     let drawingColor = '#ffffff';
     if (maskColor) {
-        if (maskColor.startsWith('rgba')) {
-             drawingColor = maskColor.replace(/,\s*[\d\.]+\s*\)/, ', 1)');
-        } else {
-             drawingColor = maskColor;
-        }
+        drawingColor = maskColor.startsWith('rgba') ? maskColor.replace(/,\s*[\d\.]+\s*\)/, ', 1)') : maskColor;
     }
 
     ctx.fillStyle = mode === 'draw' ? drawingColor : '#000';
@@ -140,21 +129,15 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
   
   const handleMouseMove = (e: React.MouseEvent) => {
     const container = containerRef.current;
-    // Cập nhật vị trí con trỏ ảo dựa trên container
     if (container) {
         const rect = container.getBoundingClientRect();
         setCursorPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top });
     }
-    
-    if (isDrawing) {
-      draw(e.nativeEvent);
-    }
+    if (isDrawing) draw(e.nativeEvent);
   };
   
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (isDrawing) {
-        draw(e.nativeEvent);
-    }
+    if (isDrawing) draw(e.nativeEvent);
   };
 
   const handleClearMask = () => {
@@ -167,30 +150,16 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
     }
   };
   
-  const getCursorStyle = () => {
-      const isRedMask = maskColor && maskColor.includes('239, 68, 68');
-      const borderColor = mode === 'draw' 
-          ? (isRedMask ? '#ffffff' : '#ef4444')
-          : '#000000';
-      
-      const bgColor = mode === 'draw' 
-          ? (maskColor || 'rgba(255, 255, 255, 0.3)') 
-          : 'rgba(255, 255, 255, 0.5)';
-
-      return {
-          borderColor,
-          backgroundColor: bgColor,
-          boxShadow: '0 0 4px 1px rgba(0,0,0,0.4)'
-      };
+  const cursorStyle = {
+      borderColor: mode === 'draw' ? (maskColor?.includes('239, 68, 68') ? '#ffffff' : '#ef4444') : '#000000',
+      backgroundColor: mode === 'draw' ? (maskColor || 'rgba(255, 255, 255, 0.3)') : 'rgba(255, 255, 255, 0.5)',
+      boxShadow: '0 0 4px 1px rgba(0,0,0,0.4)'
   };
-
-  const cursorStyle = getCursorStyle();
   
   return (
     <div className="space-y-4">
       <div 
         ref={containerRef}
-        // Thay đổi quan trọng: Dùng chiều cao linh hoạt (60vh) thay vì cố định tỷ lệ 16:9 (aspect-video)
         className="relative w-full h-[60vh] min-h-[400px] flex items-center justify-center bg-main-bg dark:bg-gray-800 rounded-lg border-2 border-dashed border-border-color dark:border-gray-700 overflow-hidden select-none touch-none"
         style={{ cursor: isCursorVisible ? 'none' : 'default' }}
         onMouseEnter={() => setIsCursorVisible(true)}
@@ -205,17 +174,21 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
         onTouchEnd={stopDrawing}
         onTouchMove={handleTouchMove}
       >
-        <img
-          ref={imageRef}
-          src={image.objectURL}
-          alt="Original for editing"
-          className="max-w-full max-h-full object-contain pointer-events-none select-none"
-          onLoad={alignCanvas}
-        />
-        <canvas
-          ref={canvasRef}
-          style={{ opacity: 0.55 }}
-        />
+        <div ref={wrapperRef} className="relative flex items-center justify-center">
+            <img
+                ref={imageRef}
+                src={image.objectURL}
+                alt="Original for editing"
+                className="max-w-full max-h-[60vh] object-contain pointer-events-none select-none block"
+                onLoad={alignCanvas}
+            />
+            <canvas
+                ref={canvasRef}
+                className="absolute top-0 left-0 w-full h-full pointer-events-none"
+                style={{ opacity: 0.55 }}
+            />
+        </div>
+
         {isCursorVisible && (
             <div
                 className="absolute rounded-full pointer-events-none border-2 transition-transform duration-75 z-50"
@@ -233,50 +206,16 @@ const MaskableImage: React.FC<MaskableImageProps> = ({ image, onMaskChange, mask
         )}
       </div>
       
-      {/* Thanh công cụ (Toolbar) */}
       <div className="bg-main-bg dark:bg-gray-800 p-3 rounded-lg border border-border-color dark:border-gray-700 flex flex-col sm:flex-row items-center gap-4">
         <div className="flex items-center gap-2">
-            <button
-                onClick={() => setMode('draw')}
-                title="Vẽ vùng chọn"
-                className={`p-2 rounded-md transition-colors ${mode === 'draw' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-text-secondary dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                  <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
-                  <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
-                </svg>
-            </button>
-             <button
-                onClick={() => setMode('erase')}
-                title="Tẩy vùng chọn"
-                className={`p-2 rounded-md transition-colors ${mode === 'erase' ? 'bg-red-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-text-secondary dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}
-            >
-                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                    <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm4 0a1 1 0 012 0v6a1 1 0 11-2 0V8z" clipRule="evenodd" />
-                </svg>
-            </button>
+            <button onClick={() => setMode('draw')} className={`p-2 rounded-md transition-colors ${mode === 'draw' ? 'bg-blue-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-text-secondary dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}><span className="material-symbols-outlined text-base">draw</span></button>
+            <button onClick={() => setMode('erase')} className={`p-2 rounded-md transition-colors ${mode === 'erase' ? 'bg-red-600 text-white' : 'bg-gray-200 dark:bg-gray-700 text-text-secondary dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600'}`}><span className="material-symbols-outlined text-base">ink_eraser</span></button>
         </div>
         <div className="flex items-center gap-3 flex-grow w-full sm:w-auto">
-            <label htmlFor="brush-size" className="text-sm text-text-secondary dark:text-gray-300 whitespace-nowrap">Cỡ bút:</label>
-            <input
-                id="brush-size"
-                type="range"
-                min="5"
-                max="150"
-                value={brushSize}
-                onChange={(e) => setBrushSize(Number(e.target.value))}
-                className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accent"
-            />
+            <label className="text-sm text-text-secondary dark:text-gray-300 whitespace-nowrap">Cỡ bút:</label>
+            <input type="range" min="5" max="150" value={brushSize} onChange={(e) => setBrushSize(Number(e.target.value))} className="w-full h-2 bg-gray-200 dark:bg-gray-700 rounded-lg appearance-none cursor-pointer accent-accent" />
         </div>
-        <button
-            onClick={handleClearMask}
-            className="px-3 py-2 text-sm font-semibold rounded-md transition-colors bg-gray-200 dark:bg-gray-700 text-text-secondary dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2"
-        >
-             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-            </svg>
-            Xoá
-        </button>
+        <button onClick={handleClearMask} className="px-3 py-2 text-sm font-semibold rounded-md transition-colors bg-gray-200 dark:bg-gray-700 text-text-secondary dark:text-gray-300 hover:bg-gray-300 dark:hover:bg-gray-600 flex items-center gap-2"><span className="material-symbols-outlined text-base">delete</span>Xoá</button>
       </div>
     </div>
   );

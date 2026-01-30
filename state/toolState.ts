@@ -84,11 +84,19 @@ export interface ProfileState {
 }
 
 export interface ImageGeneratorState {
+    renderMode: 'arch' | 'interior' | 'urban' | 'landscape';
     style: string;
     context: string;
     lighting: string;
     weather: string;
     buildingType: string;
+    roomType: string; // for interior
+    colorPalette: string; // for interior
+    viewType: string; // for urban
+    density: string; // for urban
+    gardenStyle: string; // for landscape
+    timeOfDay: string; // for landscape
+    features: string; // for landscape
     customPrompt: string;
     referenceImages: FileData[];
     sourceImage: FileData | null;
@@ -333,9 +341,7 @@ export interface AITechnicalDrawingsState {
     resultImage: string | null;
     resultImages: string[];
     numberOfImages: number;
-    drawingType: 'floor-plan' | 'elevation' | 'section';
-    detailLevel: 'basic' | 'detailed' | 'annotated' | 'terrain';
-    aspectRatio: AspectRatio; // Added default
+    aspectRatio: AspectRatio; 
     resolution: ImageResolution;
     prompt: string;
 }
@@ -354,11 +360,19 @@ export interface SketchConverterState {
 // Khởi tạo giá trị mặc định cho trạng thái của tất cả công cụ
 export const initialToolStates = {
     [Tool.ArchitecturalRendering]: {
+        renderMode: 'arch',
         style: 'none',
         context: 'none',
         lighting: 'none',
         weather: 'none',
         buildingType: 'none',
+        roomType: 'none',
+        colorPalette: 'none',
+        viewType: 'none',
+        density: 'none',
+        gardenStyle: 'none',
+        timeOfDay: 'none',
+        features: 'none',
         customPrompt: 'Biến thành ảnh chụp thực tế nhà ở',
         referenceImages: [], 
         sourceImage: null,
@@ -572,11 +586,9 @@ export const initialToolStates = {
         resultImage: null,
         resultImages: [],
         numberOfImages: 1,
-        drawingType: 'floor-plan',
-        detailLevel: 'basic',
         aspectRatio: '16:9', // Added default
         resolution: 'Standard',
-        prompt: '', // Initialize prompt
+        prompt: 'Tạo một bảng trình bày kiến trúc (architectural presentation board) sử dụng thiết kế của tòa nhà này. Tạo các bản vẽ đặc trưng gồm: mặt bằng, mặt cắt, phối cảnh trục đo axonometric và 5 sơ đồ diễn tiến khối (massing evolution) từng bước. Tạo thêm các cảnh khác, nội thất, mặt đứng và khiến bảng trình bày trở nên mạch lạc và thu hút bằng bố cục và phần chữ được sắp xếp hợp lý.', 
     } as AITechnicalDrawingsState,
     [Tool.SketchConverter]: {
         sourceImage: null,
@@ -627,7 +639,7 @@ export const initialToolStates = {
     } as DiagramGeneratorState,
     [Tool.RealEstatePoster]: {
         prompt: 'Thiết kế poster bất động sản sang trọng, hiện đại. Bao gồm tiêu đề lớn, thông tin nổi bật, bố cục tạp chí. Giữ hình ảnh công trình làm chủ đạo.',
-        sourceImage: null,
+        sourceImage: null, 
         isLoading: false,
         error: null,
         resultImages: [],

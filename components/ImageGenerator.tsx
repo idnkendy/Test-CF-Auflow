@@ -1,24 +1,20 @@
 
-import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
-import { createPortal } from 'react-dom';
+import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
 import * as externalVideoService from '../services/externalVideoService';
-import { refundCredits } from '../services/paymentService';
-import { FileData, Tool, AspectRatio, ImageResolution, HistoryItem } from '../types';
+import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { ImageGeneratorState } from '../state/toolState';
 import Spinner from './Spinner';
 import ImageUpload from './common/ImageUpload';
 import MultiImageUpload from './common/MultiImageUpload';
 import ImageComparator from './ImageComparator';
 import NumberOfImagesSelector from './common/NumberOfImagesSelector';
-import ResultGrid from './common/ResultGrid';
 import OptionSelector from './common/OptionSelector';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
-import { supabase } from '../services/supabaseClient';
 import SafetyWarningModal from './common/SafetyWarningModal';
 import { useLanguage } from '../hooks/useLanguage';
 
@@ -31,11 +27,35 @@ interface ImageGeneratorProps {
   onInsufficientCredits?: () => void;
 }
 
+// Local Error Modal Component
+const ErrorModal: React.FC<{ isOpen: boolean; onClose: () => void; message: string }> = ({ isOpen, onClose, message }) => {
+    const { t } = useLanguage();
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-sans">
+            <div className="bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#302839] rounded-2xl p-6 shadow-2xl max-w-sm w-full text-center animate-scale-up">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="material-symbols-outlined text-red-600 dark:text-red-500 text-4xl">error</span>
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{t('common.error')}</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm mb-6 leading-relaxed">{message}</p>
+                <button 
+                    onClick={onClose}
+                    className="w-full py-3 bg-gray-900 dark:bg-white text-white dark:text-black font-bold rounded-xl transition-all hover:opacity-90"
+                >
+                    {t('common.close')}
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, onSendToViewSync, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { t, language } = useLanguage();
     const { 
-        style, context, lighting, weather, buildingType, customPrompt, referenceImages, 
-        sourceImage, isLoading, isUpscaling, error, resultImages, upscaledImage, 
+        renderMode, style, context, lighting, weather, buildingType, roomType, colorPalette, 
+        viewType, density, gardenStyle, timeOfDay, features,
+        customPrompt, referenceImages, sourceImage, isLoading, error, resultImages, 
         numberOfImages, aspectRatio, resolution 
     } = state;
     
@@ -43,52 +63,34 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+    const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
+    const [localErrorMessage, setLocalErrorMessage] = useState("");
     const [selectedIndex, setSelectedIndex] = useState(0);
-    const [recentHistory, setRecentHistory] = useState<HistoryItem[]>([]);
+    const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
 
     useEffect(() => {
         if (resultImages.length > 0) setSelectedIndex(0);
     }, [resultImages.length]);
 
-    // Lấy 5 kết quả gần nhất từ lịch sử
-    const loadRecentHistory = async () => {
-        try {
-            const history = await historyService.getHistory(20, 0);
-            // Lọc ra các ảnh thuộc công cụ Render kiến trúc
-            const filtered = history
-                .filter(item => item.tool === Tool.ArchitecturalRendering && item.media_type === 'image')
-                .slice(0, 5);
-            setRecentHistory(filtered);
-        } catch (e) {
-            console.error("Failed to load recent history", e);
+    // Handle Default Prompt Reset on Mode Change
+    const resetPromptForMode = (mode: ImageGeneratorState['renderMode']) => {
+        let newPrompt = "";
+        switch(mode) {
+            case 'arch': newPrompt = t('img_gen.default_prompt'); break;
+            case 'interior': newPrompt = t('int.default_prompt'); break;
+            case 'urban': newPrompt = language === 'vi' ? 'Render một khu đô thị ven sông hiện đại' : 'Render a modern riverside urban area'; break;
+            case 'landscape': newPrompt = language === 'vi' ? 'Render một sân vườn nhỏ phía sau nhà với hồ cá Koi' : 'Render a small backyard garden with a Koi pond'; break;
         }
+        onStateChange({ renderMode: mode, customPrompt: newPrompt, resultImages: [] });
     };
 
-    useEffect(() => {
-        if (!isLoading && resultImages.length === 0) {
-            loadRecentHistory();
-        }
-    }, [isLoading, resultImages.length]);
-
-    // Tự động chuyển đổi Prompt mặc định khi đổi ngôn ngữ
-    useEffect(() => {
-        const viDefault = 'Biến thành ảnh chụp thực tế nhà ở';
-        const enDefault = 'Transform into realistic house photo';
-        
-        if (!customPrompt || customPrompt === viDefault || customPrompt === enDefault) {
-             onStateChange({ customPrompt: language === 'vi' ? viDefault : enDefault });
-        }
-    }, [language]);
-
+    // --- OPTIONS MEMOS ---
     const buildingTypeOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
         { value: t('opt.building.townhouse'), label: t('opt.building.townhouse') },
         { value: t('opt.building.villa'), label: t('opt.building.villa') },
-        { value: t('opt.building.level4'), label: t('opt.building.level4') },
         { value: t('opt.building.apartment'), label: t('opt.building.apartment') },
         { value: t('opt.building.office'), label: t('opt.building.office') },
-        { value: t('opt.building.cafe'), label: t('opt.building.cafe') },
-        { value: t('opt.building.restaurant'), label: t('opt.building.restaurant') },
     ], [t]);
 
     const styleOptions = useMemo(() => [
@@ -97,18 +99,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         { value: t('opt.style.minimalist'), label: t('opt.style.minimalist') },
         { value: t('opt.style.neoclassic'), label: t('opt.style.neoclassic') },
         { value: t('opt.style.scandinavian'), label: t('opt.style.scandinavian') },
-        { value: t('opt.style.industrial'), label: t('opt.style.industrial') },
-        { value: t('opt.style.tropical'), label: t('opt.style.tropical') },
-        { value: t('opt.style.brutalism'), label: t('opt.style.brutalism') },
-    ], [t]);
-
-    const contextOptions = useMemo(() => [
-        { value: 'none', label: t('opt.none') },
-        { value: t('opt.context.street_vn'), label: t('opt.context.street_vn') },
-        { value: t('opt.context.rural_vn'), label: t('opt.context.rural_vn') },
-        { value: t('opt.context.urban'), label: t('opt.context.urban') },
-        { value: t('opt.context.intersection_3'), label: t('opt.context.intersection_3') },
-        { value: t('opt.context.intersection_4'), label: t('opt.context.intersection_4') },
+        { value: 'Indochine', label: 'Indochine' },
+        { value: 'Japandi', label: 'Japandi' },
     ], [t]);
 
     const lightingOptions = useMemo(() => [
@@ -116,113 +108,110 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         { value: t('opt.lighting.sunrise'), label: t('opt.lighting.sunrise') },
         { value: t('opt.lighting.noon'), label: t('opt.lighting.noon') },
         { value: t('opt.lighting.sunset'), label: t('opt.lighting.sunset') },
-        { value: t('opt.lighting.evening'), label: t('opt.lighting.evening') },
         { value: t('opt.lighting.night_stars'), label: t('opt.lighting.night_stars') },
     ], [t]);
 
-    const weatherOptions = useMemo(() => [
+    const roomTypeOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
-        { value: t('opt.weather.sunny'), label: t('opt.weather.sunny') },
-        { value: t('opt.weather.rainy'), label: t('opt.weather.rainy') },
-        { value: t('opt.weather.snowy'), label: t('opt.weather.snowy') },
-        { value: t('opt.weather.scorching'), label: t('opt.weather.scorching') },
-        { value: t('opt.weather.after_rain'), label: t('opt.weather.after_rain') },
-    ], [t]);
+        { value: language === 'vi' ? 'Phòng khách' : 'Living room', label: language === 'vi' ? 'Phòng khách' : 'Living room' },
+        { value: language === 'vi' ? 'Phòng ngủ' : 'Bedroom', label: language === 'vi' ? 'Phòng ngủ' : 'Bedroom' },
+        { value: language === 'vi' ? 'Bếp & Phòng ăn' : 'Kitchen & Dining', label: language === 'vi' ? 'Bếp & Phòng ăn' : 'Kitchen & Dining' },
+        { value: language === 'vi' ? 'Phòng tắm' : 'Bathroom', label: language === 'vi' ? 'Phòng tắm' : 'Bathroom' },
+    ], [t, language]);
 
-    // --- PROMPT SYNC LOGIC ---
-    const escapeRegExp = (string: string) => {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    };
+    const viewTypeOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'birds-eye view', label: language === 'vi' ? 'Góc nhìn từ trên cao' : "Bird's eye view" },
+        { value: 'street-level', label: language === 'vi' ? 'Góc nhìn người đi bộ' : 'Street level' },
+    ], [t, language]);
 
-    const updatePrompt = useCallback((type: 'style' | 'buildingType' | 'context' | 'lighting' | 'weather', newValue: string, oldValue: string) => {
-        const getPromptPart = (partType: string, value: string, lang: string): string => {
-            if (value === 'none' || !value) return '';
-            const isVi = lang === 'vi';
-            switch (partType) {
-                case 'buildingType': return isVi ? `công trình ${value}` : `${value} building`;
-                case 'style': return isVi ? `phong cách ${value}` : `${value} style`;
-                case 'context': return isVi ? `bối cảnh ${value}` : `in ${value} context`;
-                case 'lighting': return isVi ? `ánh sáng ${value}` : `with ${value} lighting`;
-                case 'weather': return isVi ? `thời tiết ${value}` : `weather ${value}`;
-                default: return '';
-            }
-        };
+    const densityOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'low density', label: language === 'vi' ? 'Mật độ thấp' : 'Low density' },
+        { value: 'medium density', label: language === 'vi' ? 'Mật độ trung bình' : 'Medium density' },
+        { value: 'high density', label: language === 'vi' ? 'Mật độ cao' : 'High density' },
+    ], [t, language]);
 
-        const oldPartVi = getPromptPart(type, oldValue, 'vi');
-        const oldPartEn = getPromptPart(type, oldValue, 'en');
-        const newPart = getPromptPart(type, newValue, language);
+    const gardenStyleOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'Japanese Zen', label: language === 'vi' ? 'Vườn Nhật Bản' : 'Japanese Zen' },
+        { value: 'Tropical', label: language === 'vi' ? 'Nhiệt đới' : 'Tropical' },
+        { value: 'Modern', label: language === 'vi' ? 'Hiện đại' : 'Modern' },
+        { value: 'Traditional', label: language === 'vi' ? 'Truyền thống' : 'Traditional' },
+    ], [t, language]);
 
-        let nextPrompt = customPrompt;
-        
-        // Remove old segments if they exist (both languages to be safe)
-        if (oldPartVi && nextPrompt.includes(oldPartVi)) { 
-            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartVi)}`), '').replace(new RegExp(`${escapeRegExp(oldPartVi)},?\\s*`), ''); 
-        } 
-        if (oldPartEn && nextPrompt.includes(oldPartEn)) { 
-            nextPrompt = nextPrompt.replace(new RegExp(`,?\\s*${escapeRegExp(oldPartEn)}`), '').replace(new RegExp(`${escapeRegExp(oldPartEn)},?\\s*`), ''); 
-        }
-        
-        // Append new segment
-        if (newPart) { 
-            nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart; 
-        }
-        
-        const cleanedPrompt = nextPrompt.replace(/,+/g, ',').split(',').map(p => p.trim()).filter(p => p.length > 0).join(', ');
-        onStateChange({ customPrompt: cleanedPrompt });
-    }, [customPrompt, onStateChange, language]);
+    const featureOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'Koi Pond', label: language === 'vi' ? 'Hồ cá Koi' : 'Koi Pond' },
+        { value: 'Wooden Deck', label: language === 'vi' ? 'Sàn gỗ' : 'Wooden Deck' },
+        { value: 'Stone Path', label: language === 'vi' ? 'Stone Path' : 'Stone Path' },
+        { value: 'Outdoor Furniture', label: language === 'vi' ? 'Nội thất ngoài trời' : 'Outdoor Furniture' },
+    ], [t, language]);
 
-    const handleBuildingTypeChange = (newVal: string) => {
-        updatePrompt('buildingType', newVal, buildingType);
-        onStateChange({ buildingType: newVal });
-    };
-    
-    const handleStyleChange = (newVal: string) => {
-        updatePrompt('style', newVal, style);
-        onStateChange({ style: newVal });
-    };
-
-    const handleContextChange = (newVal: string) => {
-        updatePrompt('context', newVal, context);
-        onStateChange({ context: newVal });
-    };
-
-    const handleLightingChange = (newVal: string) => {
-        updatePrompt('lighting', newVal, lighting);
-        onStateChange({ lighting: newVal });
-    };
-
-    const handleWeatherChange = (newVal: string) => {
-        updatePrompt('weather', newVal, weather);
-        onStateChange({ weather: newVal });
-    };
-    
-    const handleResolutionChange = (val: ImageResolution) => { 
+    const handleFileSelect = (fileData: FileData | null) => onStateChange({ sourceImage: fileData, resultImages: [] });
+    const handleReferenceFilesChange = (files: FileData[]) => onStateChange({ referenceImages: files });
+    const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
         if (val === 'Standard') onStateChange({ referenceImages: [] });
     };
-    
-    const handleFileSelect = (fileData: FileData | null) => onStateChange({ sourceImage: fileData, resultImages: [], upscaledImage: null });
-    const handleReferenceFilesChange = (files: FileData[]) => onStateChange({ referenceImages: files });
+
+    const showError = (msg: string) => {
+        setLocalErrorMessage(msg);
+        setIsErrorModalOpen(true);
+    };
+
+    const handleAutoPrompt = async () => {
+        if (!sourceImage) return;
+        setIsAutoPromptLoading(true);
+        try {
+            let newPrompt = "";
+            if (renderMode === 'arch') newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage, language);
+            else if (renderMode === 'interior') newPrompt = await geminiService.generateInteriorPrompt(sourceImage, language);
+            else newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage, language); // Fallback
+            onStateChange({ customPrompt: newPrompt });
+        } catch (err: any) {
+            showError("Không thể tạo prompt tự động.");
+        } finally {
+            setIsAutoPromptLoading(false);
+        }
+    };
 
     const cost = numberOfImages * (resolution === '4K' ? 30 : resolution === '2K' ? 20 : resolution === '1K' ? 10 : 5);
 
     const handleGenerate = async () => {
-        if (onDeductCredits && userCredits < cost) {
-             if (onInsufficientCredits) onInsufficientCredits();
-             else onStateChange({ error: t('common.insufficient') });
-             return;
+        if (onDeductCredits && userCredits < cost) { 
+            if (onInsufficientCredits) onInsufficientCredits();
+            else showError(t('common.insufficient'));
+            return; 
         }
         if (!customPrompt.trim()) return;
-        onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
+
+        onStateChange({ isLoading: true, error: null, resultImages: [] });
         setStatusMessage(t('common.processing'));
         
         try {
-            const logId = onDeductCredits ? await onDeductCredits(cost, `Render kiến trúc`) : null;
+            const toolName = renderMode === 'arch' ? 'Kiến trúc' : renderMode === 'interior' ? 'Nội thất' : renderMode === 'urban' ? 'Quy hoạch' : 'Sân vườn';
+            const logId = onDeductCredits ? await onDeductCredits(cost, `Render ${toolName}`) : null;
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-            const promptForService = `Professional architectural render. ${customPrompt}`;
+            
+            const promptParts = [customPrompt];
+            if (style !== 'none') promptParts.push(`in ${style} style`);
+            if (lighting !== 'none') promptParts.push(`with ${lighting} lighting`);
+            if (renderMode === 'arch' && buildingType !== 'none') promptParts.push(`for a ${buildingType}`);
+            if (renderMode === 'interior' && roomType !== 'none') promptParts.push(`in a ${roomType}`);
+            if (renderMode === 'urban') {
+                if (viewType !== 'none') promptParts.push(`viewed from ${viewType}`);
+                if (density !== 'none') promptParts.push(`with ${density} density`);
+            }
+            if (renderMode === 'landscape') {
+                if (gardenStyle !== 'none') promptParts.push(`${gardenStyle} garden style`);
+                if (features !== 'none') promptParts.push(`featuring ${features}`);
+            }
+
+            const finalPromptForService = `Professional ${toolName.toLowerCase()} rendering. ${promptParts.join(', ')}. Photorealistic, high quality.`;
 
             const result = await externalVideoService.generateFlowImage(
-                promptForService,
+                finalPromptForService,
                 [sourceImage, ...referenceImages].filter(Boolean) as FileData[], 
                 aspectRatio, 
                 numberOfImages,
@@ -232,10 +221,18 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
 
             if (result.imageUrls) {
                 onStateChange({ resultImages: result.imageUrls });
-                result.imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.ArchitecturalRendering, prompt: customPrompt, sourceImageURL: sourceImage?.objectURL, resultImageURL: url }));
+                result.imageUrls.forEach(url => historyService.addToHistory({ 
+                    tool: Tool.ArchitecturalRendering, 
+                    prompt: customPrompt, 
+                    sourceImageURL: sourceImage?.objectURL, 
+                    resultImageURL: url 
+                }));
             }
         } catch (err: any) {
-            onStateChange({ error: t('common.error') });
+            const rawMsg = err.message || "";
+            const friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
+            else showError(t(friendlyKey));
         } finally {
             onStateChange({ isLoading: false });
         }
@@ -249,207 +246,206 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         }
     };
 
-    const handleSendImageToSync = async (imageUrl: string) => {
-        const fileData = await geminiService.getFileDataFromUrl(imageUrl);
-        onSendToViewSync(fileData);
-    };
-
     return (
-        <div className="relative flex flex-col gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4 pb-32">
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+            <style>{`
+                .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                @keyframes scale-up { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+                .animate-scale-up { animation: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            `}</style>
+
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
+            <ErrorModal isOpen={isErrorModalOpen} onClose={() => setIsErrorModalOpen(false)} message={localErrorMessage} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <div className="flex flex-col lg:flex-row gap-6 md:gap-8 items-start">
-                {/* SIDEBAR - Cài đặt */}
-                <aside className="w-full lg:w-1/3 xl:w-[30%] flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden">
-                    <div className="p-5 border-b border-border-color dark:border-[#302839]">
-                        <h2 className="text-xl font-bold text-text-primary dark:text-white">{t('img_gen.title')}</h2>
-                        <p className="text-xs text-text-secondary dark:text-gray-400">{t('img_gen.subtitle')}</p>
-                    </div>
+            {/* SIDEBAR */}
+            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
+                    
+                    {/* SEGMENT 1: MODE SELECTION & UPLOAD */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div className="grid grid-cols-2 lg:grid-cols-4 bg-gray-200 dark:bg-[#252525] p-1 gap-1 border border-gray-300 dark:border-[#302839] rounded-2xl shadow-inner">
+                            {[
+                                { id: 'arch', label: t('img_gen.mode_arch') },
+                                { id: 'interior', label: t('img_gen.mode_interior') },
+                                { id: 'urban', label: t('img_gen.mode_urban') },
+                                { id: 'landscape', label: t('img_gen.mode_landscape') }
+                            ].map(m => (
+                                <button 
+                                    key={m.id}
+                                    onClick={() => resetPromptForMode(m.id as any)}
+                                    className={`flex items-center justify-center px-1 py-3 transition-all text-[11px] font-extrabold rounded-xl ${
+                                        renderMode === m.id 
+                                            ? 'bg-[#7f13ec] text-white shadow-md transform scale-[1.02]' 
+                                            : 'text-text-secondary dark:text-gray-400 hover:bg-white/50 dark:hover:bg-white/5'
+                                    }`}
+                                >
+                                    <span className="truncate">{m.label}</span>
+                                </button>
+                            ))}
+                        </div>
 
-                    <div className="p-5 space-y-5">
                         <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">{t('img_gen.step1')}</label>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('img_gen.step1')}</label>
                             <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
                         </div>
-
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">{t('img_gen.ref_images')}</label>
-                            <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
-                        </div>
-
-                        <div>
-                            <label className="block text-sm font-bold text-gray-700 dark:text-gray-200 mb-2">{t('img_gen.step2')}</label>
-                            <div className="p-3 rounded-xl border border-dashed border-gray-300 dark:border-gray-700 bg-gray-50 dark:bg-black/20">
-                                <textarea rows={3} className="w-full bg-transparent outline-none text-sm resize-none" placeholder={t('img_gen.prompt_placeholder')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} />
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <OptionSelector id="b-type" label={t('opt.building_type')} options={buildingTypeOptions} value={buildingType} onChange={handleBuildingTypeChange} variant="select" />
-                            <OptionSelector id="style" label={t('opt.style')} options={styleOptions} value={style} onChange={handleStyleChange} variant="select" />
-                            <div className="grid grid-cols-2 gap-3">
-                                <OptionSelector id="lt" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={handleLightingChange} variant="select" />
-                                <OptionSelector id="wt" label={t('opt.weather')} options={weatherOptions} value={weather} onChange={handleWeatherChange} variant="select" />
-                            </div>
-                        </div>
-
-                        <div className="space-y-4">
-                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({aspectRatio: val})} />
-                            <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
-                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} />
-                        </div>
                     </div>
-                </aside>
 
-                {/* MAIN CONTENT - Kết quả */}
-                <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden">
-                    <div className="p-0 flex flex-col h-full items-start">
-                        
-                        {/* Image Area */}
-                        <div className="w-full bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex flex-col items-start min-h-[300px] lg:min-h-[450px]">
-                            {resultImages.length > 0 ? (
-                                <div className="w-full p-0 animate-fade-in flex flex-col items-start relative">
-                                    <div className="w-full min-h-[300px] lg:min-h-[450px] flex items-center justify-center">
-                                        {sourceImage ? (
-                                            <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[selectedIndex]} />
-                                        ) : (
-                                            <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-[70vh] object-contain" />
-                                        )}
-                                    </div>
-                                    
-                                    {/* Action Buttons Overlay */}
-                                    <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
-                                        <button onClick={() => handleSendImageToSync(resultImages[selectedIndex])} className="p-2.5 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-purple-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined">view_in_ar</span></button>
-                                        <button onClick={handleDownload} className="p-2.5 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined">download</span></button>
-                                        <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2.5 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined">zoom_in</span></button>
-                                    </div>
-                                </div>
-                            ) : isLoading ? (
-                                <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
-                                    <Spinner />
-                                    <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
-                                </div>
-                            ) : recentHistory.length > 0 ? (
-                                // HIỂN THỊ KẾT QUẢ GẦN NHẤT
-                                <div className="w-full p-6 animate-fade-in">
-                                    <div className="flex items-center gap-2 mb-6">
-                                        <span className="material-symbols-outlined text-purple-500">history</span>
-                                        <h3 className="text-sm font-bold text-gray-700 dark:text-gray-200 uppercase tracking-widest">Kết quả gần đây</h3>
-                                    </div>
-                                    <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                                        {recentHistory.map((item) => (
-                                            <div 
-                                                key={item.id} 
-                                                className="group relative aspect-video bg-white dark:bg-[#1A1A1A] rounded-xl overflow-hidden border border-gray-200 dark:border-[#302839] cursor-pointer hover:border-purple-500 transition-all"
-                                                onClick={() => setPreviewImage(item.media_url)}
-                                            >
-                                                <img src={item.media_url} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 group-hover:scale-105 transition-all" alt="Recent" />
-                                                <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2">
-                                                    <p className="text-[10px] text-white font-medium truncate">{item.prompt}</p>
-                                                </div>
-                                            </div>
-                                        ))}
-                                    </div>
-                                </div>
-                            ) : (
-                                <div className="w-full h-full flex flex-col items-center justify-center py-40 opacity-20 select-none">
-                                    <span className="material-symbols-outlined text-6xl mb-4">photo_library</span>
-                                    <p className="text-base font-medium">{t('msg.no_result_render')}</p>
-                                </div>
+                    {/* SEGMENT 2: PROMPT & SPECIALIZED OPTIONS */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('img_gen.step2')}</label>
+                            <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
+                                <textarea 
+                                    rows={6} 
+                                    className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" 
+                                    placeholder={t('img_gen.prompt_placeholder')} 
+                                    value={customPrompt} 
+                                    onChange={(e) => onStateChange({ customPrompt: e.target.value })} 
+                                />
+                            </div>
+                            {(renderMode === 'arch' || renderMode === 'interior') && (
+                                <button
+                                    type="button"
+                                    onClick={handleAutoPrompt}
+                                    disabled={!sourceImage || isAutoPromptLoading || isLoading}
+                                    className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all bg-gray-800 dark:bg-gray-700 hover:bg-black dark:hover:bg-gray-600 text-white shadow-sm disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                                >
+                                    {isAutoPromptLoading ? <Spinner /> : <><span className="material-symbols-outlined text-sm">auto_awesome</span> <span>{t('img_gen.auto_prompt')}</span></>}
+                                </button>
                             )}
                         </div>
 
-                        {/* Thumbnail List */}
-                        {resultImages.length > 0 && !isLoading && (
-                            <div className="w-full p-3 sm:p-4 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
-                                <div className="flex gap-3 overflow-x-auto pb-1 scrollbar-hide">
-                                    {resultImages.map((url, idx) => (
-                                        <button 
-                                            key={url} 
-                                            onClick={() => setSelectedIndex(idx)} 
-                                            className={`flex-shrink-0 w-24 sm:w-32 aspect-video rounded-lg border-2 transition-all overflow-hidden ${
-                                                selectedIndex === idx 
-                                                    ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' 
-                                                    : 'border-transparent opacity-60 hover:opacity-100'
-                                            }`}
-                                        >
-                                            <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
-                                        </button>
-                                    ))}
+                        <div className="space-y-3">
+                            {renderMode === 'arch' && (
+                                <>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <OptionSelector id="b-type" label={t('opt.building_type')} options={buildingTypeOptions} value={buildingType} onChange={(v) => onStateChange({ buildingType: v })} variant="select" />
+                                        <OptionSelector id="style" label={t('opt.style')} options={styleOptions} value={style} onChange={(v) => onStateChange({ style: v })} variant="select" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <OptionSelector id="lt" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => onStateChange({ lighting: v })} variant="select" />
+                                        <OptionSelector id="wt" label={t('opt.weather')} options={[{value:'none', label:t('opt.none')}, {value:'sunny', label:t('opt.weather.sunny')}, {value:'rainy', label:t('opt.weather.rainy')}]} value={weather} onChange={(v) => onStateChange({ weather: v })} variant="select" />
+                                    </div>
+                                </>
+                            )}
+                            {renderMode === 'interior' && (
+                                <>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <OptionSelector id="room-type" label={t('opt.int.project_type')} options={roomTypeOptions} value={roomType} onChange={(v) => onStateChange({ roomType: v })} variant="select" />
+                                        <OptionSelector id="int-style" label={t('opt.style')} options={styleOptions} value={style} onChange={(v) => onStateChange({ style: v })} variant="select" />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <OptionSelector id="int-lt" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => onStateChange({ lighting: v })} variant="select" />
+                                        <OptionSelector id="int-color" label={t('opt.int.color')} options={[{value:'none', label:t('opt.none')}, {value:'warm', label:'Warm'}, {value:'cool', label:'Cool'}]} value={colorPalette} onChange={(v) => onStateChange({ colorPalette: v })} variant="select" />
+                                    </div>
+                                </>
+                            )}
+                            {renderMode === 'urban' && (
+                                <>
+                                    <OptionSelector id="v-type" label={t('ext.urban.view_type')} options={viewTypeOptions} value={viewType} onChange={(v) => onStateChange({ viewType: v })} variant="select" />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <OptionSelector id="v-density" label={t('ext.urban.density')} options={densityOptions} value={density} onChange={(v) => onStateChange({ density: v })} variant="select" />
+                                        <OptionSelector id="v-light" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => onStateChange({ lighting: v })} variant="select" />
+                                    </div>
+                                </>
+                            )}
+                            {renderMode === 'landscape' && (
+                                <>
+                                    <OptionSelector id="g-style" label={t('ext.landscape.style')} options={gardenStyleOptions} value={gardenStyle} onChange={(v) => onStateChange({ gardenStyle: v })} variant="select" />
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <OptionSelector id="g-feature" label={t('ext.landscape.feature')} options={featureOptions} value={features} onChange={(v) => onStateChange({ features: v })} variant="select" />
+                                        <OptionSelector id="g-time" label={t('ext.landscape.time')} options={lightingOptions} value={lighting} onChange={(v) => onStateChange({ lighting: v })} variant="select" />
+                                    </div>
+                                </>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* SEGMENT 3: OUTPUT SETTINGS */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('img_gen.ref_images')}</label>
+                            {resolution === 'Standard' ? (
+                                <div className="p-4 bg-white dark:bg-[#121212] border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 h-28 shadow-inner">
+                                    <span className="material-symbols-outlined text-yellow-500 text-xl">lock</span>
+                                    <p className="text-[10px] text-text-secondary dark:text-gray-400 px-2 leading-tight">
+                                        {t('img_gen.ref_lock')}
+                                    </p>
+                                    <button onClick={() => handleResolutionChange('1K')} className="text-[10px] text-[#7f13ec] hover:underline font-bold uppercase">{t('img_gen.upgrade')}</button>
                                 </div>
+                            ) : (
+                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                            )}
+                        </div>
+                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({aspectRatio: val})} />
+                        <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} />
+                    </div>
+                </div>
+
+                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button 
+                        onClick={handleGenerate} 
+                        disabled={isLoading} 
+                        className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base"
+                    >
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('common.start_render')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
+                    </button>
+                </div>
+            </aside>
+
+            {/* MAIN CONTENT */}
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="flex flex-col h-full overflow-hidden">
+                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                        {resultImages.length > 0 ? (
+                            <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
+                                <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                                    {sourceImage ? (
+                                        <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[selectedIndex]} />
+                                    ) : (
+                                        <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-full object-contain" />
+                                    )}
+                                </div>
+                                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                    <button onClick={() => onSendToViewSync(sourceImage!)} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-purple-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">view_in_ar</span></button>
+                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
+                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212]">
+                                <span className="material-symbols-outlined text-6xl mb-4">image</span>
+                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
+                            </div>
+                        )}
+                        {isLoading && (
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                <Spinner />
+                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
                             </div>
                         )}
                     </div>
-                </main>
-            </div>
 
-            {/* FLOATING RENDER BUBBLE - STICKY BOTTOM LEFT OF SCREEN (Fixed Viewport via Portal) */}
-            {createPortal(
-                <div className="fixed bottom-0 left-0 w-full z-[100] pointer-events-none">
-                    {/* Padding wrapper to match main content padding in App.tsx (approximately) */}
-                    <div className="px-3 sm:px-6 lg:px-8 pb-0">
-                        {/* Constraints matching the ImageGenerator content */}
-                        <div className="max-w-[1920px] mx-auto px-2 sm:px-4 pb-2">
-                            <div className="flex flex-col lg:flex-row gap-6 md:gap-8 items-end">
-                                <div className="w-full lg:w-1/3 xl:w-[30%] pointer-events-auto">
-                                     <div className="w-full animate-slide-up">
-                                         <div className="bg-white/90 dark:bg-[#1A1A1A]/95 backdrop-blur-2xl border border-border-color dark:border-[#302839] p-2 pr-2 rounded-[24px] shadow-[0_20px_50px_rgba(0,0,0,0.25)] dark:shadow-[0_20px_50px_rgba(0,0,0,0.6)] flex items-center justify-between gap-3">
-                                            
-                                            {/* Cost Info */}
-                                            <div className="flex items-center gap-4 pl-4 py-1">
-                                                <div className="flex flex-col">
-                                                    <div className="flex items-center gap-1 text-[10px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest opacity-70">
-                                                        <span className="material-symbols-outlined text-yellow-500 text-[14px]">monetization_on</span>
-                                                        {t('common.cost')}
-                                                    </div>
-                                                    <span className="text-sm font-black text-gray-900 dark:text-white leading-tight">{cost} Credits</span>
-                                                </div>
-                                                
-                                                <div className="h-8 w-px bg-gray-200 dark:bg-gray-700/50"></div>
-                                                
-                                                <div className="flex flex-col">
-                                                    <div className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-black tracking-widest opacity-70 mb-0.5">{t('common.available')}</div>
-                                                    <span className="text-sm font-black text-purple-600 dark:text-purple-400 leading-tight">{userCredits}</span>
-                                                </div>
-                                            </div>
-                                            
-                                            {/* Render Button */}
-                                            <button 
-                                                onClick={handleGenerate} 
-                                                disabled={isLoading || !customPrompt.trim()} 
-                                                className="relative group overflow-hidden bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 px-6 rounded-[18px] transition-all shadow-lg active:scale-95 flex items-center justify-center gap-2 flex-1 max-w-[200px]"
-                                            >
-                                                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/10 to-transparent -translate-x-full group-hover:animate-[shimmer_1.5s_infinite]"></div>
-                                                {isLoading ? (
-                                                    <><Spinner /> <span className="text-xs uppercase tracking-widest font-black">{t('common.processing')}</span></>
-                                                ) : (
-                                                    <><span className="material-symbols-outlined text-lg">rocket_launch</span> <span className="text-xs uppercase tracking-widest font-black">{t('common.start_render')}</span></>
-                                                )}
-                                            </button>
-                                         </div>
-                                         {error && <div className="mt-2 text-[10px] text-red-500 bg-red-50 dark:bg-red-900/20 p-2 rounded-xl border border-red-200 dark:border-red-800 text-center font-bold shadow-sm">{error}</div>}
-                                    </div>
-                                </div>
+                    {resultImages.length > 0 && !isLoading && (
+                        <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
+                                {resultImages.map((url, idx) => (
+                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-16 sm:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                        <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
+                                    </button>
+                                ))}
                             </div>
                         </div>
-                    </div>
-                </div>,
-                document.body
-            )}
-
-            <style>{`
-                @keyframes shimmer {
-                    100% { transform: translateX(100%); }
-                }
-                @keyframes slide-up {
-                    from { transform: translateY(20px); opacity: 0; }
-                    to { transform: translateY(0); opacity: 1; }
-                }
-                .animate-slide-up {
-                    animation: slide-up 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-                }
-            `}</style>
+                    )}
+                </div>
+            </main>
         </div>
     );
 };

@@ -50,7 +50,7 @@ const OptionSelector: React.FC<OptionSelectorProps> = ({
   return (
     <div className={`relative ${isOpen ? 'z-[50]' : 'z-10'}`} ref={containerRef}>
       {label && (
-        <label htmlFor={id} className="block text-sm font-bold text-text-secondary dark:text-gray-400 mb-2">
+        <label htmlFor={id} className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">
           {label}
         </label>
       )}

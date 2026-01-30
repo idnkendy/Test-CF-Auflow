@@ -40,438 +40,253 @@ const LandscapeRendering: React.FC<LandscapeRenderingProps> = ({ state, onStateC
     
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
+    const [selectedIndex, setSelectedIndex] = useState(0);
+    const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
+
+    useEffect(() => {
+        if (resultImages.length > 0) setSelectedIndex(0);
+    }, [resultImages.length]);
 
     // Handle Default Prompt Switching
     useEffect(() => {
         const viDefault = 'Render một sân vườn nhỏ phía sau nhà, có lối đi bằng đá, nhiều hoa và một bộ bàn ghế nhỏ.';
         const enDefault = 'Render a small backyard garden with stone path, flowers, and a small table set.';
-        
-        if (language === 'en' && customPrompt.includes(viDefault)) {
-             onStateChange({ customPrompt: customPrompt.replace(viDefault, enDefault) });
-        } else if (language === 'vi' && customPrompt.includes(enDefault)) {
-             onStateChange({ customPrompt: customPrompt.replace(enDefault, viDefault) });
-        } else if (!customPrompt) {
+        if (!customPrompt || customPrompt === viDefault || customPrompt === enDefault) {
              onStateChange({ customPrompt: language === 'vi' ? viDefault : enDefault });
         }
-    }, [language, customPrompt]);
+    }, [language]);
 
-    // Using English values for prompting efficiency, labels change based on lang
     const gardenStyleOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
         { value: 'Japanese Zen garden', label: language === 'vi' ? 'Vườn Zen Nhật Bản' : 'Japanese Zen' },
         { value: 'tropical garden', label: language === 'vi' ? 'Vườn nhiệt đới' : 'Tropical' },
-        { value: 'English classic garden', label: language === 'vi' ? 'Sân vườn Anh Quốc cổ điển' : 'English Classic' },
         { value: 'modern minimalist garden', label: language === 'vi' ? 'Sân vườn hiện đại, tối giản' : 'Modern Minimalist' },
-        { value: 'Mediterranean garden', label: language === 'vi' ? 'Vườn Địa Trung Hải' : 'Mediterranean' },
         { value: 'Vietnamese rural garden', label: language === 'vi' ? 'Vườn làng quê Việt Nam' : 'Vietnamese Rural' },
     ], [t, language]);
 
     const timeOfDayOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
         { value: 'sunny daytime', label: language === 'vi' ? 'Ban ngày nắng đẹp' : 'Sunny Day' },
-        { value: 'golden hour sunset', label: language === 'vi' ? 'Hoàng hôn (giờ vàng)' : 'Sunset' },
-        { value: 'night with garden lights', label: language === 'vi' ? 'Ban đêm với đèn sân vườn' : 'Night' },
-        { value: 'overcast day', label: language === 'vi' ? 'Ngày u ám, nhiều mây' : 'Overcast' },
-        { value: 'after rain', label: language === 'vi' ? 'Sau cơn mưa, mặt đất ẩm ướt' : 'After Rain' },
+        { value: 'golden hour sunset', label: language === 'vi' ? 'Hoàng hôn' : 'Sunset' },
+        { value: 'night with garden lights', label: language === 'vi' ? 'Ban đêm' : 'Night' },
     ], [t, language]);
 
     const featureOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
         { value: 'small Koi pond', label: language === 'vi' ? 'Hồ cá Koi nhỏ' : 'Koi Pond' },
         { value: 'stone pathway', label: language === 'vi' ? 'Lối đi bằng đá cuội' : 'Stone Path' },
-        { value: 'bougainvillea trellis', label: language === 'vi' ? 'Giàn hoa giấy' : 'Flower Trellis' },
-        { value: 'outdoor BBQ area', label: language === 'vi' ? 'Khu vực BBQ ngoài trời' : 'BBQ Area' },
         { value: 'small waterfall', label: language === 'vi' ? 'Thác nước nhỏ' : 'Waterfall' },
-        { value: 'colorful flower garden', label: language === 'vi' ? 'Nhiều loại hoa đầy màu sắc' : 'Flower Garden' },
     ], [t, language]);
 
-    const escapeRegExp = (string: string) => {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    };
-
-    const updatePrompt = useCallback((type: 'gardenStyle' | 'timeOfDay' | 'features', newValue: string, oldValue: string) => {
-        const getPromptPart = (partType: string, value: string): string => {
-            if (value === 'none' || !value) return '';
-            // Always construct English phrase parts since values are English now
-            switch (partType) {
-                case 'gardenStyle': return `in ${value} style`;
-                case 'timeOfDay': return `at ${value}`;
-                case 'features': return `with ${value}`;
-                default: return '';
-            }
-        };
-
-        const oldPart = getPromptPart(type, oldValue);
-        const newPart = getPromptPart(type, newValue);
-        
-        let nextPrompt = customPrompt;
-
-        if (oldPart && nextPrompt.includes(oldPart)) {
-             const escapedOldPart = escapeRegExp(oldPart);
-             nextPrompt = newPart 
-                ? nextPrompt.replace(oldPart, newPart) 
-                : nextPrompt.replace(new RegExp(`,?\\s*${escapedOldPart}`), '').replace(new RegExp(`${escapedOldPart},?\\s*`), '');
-        } else if (newPart) {
-            nextPrompt = nextPrompt.trim() ? `${nextPrompt}, ${newPart}` : newPart;
-        }
-
-        const cleanedPrompt = nextPrompt
-            .replace(/,+/g, ',')
-            .split(',')
-            .map(p => p.trim())
-            .filter(p => p.length > 0)
-            .join(', ');
-            
-        onStateChange({ customPrompt: cleanedPrompt });
-
-    }, [customPrompt, onStateChange]);
-
-    const handleGardenStyleChange = (newVal: string) => {
-        updatePrompt('gardenStyle', newVal, gardenStyle);
-        onStateChange({ gardenStyle: newVal });
-    };
-
-    const handleTimeOfDayChange = (newVal: string) => {
-        updatePrompt('timeOfDay', newVal, timeOfDay);
-        onStateChange({ timeOfDay: newVal });
-    };
-
-    const handleFeaturesChange = (newVal: string) => {
-        updatePrompt('features', newVal, features);
-        onStateChange({ features: newVal });
-    };
-
+    const handleFileSelect = (fileData: FileData | null) => onStateChange({ sourceImage: fileData, resultImages: [] });
+    const handleReferenceFilesChange = (files: FileData[]) => onStateChange({ referenceImages: files });
     const handleResolutionChange = (val: ImageResolution) => {
         onStateChange({ resolution: val });
-        if (val === 'Standard') {
-            onStateChange({ referenceImages: [] });
+        if (val === 'Standard') onStateChange({ referenceImages: [] });
+    };
+
+    const handleAutoPrompt = async () => {
+        if (!sourceImage) return;
+        setIsAutoPromptLoading(true);
+        try {
+            const newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage, language);
+            onStateChange({ customPrompt: newPrompt });
+        } catch (err: any) {
+            console.error(err);
+        } finally {
+            setIsAutoPromptLoading(false);
         }
     };
 
-    const handleFileSelect = (fileData: FileData | null) => {
-        onStateChange({ 
-            sourceImage: fileData, 
-            resultImages: [], 
-            upscaledImage: null 
-        });
-    }
-
-    const handleReferenceFilesChange = (files: FileData[]) => {
-        onStateChange({ referenceImages: files });
-    };
-
-    const getCostPerImage = () => {
-        switch (resolution) {
-            case 'Standard': return 5;
-            case '1K': return 10;
-            case '2K': return 20;
-            case '4K': return 30;
-            default: return 5;
-        }
-    };
-    
-    const unitCost = getCostPerImage();
-    const cost = numberOfImages * unitCost;
-
-    const constructLandscapePrompt = () => {
-        let basePrompt = "";
-        if (sourceImage) {
-            basePrompt = `Generate a photorealistic landscape/garden rendering with a strict aspect ratio of ${aspectRatio}. Develop the provided sketch/photo into a complete 3D scene. The main creative instruction is: ${customPrompt}`;
-            if (referenceImages && referenceImages.length > 0) {
-                basePrompt += ` Also, take aesthetic inspiration from the provided reference image(s).`;
-            }
-        } else {
-            basePrompt = `${customPrompt}, photorealistic landscape rendering, detailed garden design, masterpiece`;
-        }
-        basePrompt = `You are a professional landscape architect. ${basePrompt}`;
-        return basePrompt;
-    };
+    const cost = numberOfImages * (resolution === '4K' ? 30 : resolution === '2K' ? 20 : resolution === '1K' ? 10 : 5);
 
     const handleGenerate = async () => {
-        if (onDeductCredits && (userCredits || 0) < cost) {
-             if (onInsufficientCredits) {
-                 onInsufficientCredits();
-             } else {
-                 onStateChange({ error: jobService.mapFriendlyErrorMessage("KHÔNG ĐỦ CREDITS") });
-             }
+        if (onDeductCredits && userCredits < cost) {
+             if (onInsufficientCredits) onInsufficientCredits();
              return;
         }
+        if (!customPrompt.trim()) return;
 
-        if (!customPrompt.trim()) {
-            onStateChange({ error: 'Lời nhắc không được trống.' });
-            return;
-        }
-        onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
+        onStateChange({ isLoading: true, error: null, resultImages: [] });
         setStatusMessage(t('common.processing'));
-        setUpscaleWarning(null);
-        
-        let logId: string | null = null;
-        let jobId: string | null = null;
-
-        const promptForService = constructLandscapePrompt();
         
         try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Render sân vườn (${numberOfImages} ảnh) - ${resolution || 'Standard'}`);
-            }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                 jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.LandscapeRendering,
-                    prompt: customPrompt,
-                    cost: cost,
-                    usage_log_id: logId
-                });
-            }
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-
+            const logId = onDeductCredits ? await onDeductCredits(cost, `Render sân vườn`) : null;
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-            let lastError: any = null;
-            
-            const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                try {
-                    const inputImages: FileData[] = [];
-                    if (sourceImage) inputImages.push(sourceImage);
-                    if (referenceImages && referenceImages.length > 0) inputImages.push(...referenceImages);
+            const promptForService = `Professional landscape rendering. ${customPrompt}`;
 
-                    const result = await externalVideoService.generateFlowImage(
-                        promptForService,
-                        inputImages,
-                        aspectRatio,
-                        1,
-                        modelName,
-                        (msg) => setStatusMessage(msg)
-                    );
+            const result = await externalVideoService.generateFlowImage(
+                promptForService,
+                [sourceImage, ...referenceImages].filter(Boolean) as FileData[], 
+                aspectRatio, 
+                numberOfImages,
+                modelName,
+                (msg) => setStatusMessage(msg)
+            );
 
-                    if (result.imageUrls && result.imageUrls.length > 0) {
-                        let finalUrl = result.imageUrls[0];
-                        const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-
-                        if (shouldUpscale) {
-                            const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                            const upscaleResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
-                            if (upscaleResult && upscaleResult.imageUrl) {
-                                finalUrl = upscaleResult.imageUrl;
-                            }
-                        }
-                        return finalUrl;
-                    }
-                    return null;
-                } catch (e) {
-                    console.error(`Image ${index+1} failed`, e);
-                    lastError = e;
-                    return null;
-                }
-            });
-
-            const results = await Promise.all(promises);
-            const successfulUrls = results.filter((url): url is string => url !== null);
-            const failedCount = numberOfImages - successfulUrls.length;
-
-            if (successfulUrls.length > 0) {
-                onStateChange({ resultImages: successfulUrls });
-                successfulUrls.forEach(url => {
-                    historyService.addToHistory({
-                        tool: Tool.LandscapeRendering,
-                        prompt: `Flow ${modelName}: ${promptForService}`,
-                        sourceImageURL: sourceImage?.objectURL,
-                        resultImageURL: url,
-                    });
-                });
-                if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
-
-                if (failedCount > 0 && logId && user) {
-                    const refundAmount = failedCount * unitCost;
-                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    const errorMsg = t('msg.refund_success')
-                        .replace('{success}', successfulUrls.length.toString())
-                        .replace('{total}', numberOfImages.toString())
-                        .replace('{amount}', refundAmount.toString())
-                        .replace('{failed}', failedCount.toString());
-                    onStateChange({ error: errorMsg });
-                }
-            } else {
-                if (lastError) throw lastError;
-                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
+            if (result.imageUrls) {
+                onStateChange({ resultImages: result.imageUrls });
+                result.imageUrls.forEach(url => historyService.addToHistory({ 
+                    tool: Tool.LandscapeRendering, 
+                    prompt: customPrompt, 
+                    sourceImageURL: sourceImage?.objectURL, 
+                    resultImageURL: url 
+                }));
             }
-
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
-            
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
-                setShowSafetyModal(true);
-                onStateChange({ error: t('msg.safety_violation') });
-            } else {
-                onStateChange({ error: t(friendlyMsg) });
-            }
-            
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi hệ thống toàn bộ (${rawMsg})`, logId);
-            }
-            
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, rawMsg);
+            const friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
         } finally {
             onStateChange({ isLoading: false });
-            setStatusMessage(null);
-        }
-    };
-
-    const handleUpscale = async () => {
-        if (resultImages.length !== 1) return;
-        onStateChange({ isUpscaling: true, error: null });
-        try {
-            const imageToUpscale = await geminiService.getFileDataFromUrl(resultImages[0]);
-            const upscalePrompt = "Upscale this landscape rendering to a high resolution.";
-            const result = await geminiService.editImage(upscalePrompt, imageToUpscale, 1);
-            onStateChange({ upscaledImage: result[0].imageUrl });
-        } catch (err: any) {
-            onStateChange({ error: err.message || "Failed to upscale." });
-        } finally {
-            onStateChange({ isUpscaling: false });
         }
     };
 
     const handleDownload = async () => {
-        const url = upscaledImage || (resultImages.length > 0 ? resultImages[0] : null);
-        if (!url) return;
-        setIsDownloading(true);
-        await externalVideoService.forceDownload(url, "landscape-render.png");
-        setIsDownloading(false);
-    };
-
-    const handleSendImageToSync = async (imageUrl: string) => {
-        try {
-            const fileData = await geminiService.getFileDataFromUrl(imageUrl);
-            onSendToViewSync(fileData);
-        } catch (e) {
-            onStateChange({ error: "Không thể chuyển ảnh." });
+        if (resultImages[selectedIndex]) {
+            setIsDownloading(true);
+            await externalVideoService.forceDownload(resultImages[selectedIndex], "landscape-render.png");
+            setIsDownloading(false);
         }
     };
 
     return (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+            <style>{`
+                .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                @keyframes scale-up { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+                .animate-scale-up { animation: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            `}</style>
+
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <div>
-                <h2 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('ext.landscape.title')}</h2>
-                <div className="space-y-6 bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border border-border-color dark:border-gray-700">
-                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-                        <div className="space-y-6">
-                            <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.landscape.step1')}</label>
-                                <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL}/>
+            
+            {/* SIDEBAR */}
+            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
+                    
+                    {/* SEGMENT 1: HEADER & UPLOAD */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div className="mb-1">
+                            <h2 className="text-xl font-extrabold text-text-primary dark:text-white leading-tight">{t('ext.landscape.title')}</h2>
+                            <p className="text-[11px] text-text-secondary dark:text-gray-400 mt-0.5">{t('dash.landscape.desc')}</p>
+                        </div>
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('img_gen.step1')}</label>
+                            <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
+                        </div>
+                    </div>
+
+                    {/* SEGMENT 2: PROMPT & OPTIONS */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('img_gen.step2')}</label>
+                            <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
+                                <textarea 
+                                    rows={4} 
+                                    className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" 
+                                    placeholder={t('ext.landscape.prompt_ph')} 
+                                    value={customPrompt} 
+                                    onChange={(e) => onStateChange({ customPrompt: e.target.value })} 
+                                />
                             </div>
-                             <div>
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('img_gen.ref_images')}</label>
-                                {resolution === 'Standard' ? (
-                                    <div className="p-4 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 min-h-[120px]">
-                                        <span className="material-symbols-outlined text-yellow-500 text-3xl">lock</span>
-                                        <p className="text-sm text-text-secondary dark:text-gray-400">
-                                            {t('img_gen.ref_lock')}
-                                        </p>
-                                        <button 
-                                            onClick={() => handleResolutionChange('1K')}
-                                            className="text-xs text-[#7f13ec] hover:underline font-semibold"
-                                        >
-                                            {t('img_gen.upgrade')}
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
-                                )}
+                            <button
+                                type="button"
+                                onClick={handleAutoPrompt}
+                                disabled={!sourceImage || isAutoPromptLoading || isLoading}
+                                className="mt-2 w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-xs font-bold transition-all bg-gray-800 dark:bg-gray-700 hover:bg-black dark:hover:bg-gray-600 text-white shadow-sm disabled:bg-gray-200 dark:disabled:bg-gray-800 disabled:text-gray-400 disabled:cursor-not-allowed"
+                            >
+                                {isAutoPromptLoading ? <Spinner /> : <><span className="material-symbols-outlined text-sm">auto_awesome</span> <span>{t('img_gen.auto_prompt')}</span></>}
+                            </button>
+                        </div>
+
+                        <div className="space-y-3">
+                            <OptionSelector id="g-style" label={t('ext.landscape.style')} options={gardenStyleOptions} value={gardenStyle} onChange={(v) => onStateChange({ gardenStyle: v })} variant="select" />
+                            <div className="grid grid-cols-2 gap-2">
+                                <OptionSelector id="feature" label={t('ext.landscape.feature')} options={featureOptions} value={features} onChange={(v) => onStateChange({ features: v })} variant="select" />
+                                <OptionSelector id="time" label={t('ext.landscape.time')} options={timeOfDayOptions} value={timeOfDay} onChange={(v) => onStateChange({ timeOfDay: v })} variant="select" />
                             </div>
                         </div>
-                         <div className="space-y-4 flex flex-col">
-                             <div>
-                                <label htmlFor="custom-prompt-landscape" className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.landscape.step2')}</label>
-                                <textarea id="custom-prompt-landscape" rows={4} className="w-full bg-surface dark:bg-gray-700/50 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-200 focus:ring-2 focus:ring-accent outline-none" placeholder={t('ext.landscape.prompt_ph')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} disabled={isLoading} />
-                             </div>
-                            <div className="pt-2">
-                                <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-2">{t('ext.landscape.step3')}</label>
-                                <div className="space-y-4">
-                                    <OptionSelector id="garden-style-selector" label={t('ext.landscape.style')} options={gardenStyleOptions} value={gardenStyle} onChange={handleGardenStyleChange} disabled={isLoading} variant="grid" />
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                        <OptionSelector id="feature-selector" label={t('ext.landscape.feature')} options={featureOptions} value={features} onChange={handleFeaturesChange} disabled={isLoading} variant="select" />
-                                        <OptionSelector id="time-selector-landscape" label={t('ext.landscape.time')} options={timeOfDayOptions} value={timeOfDay} onChange={handleTimeOfDayChange} disabled={isLoading} variant="select" />
-                                    </div>
+                    </div>
+
+                    {/* SEGMENT 3: OUTPUT */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('img_gen.ref_images')}</label>
+                            {resolution === 'Standard' ? (
+                                <div className="p-4 bg-white dark:bg-[#121212] border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 h-28 shadow-inner">
+                                    <span className="material-symbols-outlined text-yellow-500 text-xl">lock</span>
+                                    <button onClick={() => handleResolutionChange('1K')} className="text-[10px] text-[#7f13ec] hover:underline font-bold uppercase">{t('img_gen.upgrade')}</button>
+                                </div>
+                            ) : (
+                                <MultiImageUpload onFilesChange={handleReferenceFilesChange} maxFiles={5} />
+                            )}
+                        </div>
+                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({aspectRatio: val})} />
+                        <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({numberOfImages: val})} />
+                    </div>
+                </div>
+
+                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button onClick={handleGenerate} disabled={isLoading} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('common.start_render')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
+                    </button>
+                </div>
+            </aside>
+
+            {/* MAIN CONTENT */}
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="flex flex-col h-full overflow-hidden">
+                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                        {resultImages.length > 0 ? (
+                            <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
+                                <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                                    {sourceImage ? (
+                                        <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[selectedIndex]} />
+                                    ) : (
+                                        <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-full object-contain" />
+                                    )}
+                                </div>
+                                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
+                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
                                 </div>
                             </div>
-                            <div className="pt-4 grid grid-cols-2 gap-4">
-                                <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                                <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212]">
+                                <span className="material-symbols-outlined text-6xl mb-4">park</span>
+                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
                             </div>
-                            <div className="pt-4">
-                                <ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={isLoading} />
+                        )}
+                        {isLoading && (
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                <Spinner />
+                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
                             </div>
-                        </div>
-                    </div>
-                    <div className="mt-4">
-                         <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 mb-3 border border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                            </div>
-                            <div className="text-xs">
-                                {userCredits < cost ? (
-                                    <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
-                                ) : (
-                                    <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
-                                )}
-                            </div>
-                        </div>
-                        <button 
-                            onClick={handleGenerate} 
-                            disabled={isLoading || !customPrompt.trim() || isUpscaling} 
-                            className="w-full flex justify-center items-center gap-2 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 dark:disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-bold py-3 px-4 rounded-lg transition-colors shadow-lg"
-                        >
-                           {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('common.start_render')}
-                        </button>
-                    </div>
-                    {error && <div className="mt-4 p-3 bg-red-100 text-red-700 rounded-lg text-sm">{error}</div>}
-                    {upscaleWarning && <p className="mt-3 text-sm text-yellow-500 text-center font-medium bg-yellow-100 dark:bg-yellow-900/20 p-2 rounded">{upscaleWarning}</p>}
-                </div>
-            </div>
-             <div>
-                <div className="flex justify-between items-center mb-2">
-                    <h3 className="text-lg font-semibold text-text-primary dark:text-white">{t('common.result')}</h3>
-                    <div className="flex items-center gap-2">
-                        {resultImages.length === 1 && (
-                             <>
-                                <button onClick={() => handleSendImageToSync(upscaledImage || resultImages[0])} className="bg-purple-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold">{t('int.btn_sync')}</button>
-                                <button onClick={() => setPreviewImage(upscaledImage || resultImages[0])} className="bg-gray-600 text-white p-2 rounded-lg"><span className="material-symbols-outlined">zoom_in</span></button>
-                                <button onClick={handleDownload} disabled={isDownloading} className="bg-gray-600 text-white px-4 py-1.5 rounded-lg text-sm flex items-center gap-2">{isDownloading ? <Spinner /> : null}{t('common.download')}</button>
-                            </>
                         )}
                     </div>
-                </div>
-                <div className="w-full aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center overflow-hidden">
-                    {isLoading ? (
-                        <div className="flex flex-col items-center">
-                            <Spinner />
-                            <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
+
+                    {resultImages.length > 0 && !isLoading && (
+                        <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
+                                {resultImages.map((url, idx) => (
+                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-16 sm:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                        <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    ) : resultImages.length > 0 ? (
-                        resultImages.length === 1 ? (
-                            <ImageComparator 
-                                originalImage={sourceImage?.objectURL || ''} 
-                                resultImage={upscaledImage || resultImages[0]} 
-                            />
-                        ) : (
-                            <ResultGrid images={resultImages} toolName="landscape-render" onSendToViewSync={handleSendImageToSync} />
-                        )
-                    ) : (
-                        <p className="text-text-secondary dark:text-gray-400">{t('msg.no_result_render')}</p>
                     )}
                 </div>
-              </div>
+            </main>
         </div>
     );
 };

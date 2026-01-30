@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import * as geminiService from '../services/geminiService';
 import * as historyService from '../services/historyService';
 import * as jobService from '../services/jobService';
-import * as externalVideoService from '../services/externalVideoService'; // Import Flow
+import * as externalVideoService from '../services/externalVideoService'; 
 import { FileData, Tool, AspectRatio, ImageResolution } from '../types';
 import { MoodboardGeneratorState } from '../state/toolState';
 import { refundCredits } from '../services/paymentService';
@@ -15,7 +15,8 @@ import ResultGrid from './common/ResultGrid';
 import AspectRatioSelector from './common/AspectRatioSelector';
 import ResolutionSelector from './common/ResolutionSelector';
 import ImagePreviewModal from './common/ImagePreviewModal';
-import SafetyWarningModal from './common/SafetyWarningModal'; // NEW
+import SafetyWarningModal from './common/SafetyWarningModal';
+import ImageComparator from './ImageComparator';
 import { useLanguage } from '../hooks/useLanguage';
 
 interface MoodboardGeneratorProps {
@@ -31,16 +32,17 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
     const { prompt, sourceImage, isLoading, error, resultImages, numberOfImages, aspectRatio, mode, resolution } = state;
     const [previewImage, setPreviewImage] = useState<string | null>(null);
     const [statusMessage, setStatusMessage] = useState<string | null>(null);
-    const [upscaleWarning, setUpscaleWarning] = useState<string | null>(null);
     const [isDownloading, setIsDownloading] = useState(false);
-    const [showSafetyModal, setShowSafetyModal] = useState(false); // NEW
+    const [showSafetyModal, setShowSafetyModal] = useState(false); 
+    const [selectedIndex, setSelectedIndex] = useState(0);
+
+    useEffect(() => {
+        if (resultImages.length > 0) setSelectedIndex(0);
+    }, [resultImages.length]);
     
-    // Handle Default Prompt Switching
     useEffect(() => {
         const viDefault = 'Một phòng khách hiện đại và rộng rãi.';
         const enDefault = 'A modern and spacious living room.';
-        
-        // If current prompt is empty or matches one of the defaults, update it
         if (!prompt || prompt === viDefault || prompt === enDefault) {
              onStateChange({ prompt: language === 'vi' ? viDefault : enDefault });
         }
@@ -60,243 +62,150 @@ const MoodboardGenerator: React.FC<MoodboardGeneratorProps> = ({ state, onStateC
 
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
-             if (onInsufficientCredits) {
-                 onInsufficientCredits();
-             } else {
-                 onStateChange({ error: `${t('common.insufficient')}. Cần ${cost} credits.` });
-             }
+             if (onInsufficientCredits) onInsufficientCredits();
              return;
         }
+        if (!sourceImage) return;
 
-        if (!sourceImage) {
-            onStateChange({ error: 'Vui lòng tải lên ảnh để bắt đầu.' });
-            return;
-        }
         onStateChange({ isLoading: true, error: null, resultImages: [] });
-        setStatusMessage(t('ext.floorplan.analyzing'));
-        setUpscaleWarning(null);
+        setStatusMessage(t('common.processing'));
 
-        let logId: string | null = null;
-        let jobId: string | null = null;
-
-        // Use Flow for ALL resolutions
-        const useFlow = true;
+        const fullPrompt = mode === 'moodboardToScene' 
+            ? `Generate a photorealistic scene from this moodboard. Instruction: ${prompt}` 
+            : `Extract materials and colors from this scene into a clean vertical moodboard layout.`;
 
         try {
-            if (onDeductCredits) {
-                logId = await onDeductCredits(cost, `Tạo Moodboard (${numberOfImages} ảnh) - ${resolution}`);
+            if (onDeductCredits) await onDeductCredits(cost, `Tạo Moodboard (${numberOfImages} ảnh) - ${resolution}`);
+            const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
+
+            const result = await externalVideoService.generateFlowImage(
+                fullPrompt, [sourceImage], aspectRatio, numberOfImages, modelName,
+                (msg) => setStatusMessage(msg)
+            );
+
+            if (result.imageUrls) {
+                onStateChange({ resultImages: result.imageUrls });
+                result.imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.Moodboard, prompt: fullPrompt, sourceImageURL: sourceImage.objectURL, resultImageURL: url }));
             }
-
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId) {
-                jobId = await jobService.createJob({
-                    user_id: user.id,
-                    tool_id: Tool.Moodboard,
-                    prompt: prompt,
-                    cost: cost,
-                    usage_log_id: logId
-                });
-            }
-
-            if (jobId) await jobService.updateJobStatus(jobId, 'processing');
-
-            const fullPrompt = mode === 'moodboardToScene' 
-                ? `Generate a photorealistic scene from this moodboard. Instruction: ${prompt}` 
-                : `Extract materials and colors from this scene into a clean vertical moodboard layout.`;
-
-            let imageUrls: string[] = [];
-
-            if (useFlow) {
-                // --- FLOW LOGIC ---
-                // Standard -> GEM_PIX (Flash)
-                // 1K / 2K -> GEM_PIX_2 (Pro)
-                const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
-                const collectedUrls: string[] = [];
-                let completedCount = 0;
-                let lastError: any = null;
-
-                const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
-                    try {
-                        setStatusMessage(t('common.processing'));
-                        
-                        const result = await externalVideoService.generateFlowImage(
-                            fullPrompt,
-                            [sourceImage], // Moodboard needs source
-                            aspectRatio, // Pass raw ratio
-                            1,
-                            modelName,
-                            (msg) => setStatusMessage(t('common.processing'))
-                        );
-
-                        if (result.imageUrls && result.imageUrls.length > 0) {
-                            let finalUrl = result.imageUrls[0];
-                            
-                            // Check for 2K/4K Upscale
-                            const shouldUpscale = (resolution === '2K' || resolution === '4K') && result.mediaIds && result.mediaIds.length > 0;
-
-                            if (shouldUpscale) {
-                                setStatusMessage(resolution === '4K' ? 'Đang xử lý (Upscale 4K)...' : 'Đang xử lý (Upscale 2K)...');
-                                try {
-                                    const mediaId = result.mediaIds[0];
-                                    if (mediaId) {
-                                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
-                                        const upscaleResult = await externalVideoService.upscaleFlowImage(mediaId, result.projectId, targetRes, aspectRatio);
-                                        if (upscaleResult && upscaleResult.imageUrl) {
-                                            finalUrl = upscaleResult.imageUrl;
-                                        }
-                                    }
-                                } catch (upscaleErr: any) {
-                                    // STRICT FAILURE
-                                    throw new Error(`Lỗi Upscale: ${upscaleErr.message}`);
-                                }
-                            }
-                            
-                            collectedUrls.push(finalUrl);
-                            completedCount++;
-                            onStateChange({ resultImages: [...collectedUrls] });
-                            
-                            historyService.addToHistory({
-                                tool: Tool.Moodboard,
-                                prompt: `Flow (${modelName}): ${fullPrompt}`,
-                                sourceImageURL: sourceImage.objectURL,
-                                resultImageURL: finalUrl,
-                            });
-                        }
-                    } catch (e: any) {
-                        console.error(`Image ${index+1} failed`, e);
-                        lastError = e;
-                    }
-                });
-
-                await Promise.all(promises);
-                if (collectedUrls.length === 0) throw new Error(lastError ? lastError.message : "Không thể tạo ảnh.");
-                
-                // --- PARTIAL REFUND ---
-                const failedCount = numberOfImages - collectedUrls.length;
-                if (failedCount > 0 && logId && user) {
-                    const refundAmount = failedCount * unitCost;
-                    await refundCredits(user.id, refundAmount, `Hoàn tiền: ${failedCount} ảnh lỗi`, logId);
-                    onStateChange({ 
-                        error: `Đã tạo thành công ${collectedUrls.length}/${numberOfImages} ảnh. Hệ thống đã hoàn lại ${refundAmount} credits cho ${failedCount} ảnh bị lỗi.` 
-                    });
-                }
-                
-                imageUrls = collectedUrls;
-
-            } else {
-                // Fallback (Not reached if useFlow=true)
-                setStatusMessage(t('common.processing'));
-                const promises = Array.from({ length: numberOfImages }).map(async () => {
-                    const images = await geminiService.generateHighQualityImage(fullPrompt, aspectRatio, resolution, sourceImage, jobId || undefined);
-                    return images[0];
-                });
-                imageUrls = await Promise.all(promises);
-                
-                onStateChange({ resultImages: imageUrls });
-                imageUrls.forEach(url => {
-                    historyService.addToHistory({ tool: Tool.Moodboard, prompt: `Gemini Pro: ${fullPrompt}`, sourceImageURL: sourceImage.objectURL, resultImageURL: url });
-                });
-            }
-
-            if (jobId && imageUrls.length > 0) await jobService.updateJobStatus(jobId, 'completed', imageUrls[0]);
-            
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let errorKey = jobService.mapFriendlyErrorMessage(rawMsg);
-            let displayMsg = t(errorKey);
-            
-            // --- SAFETY MODAL TRIGGER ---
-            if (errorKey === "SAFETY_POLICY_VIOLATION") {
-                setShowSafetyModal(true);
-                onStateChange({ error: t('msg.safety_violation') });
-            } else {
-                if (logId) displayMsg += t('video.msg.refund');
-                onStateChange({ error: displayMsg });
-            }
-            
-            if (jobId) await jobService.updateJobStatus(jobId, 'failed', undefined, err.message);
-            
-            const { data: { user } } = await supabase.auth.getUser();
-            if (user && logId && onDeductCredits) {
-                await refundCredits(user.id, cost, `Hoàn tiền: Lỗi moodboard (${rawMsg})`, logId);
-            }
+            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
+            else onStateChange({ error: t(friendlyKey) });
         } finally {
             onStateChange({ isLoading: false });
-            setStatusMessage(null);
         }
+    };
+
+    const handleResolutionChange = (val: ImageResolution) => {
+        onStateChange({ resolution: val });
     };
 
     const handleDownload = async () => {
-        if (resultImages.length === 0) return;
-        setIsDownloading(true);
-        await externalVideoService.forceDownload(resultImages[0], `moodboard-${Date.now()}.png`);
-        setIsDownloading(false);
+        if (resultImages[selectedIndex]) {
+            setIsDownloading(true);
+            await externalVideoService.forceDownload(resultImages[selectedIndex], `moodboard-${Date.now()}.png`);
+            setIsDownloading(false);
+        }
     };
 
     return (
-        <div className="flex flex-col gap-8">
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+            <style>{`
+                .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+                .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
+                .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
+                @keyframes scale-up { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
+                .animate-scale-up { animation: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+            `}</style>
+
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            <h2 className="text-2xl font-bold">{t('ext.moodboard.title')}</h2>
-            <div className="bg-main-bg/50 dark:bg-dark-bg/50 p-6 rounded-xl border space-y-6">
-                <div className="grid grid-cols-2 gap-2 bg-gray-100 dark:bg-gray-800 p-1 rounded-lg">
-                    <button onClick={() => onStateChange({ mode: 'moodboardToScene', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'moodboardToScene' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>{t('ext.moodboard.mode1')}</button>
-                    <button onClick={() => onStateChange({ mode: 'sceneToMoodboard', resultImages: [] })} className={`py-2 rounded-md text-sm font-semibold ${mode === 'sceneToMoodboard' ? 'bg-purple-600 text-white' : 'text-gray-400'}`}>{t('ext.moodboard.mode2')}</button>
-                </div>
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <ImageUpload onFileSelect={(f) => onStateChange({ sourceImage: f, resultImages: [] })} previewUrl={sourceImage?.objectURL} />
-                    <div className="space-y-4">
-                        <textarea rows={4} className="w-full bg-surface dark:bg-gray-700/50 border rounded-lg p-3 text-sm" placeholder={t('int.prompt_placeholder')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
-                        <div className="grid grid-cols-2 gap-4">
-                            <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} disabled={isLoading} />
-                            <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={isLoading} />
+            
+            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div className="grid grid-cols-2 gap-2 bg-white dark:bg-[#121212] p-1 rounded-xl border border-gray-200 dark:border-[#302839]">
+                            <button onClick={() => onStateChange({ mode: 'moodboardToScene', resultImages: [] })} className={`py-1.5 rounded-lg text-[10px] font-bold transition-all ${mode === 'moodboardToScene' ? 'bg-[#7f13ec] text-white shadow' : 'text-gray-400'}`}>{t('ext.moodboard.mode1')}</button>
+                            <button onClick={() => onStateChange({ mode: 'sceneToMoodboard', resultImages: [] })} className={`py-1.5 rounded-lg text-[10px] font-bold transition-all ${mode === 'sceneToMoodboard' ? 'bg-[#7f13ec] text-white shadow' : 'text-gray-400'}`}>{t('ext.moodboard.mode2')}</button>
                         </div>
-                        <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} disabled={isLoading} />
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('moodboard.step1')}</label>
+                            <ImageUpload onFileSelect={(f) => onStateChange({ sourceImage: f, resultImages: [] })} previewUrl={sourceImage?.objectURL} />
+                        </div>
+                    </div>
 
-                        <div className="flex items-center justify-between bg-gray-100 dark:bg-gray-800/50 rounded-lg px-4 py-2 border border-gray-200 dark:border-gray-700">
-                            <div className="flex items-center gap-2 text-sm text-text-secondary dark:text-gray-300">
-                                <span className="material-symbols-outlined text-yellow-500 text-sm">monetization_on</span>
-                                <span>{t('common.cost')}: <span className="font-bold text-text-primary dark:text-white">{cost} Credits</span></span>
-                            </div>
-                            <div className="text-xs">
-                                {userCredits < cost ? (
-                                    <span className="text-red-500 font-semibold">{t('common.insufficient')}</span>
-                                ) : (
-                                    <span className="text-green-600 dark:text-green-400">{t('common.available')}: {userCredits}</span>
-                                )}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div>
+                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('moodboard.step2')}</label>
+                            <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
+                                <textarea rows={5} className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('int.prompt_placeholder')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                             </div>
                         </div>
+                    </div>
 
-                        <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full py-3 bg-purple-600 text-white font-bold rounded-lg transition-colors">
-                            {isLoading ? <><Spinner /> {statusMessage || t('common.processing')}</> : t('ext.moodboard.btn_generate')}
-                        </button>
-                        {error && <div className="mt-4 p-3 bg-red-100 border border-red-400 text-red-700 dark:bg-red-900/50 dark:border-red-500 dark:text-red-300 rounded-lg text-sm">{error}</div>}
-                        {upscaleWarning && <p className="text-xs text-yellow-500 text-center">{upscaleWarning}</p>}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                        <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
+                        <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
+                        <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
                     </div>
                 </div>
-            </div>
-            <div className="aspect-video bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed flex items-center justify-center overflow-hidden relative">
-                {isLoading ? (
-                    <div className="flex flex-col items-center">
-                        <Spinner />
-                        <p className="mt-2 text-text-secondary dark:text-gray-400">{statusMessage || t('common.processing')}</p>
+
+                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('ext.moodboard.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
+                    </button>
+                </div>
+            </aside>
+
+            {/* MAIN CONTENT */}
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                <div className="flex flex-col h-full overflow-hidden">
+                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                        {resultImages.length > 0 ? (
+                            <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
+                                <div className="w-full h-full flex items-center justify-center overflow-hidden">
+                                    {sourceImage ? (
+                                        <ImageComparator originalImage={sourceImage.objectURL} resultImage={resultImages[selectedIndex]} />
+                                    ) : (
+                                        <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-full object-contain" />
+                                    )}
+                                </div>
+                                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
+                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
+                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                </div>
+                            </div>
+                        ) : (
+                            <div className="w-full h-full flex flex-col items-center justify-center py-40 opacity-20 select-none bg-main-bg dark:bg-[#121212] flex-grow">
+                                <span className="material-symbols-outlined text-6xl mb-4">palette</span>
+                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
+                            </div>
+                        )}
+                        {isLoading && (
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                <Spinner />
+                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
+                            </div>
+                        )}
                     </div>
-                ) : resultImages.length > 0 ? (
-                    <>
-                        <ResultGrid images={resultImages} toolName="moodboard" />
-                        <div className="absolute top-2 right-2">
-                            <button 
-                                onClick={handleDownload}
-                                disabled={isDownloading} 
-                                className="bg-gray-600/80 hover:bg-gray-700 text-white px-3 py-1.5 rounded-lg text-xs font-bold shadow flex items-center gap-2"
-                            >
-                                {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-sm">download</span>}
-                                {t('common.download')}
-                            </button>
+
+                    {resultImages.length > 0 && !isLoading && (
+                        <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
+                                {resultImages.map((url, idx) => (
+                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-16 sm:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                        <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
+                                    </button>
+                                ))}
+                            </div>
                         </div>
-                    </>
-                ) : <p className="text-gray-400">{t('msg.no_result_render')}</p>}
-            </div>
+                    )}
+                </div>
+            </main>
         </div>
     );
 };
