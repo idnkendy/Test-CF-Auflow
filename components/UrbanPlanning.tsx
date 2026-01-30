@@ -50,14 +50,17 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
     }, [resultImages.length]);
 
     // Handle Default Prompt Switching
-    useEffect(() => {
+     useEffect(() => {
         const viDefault = 'Render một khu đô thị ven sông, có nhiều cây xanh, các toà nhà hiện đại và một cây cầu đi bộ.';
         const enDefault = 'Render a riverside urban area with plenty of greenery, modern buildings, and a pedestrian bridge.';
+        
+        // If current prompt is empty or matches one of the defaults, update it
         if (!customPrompt || customPrompt === viDefault || customPrompt === enDefault) {
              onStateChange({ customPrompt: language === 'vi' ? viDefault : enDefault });
         }
     }, [language]);
 
+    // Using English values for prompting efficiency, labels change based on lang
     const viewTypeOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
         { value: 'birds-eye view', label: language === 'vi' ? 'Phối cảnh mắt chim' : "Bird's eye view" },
@@ -80,6 +83,7 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
         { value: 'clear daytime', label: language === 'vi' ? 'Ban ngày' : 'Daytime' },
         { value: 'golden hour sunset', label: language === 'vi' ? 'Hoàng hôn' : 'Sunset' },
         { value: 'night city lights', label: language === 'vi' ? 'Ban đêm' : 'Night' },
+        { value: 'overcast', label: language === 'vi' ? 'Trời u ám' : 'Overcast' },
     ], [t, language]);
 
     const handleFileSelect = (fileData: FileData | null) => onStateChange({ sourceImage: fileData, resultImages: [] });

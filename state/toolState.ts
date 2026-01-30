@@ -215,6 +215,7 @@ export interface ViewSyncState {
     activeTab: 'sync' | 'creative';
     creativeOption: 'interior' | 'architecture' | 'interior-from-arch';
     creativeResults: Record<string, string>; // Map View Name -> URL
+    creativePrompts: Record<string, string>; // Map View Name -> Editable Prompt
     generatingViewId: string | null;
 }
 
@@ -483,6 +484,7 @@ export const initialToolStates = {
         activeTab: 'sync',
         creativeOption: 'interior',
         creativeResults: {},
+        creativePrompts: {},
         generatingViewId: null
     } as ViewSyncState,
     [Tool.VirtualTour]: {

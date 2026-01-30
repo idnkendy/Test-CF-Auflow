@@ -54,8 +54,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const { t, language } = useLanguage();
     const { 
         renderMode, style, context, lighting, weather, buildingType, roomType, colorPalette, 
-        viewType, density, gardenStyle, timeOfDay, features,
-        customPrompt, referenceImages, sourceImage, isLoading, error, resultImages, 
+        viewType, density, gardenStyle, features,
+        customPrompt, referenceImages, sourceImage, isLoading, resultImages, 
         numberOfImages, aspectRatio, resolution 
     } = state;
     
@@ -67,69 +67,121 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
     const [localErrorMessage, setLocalErrorMessage] = useState("");
     const [selectedIndex, setSelectedIndex] = useState(0);
     const [isAutoPromptLoading, setIsAutoPromptLoading] = useState(false);
+    
+    // New local state to handle the mode selection dashboard
+    const [isModeSelected, setIsModeSelected] = useState(false);
 
     useEffect(() => {
         if (resultImages.length > 0) setSelectedIndex(0);
     }, [resultImages.length]);
 
-    // Handle Default Prompt Reset on Mode Change
-    const resetPromptForMode = (mode: ImageGeneratorState['renderMode']) => {
-        let newPrompt = "";
-        switch(mode) {
-            case 'arch': newPrompt = t('img_gen.default_prompt'); break;
-            case 'interior': newPrompt = t('int.default_prompt'); break;
-            case 'urban': newPrompt = language === 'vi' ? 'Render một khu đô thị ven sông hiện đại' : 'Render a modern riverside urban area'; break;
-            case 'landscape': newPrompt = language === 'vi' ? 'Render một sân vườn nhỏ phía sau nhà với hồ cá Koi' : 'Render a small backyard garden with a Koi pond'; break;
+    // Mode options for the dashboard
+    const modes = useMemo(() => [
+        { 
+            id: 'arch', 
+            label: t('img_gen.mode_arch'), 
+            desc: t('services.arch_desc'),
+            icon: 'apartment',
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/thumbnail-ngoai-that.png'
+        },
+        { 
+            id: 'interior', 
+            label: t('img_gen.mode_interior'), 
+            desc: t('services.interior_desc'),
+            icon: 'chair',
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/thumbnail-noi-that.jpeg'
+        },
+        { 
+            id: 'urban', 
+            label: t('img_gen.mode_urban'), 
+            desc: t('services.urban_desc'),
+            icon: 'map',
+            image: 'https://images.unsplash.com/photo-1449824913935-59a10b8d2000?q=80&w=800&auto=format&fit=crop'
+        },
+        { 
+            id: 'landscape', 
+            label: t('img_gen.mode_landscape'), 
+            desc: t('services.landscape_desc'),
+            icon: 'park',
+            image: 'https://mtlomjjlgvsjpudxlspq.supabase.co/storage/v1/object/public/background-imgs/thumnail-san-vuon.jpeg'
         }
-        onStateChange({ renderMode: mode, customPrompt: newPrompt, resultImages: [] });
-    };
+    ], [t]);
 
-    // --- OPTIONS MEMOS ---
+    // --- FULL OPTIONS SYNCED FROM VI.TS ---
     const buildingTypeOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
-        { value: t('opt.building.townhouse'), label: t('opt.building.townhouse') },
-        { value: t('opt.building.villa'), label: t('opt.building.villa') },
-        { value: t('opt.building.apartment'), label: t('opt.building.apartment') },
-        { value: t('opt.building.office'), label: t('opt.building.office') },
+        { value: 'Townhouse', label: t('opt.building.townhouse') },
+        { value: 'Villa', label: t('opt.building.villa') },
+        { value: 'One-story House', label: t('opt.building.level4') },
+        { value: 'Apartment', label: t('opt.building.apartment') },
+        { value: 'Office', label: t('opt.building.office') },
+        { value: 'Cafe', label: t('opt.building.cafe') },
+        { value: 'Restaurant', label: t('opt.building.restaurant') },
     ], [t]);
 
     const styleOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
-        { value: t('opt.style.modern'), label: t('opt.style.modern') },
-        { value: t('opt.style.minimalist'), label: t('opt.style.minimalist') },
-        { value: t('opt.style.neoclassic'), label: t('opt.style.neoclassic') },
-        { value: t('opt.style.scandinavian'), label: t('opt.style.scandinavian') },
+        { value: 'Modern', label: t('opt.style.modern') },
+        { value: 'Minimalist', label: t('opt.style.minimalist') },
+        { value: 'Neoclassical', label: t('opt.style.neoclassic') },
+        { value: 'Scandinavian', label: t('opt.style.scandinavian') },
+        { value: 'Industrial', label: t('opt.style.industrial') },
+        { value: 'Tropical', label: t('opt.style.tropical') },
+        { value: 'Brutalism', label: t('opt.style.brutalism') },
         { value: 'Indochine', label: 'Indochine' },
         { value: 'Japandi', label: 'Japandi' },
     ], [t]);
 
+    const contextOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'Vietnam Street', label: t('opt.context.street_vn') },
+        { value: 'Vietnam Countryside', label: t('opt.context.rural_vn') },
+        { value: 'Modern Urban Area', label: t('opt.context.urban') },
+        { value: 'T-Junction', label: t('opt.context.intersection_3') },
+        { value: 'Crossroads', label: t('opt.context.intersection_4') },
+    ], [t]);
+
     const lightingOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
-        { value: t('opt.lighting.sunrise'), label: t('opt.lighting.sunrise') },
-        { value: t('opt.lighting.noon'), label: t('opt.lighting.noon') },
-        { value: t('opt.lighting.sunset'), label: t('opt.lighting.sunset') },
-        { value: t('opt.lighting.night_stars'), label: t('opt.lighting.night_stars') },
+        { value: 'Soft Sunrise', label: t('opt.lighting.sunrise') },
+        { value: 'Sunny Noon', label: t('opt.lighting.noon') },
+        { value: 'Sunset', label: t('opt.lighting.sunset') },
+        { value: 'Evening', label: t('opt.lighting.evening') },
+        { value: 'Night Stars', label: t('opt.lighting.night_stars') },
+    ], [t]);
+
+    const weatherOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'Sunny', label: t('opt.weather.sunny') },
+        { value: 'Rainy', label: t('opt.weather.rainy') },
+        { value: 'Snowy', label: t('opt.weather.snowy') },
+        { value: 'Scorching', label: t('opt.weather.scorching') },
+        { value: 'After Rain', label: t('opt.weather.after_rain') },
     ], [t]);
 
     const roomTypeOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
-        { value: language === 'vi' ? 'Phòng khách' : 'Living room', label: language === 'vi' ? 'Phòng khách' : 'Living room' },
-        { value: language === 'vi' ? 'Phòng ngủ' : 'Bedroom', label: language === 'vi' ? 'Phòng ngủ' : 'Bedroom' },
-        { value: language === 'vi' ? 'Bếp & Phòng ăn' : 'Kitchen & Dining', label: language === 'vi' ? 'Bếp & Phòng ăn' : 'Kitchen & Dining' },
-        { value: language === 'vi' ? 'Phòng tắm' : 'Bathroom', label: language === 'vi' ? 'Phòng tắm' : 'Bathroom' },
+        { value: 'Living room', label: language === 'vi' ? 'Phòng khách' : 'Living room' },
+        { value: 'Bedroom', label: language === 'vi' ? 'Phòng ngủ' : 'Bedroom' },
+        { value: 'Kitchen & Dining', label: language === 'vi' ? 'Bếp & Phòng ăn' : 'Kitchen & Dining' },
+        { value: 'Bathroom', label: language === 'vi' ? 'Phòng tắm' : 'Bathroom' },
+        { value: 'Workspace', label: language === 'vi' ? 'Phòng làm việc' : 'Workspace' },
     ], [t, language]);
 
     const viewTypeOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
-        { value: 'birds-eye view', label: language === 'vi' ? 'Góc nhìn từ trên cao' : "Bird's eye view" },
-        { value: 'street-level', label: language === 'vi' ? 'Góc nhìn người đi bộ' : 'Street level' },
+        { value: 'Bird\'s eye view', label: language === 'vi' ? 'Phối cảnh mắt chim' : "Bird's eye view" },
+        { value: 'Aerial 45-degree view', label: language === 'vi' ? 'Phối cảnh 45°' : 'Aerial 45°' },
+        { value: 'Street-level perspective', label: language === 'vi' ? 'Góc nhìn người' : 'Street level' },
+        { value: 'Waterfront view', label: language === 'vi' ? 'Ven sông/biển' : 'Waterfront' },
     ], [t, language]);
 
     const densityOptions = useMemo(() => [
         { value: 'none', label: t('opt.none') },
-        { value: 'low density', label: language === 'vi' ? 'Mật độ thấp' : 'Low density' },
-        { value: 'medium density', label: language === 'vi' ? 'Mật độ trung bình' : 'Medium density' },
-        { value: 'high density', label: language === 'vi' ? 'Mật độ cao' : 'High density' },
+        { value: 'Low density suburban', label: language === 'vi' ? 'Ngoại ô thấp tầng' : 'Low density suburban' },
+        { value: 'Medium density mixed-use', label: language === 'vi' ? 'Phức hợp vừa' : 'Medium density mixed-use' },
+        { value: 'High density urban core', label: language === 'vi' ? 'Đô thị cao tầng' : 'High density urban core' },
+        { value: 'Park and green space', label: language === 'vi' ? 'Công viên cây xanh' : 'Park and green space' },
     ], [t, language]);
 
     const gardenStyleOptions = useMemo(() => [
@@ -147,6 +199,103 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         { value: 'Stone Path', label: language === 'vi' ? 'Stone Path' : 'Stone Path' },
         { value: 'Outdoor Furniture', label: language === 'vi' ? 'Nội thất ngoài trời' : 'Outdoor Furniture' },
     ], [t, language]);
+
+    const colorPaletteOptions = useMemo(() => [
+        { value: 'none', label: t('opt.none') },
+        { value: 'Warm', label: language === 'vi' ? 'Tone ấm' : 'Warm' },
+        { value: 'Cool', label: language === 'vi' ? 'Tone lạnh' : 'Cool' },
+        { value: 'Neutral', label: language === 'vi' ? 'Trung tính' : 'Neutral' }
+    ], [t, language]);
+
+    // Helper to rebuild prompt based on current state values
+    const syncPrompt = (overrides: Partial<ImageGeneratorState>) => {
+        const s = { ...state, ...overrides };
+        
+        // Helper to get label for current selection
+        const getLabel = (options: {value: string, label: string}[], val: string) => {
+            if (val === 'none') return "";
+            return options.find(o => o.value === val)?.label || "";
+        };
+
+        let base = "";
+        const isVi = language === 'vi';
+        
+        // Mode specific base
+        switch(s.renderMode) {
+            case 'arch': 
+                const bType = getLabel(buildingTypeOptions, s.buildingType);
+                base = isVi ? "Biến thành ảnh chụp thực tế" : "Transform into a realistic photo of"; 
+                if (bType) base += ` ${bType.toLowerCase()}`;
+                else base += isVi ? " công trình" : " building";
+                break;
+            case 'interior':
+                const rType = getLabel(roomTypeOptions, s.roomType);
+                base = isVi ? "Biến thành ảnh chụp thực tế" : "Transform into a realistic photo of";
+                if (rType) base += ` ${rType.toLowerCase()}`;
+                else base += isVi ? " không gian nội thất" : " interior space";
+                break;
+            case 'urban':
+                const vType = getLabel(viewTypeOptions, s.viewType);
+                base = isVi ? "Render một khu đô thị" : "Render an urban area";
+                if (vType) base += ` ${isVi ? 'với' : 'with'} ${vType.toLowerCase()}`;
+                break;
+            case 'landscape':
+                const gStyle = getLabel(gardenStyleOptions, s.gardenStyle);
+                base = isVi ? "Render một sân vườn" : "Render a garden";
+                if (gStyle) base += ` ${isVi ? 'phong cách' : 'style'} ${gStyle.toLowerCase()}`;
+                break;
+        }
+
+        // Appending details
+        const details = [];
+        const styleLabel = getLabel(styleOptions, s.style);
+        const contextLabel = getLabel(contextOptions, s.context);
+        const lightingLabel = getLabel(lightingOptions, s.lighting);
+        const weatherLabel = getLabel(weatherOptions, s.weather);
+        const colorLabel = getLabel(colorPaletteOptions, s.colorPalette);
+        const densityLabel = getLabel(densityOptions, s.density);
+        const featureLabel = getLabel(featureOptions, s.features);
+
+        if (styleLabel) details.push(`${isVi ? 'phong cách' : 'in'} ${styleLabel.toLowerCase()} ${isVi ? '' : 'style'}`);
+        if (contextLabel && s.renderMode === 'arch') details.push(`${isVi ? 'trong bối cảnh' : 'in the context of'} ${contextLabel.toLowerCase()}`);
+        if (lightingLabel) details.push(`${isVi ? 'ánh sáng' : 'with'} ${lightingLabel.toLowerCase()} ${isVi ? '' : 'lighting'}`);
+        if (weatherLabel && s.renderMode === 'arch') details.push(`${isVi ? 'thời tiết' : 'weather'} ${weatherLabel.toLowerCase()}`);
+        if (colorLabel && s.renderMode === 'interior') details.push(`${isVi ? 'tông màu' : 'color palette'} ${colorLabel.toLowerCase()}`);
+        if (densityLabel && s.renderMode === 'urban') details.push(`${isVi ? 'mật độ' : 'density'} ${densityLabel.toLowerCase()}`);
+        if (featureLabel && s.renderMode === 'landscape') details.push(`${isVi ? 'có' : 'featuring'} ${featureLabel.toLowerCase()}`);
+
+        if (details.length > 0) {
+            base += `, ${details.join(', ')}`;
+        }
+
+        base += isVi ? ". Chất lượng cao, chân thực." : ". High quality, realistic.";
+        
+        onStateChange({ ...overrides, customPrompt: base });
+    };
+
+    const handleSelectMode = (mode: ImageGeneratorState['renderMode']) => {
+        setIsModeSelected(true);
+        // Reset current mode state and sync prompt
+        syncPrompt({ 
+            renderMode: mode, 
+            buildingType: 'none', 
+            style: 'none', 
+            context: 'none',
+            lighting: 'none', 
+            weather: 'none', 
+            roomType: 'none',
+            colorPalette: 'none',
+            viewType: 'none',
+            density: 'none',
+            gardenStyle: 'none',
+            features: 'none',
+            resultImages: [] 
+        });
+    };
+
+    const handleBackToDashboard = () => {
+        setIsModeSelected(false);
+    };
 
     const handleFileSelect = (fileData: FileData | null) => onStateChange({ sourceImage: fileData, resultImages: [] });
     const handleReferenceFilesChange = (files: FileData[]) => onStateChange({ referenceImages: files });
@@ -167,7 +316,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             let newPrompt = "";
             if (renderMode === 'arch') newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage, language);
             else if (renderMode === 'interior') newPrompt = await geminiService.generateInteriorPrompt(sourceImage, language);
-            else newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage, language); // Fallback
+            else newPrompt = await geminiService.generateArchitecturalPrompt(sourceImage, language); 
             onStateChange({ customPrompt: newPrompt });
         } catch (err: any) {
             showError("Không thể tạo prompt tự động.");
@@ -194,24 +343,8 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             const logId = onDeductCredits ? await onDeductCredits(cost, `Render ${toolName}`) : null;
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             
-            const promptParts = [customPrompt];
-            if (style !== 'none') promptParts.push(`in ${style} style`);
-            if (lighting !== 'none') promptParts.push(`with ${lighting} lighting`);
-            if (renderMode === 'arch' && buildingType !== 'none') promptParts.push(`for a ${buildingType}`);
-            if (renderMode === 'interior' && roomType !== 'none') promptParts.push(`in a ${roomType}`);
-            if (renderMode === 'urban') {
-                if (viewType !== 'none') promptParts.push(`viewed from ${viewType}`);
-                if (density !== 'none') promptParts.push(`with ${density} density`);
-            }
-            if (renderMode === 'landscape') {
-                if (gardenStyle !== 'none') promptParts.push(`${gardenStyle} garden style`);
-                if (features !== 'none') promptParts.push(`featuring ${features}`);
-            }
-
-            const finalPromptForService = `Professional ${toolName.toLowerCase()} rendering. ${promptParts.join(', ')}. Photorealistic, high quality.`;
-
             const result = await externalVideoService.generateFlowImage(
-                finalPromptForService,
+                customPrompt,
                 [sourceImage, ...referenceImages].filter(Boolean) as FileData[], 
                 aspectRatio, 
                 numberOfImages,
@@ -246,8 +379,55 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
         }
     };
 
+    // --- RENDER SELECTION DASHBOARD ---
+    if (!isModeSelected) {
+        return (
+            <div className="max-w-7xl mx-auto pb-10 px-4">
+                <div className="mb-12 text-center animate-fade-in-up">
+                    <h2 className="text-4xl font-extrabold text-text-primary dark:text-white mb-4">
+                        {language === 'vi' ? 'Bạn muốn Render không gian nào?' : 'What space do you want to Render?'}
+                    </h2>
+                    <p className="text-text-secondary dark:text-gray-400 max-w-2xl mx-auto text-lg leading-relaxed">
+                        {language === 'vi' ? 'Chọn chế độ phù hợp để AI tối ưu hóa chất lượng ảnh render của bạn.' : 'Select a mode for AI to optimize your render quality.'}
+                    </p>
+                </div>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    {modes.map((m, idx) => (
+                        <button
+                            key={m.id}
+                            onClick={() => handleSelectMode(m.id as any)}
+                            className="group relative flex flex-col h-80 rounded-3xl border border-gray-200 dark:border-white/5 overflow-hidden transition-all duration-500 hover:-translate-y-2 hover:shadow-2xl shadow-xl"
+                            style={{ animationDelay: `${idx * 100}ms` }}
+                        >
+                            <img src={m.image} alt={m.label} className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" />
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/40 to-transparent dark:from-black/95 dark:via-black/60 dark:to-transparent"></div>
+                            
+                            <div className="relative z-10 flex flex-col h-full p-8 justify-end text-left">
+                                <div className="flex items-center gap-4 mb-3">
+                                    <div className="p-3 rounded-2xl bg-white/10 backdrop-blur-xl text-white border border-white/20 group-hover:bg-[#7f13ec] group-hover:border-[#7f13ec] transition-all duration-300">
+                                        <span className="material-symbols-outlined text-2xl notranslate">{m.icon}</span>
+                                    </div>
+                                    <h3 className="text-2xl font-black text-white group-hover:text-[#E0E0E0] transition-colors">{m.label}</h3>
+                                </div>
+                                <p className="text-sm text-gray-300 line-clamp-2 leading-relaxed opacity-80 group-hover:opacity-100 transition-opacity">
+                                    {m.desc}
+                                </p>
+                                <div className="mt-6 flex items-center text-xs font-bold text-white/50 group-hover:text-white transition-colors uppercase tracking-widest">
+                                    {language === 'vi' ? 'Bắt đầu ngay' : 'Start now'}
+                                    <span className="material-symbols-outlined text-sm ml-2 group-hover:translate-x-1 transition-transform notranslate">arrow_forward</span>
+                                </div>
+                            </div>
+                        </button>
+                    ))}
+                </div>
+            </div>
+        );
+    }
+
+    // --- RENDER GENERATOR VIEW ---
     return (
-        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4 animate-fade-in">
             <style>{`
                 .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
                 .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -267,29 +447,34 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
             <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
                 <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
                     
-                    {/* SEGMENT 1: MODE SELECTION & UPLOAD */}
-                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
-                        <div className="grid grid-cols-2 lg:grid-cols-4 bg-gray-200 dark:bg-[#252525] p-1 gap-1 border border-gray-300 dark:border-[#302839] rounded-2xl shadow-inner">
-                            {[
-                                { id: 'arch', label: t('img_gen.mode_arch') },
-                                { id: 'interior', label: t('img_gen.mode_interior') },
-                                { id: 'urban', label: t('img_gen.mode_urban') },
-                                { id: 'landscape', label: t('img_gen.mode_landscape') }
-                            ].map(m => (
-                                <button 
-                                    key={m.id}
-                                    onClick={() => resetPromptForMode(m.id as any)}
-                                    className={`flex items-center justify-center px-1 py-3 transition-all text-[11px] font-extrabold rounded-xl ${
-                                        renderMode === m.id 
-                                            ? 'bg-[#7f13ec] text-white shadow-md transform scale-[1.02]' 
-                                            : 'text-text-secondary dark:text-gray-400 hover:bg-white/50 dark:hover:bg-white/5'
-                                    }`}
-                                >
-                                    <span className="truncate">{m.label}</span>
-                                </button>
-                            ))}
-                        </div>
+                    {/* BACK BUTTON (TOP LEFT) */}
+                    <div className="px-1 pt-1">
+                        <button 
+                            onClick={handleBackToDashboard}
+                            className="flex items-center gap-2 text-text-secondary dark:text-gray-400 hover:text-[#7f13ec] dark:hover:text-[#a855f7] transition-all font-bold text-sm group"
+                        >
+                            <span className="material-symbols-outlined notranslate group-hover:-translate-x-1 transition-transform">arrow_back</span>
+                            <span>{t('common.back')}</span>
+                        </button>
+                    </div>
 
+                    {/* MODE INDICATOR */}
+                    <div className="bg-[#7f13ec]/5 dark:bg-[#7f13ec]/10 p-4 rounded-2xl border border-[#7f13ec]/20 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                            <div className="p-2 bg-[#7f13ec] rounded-lg text-white">
+                                <span className="material-symbols-outlined text-lg notranslate">
+                                    {modes.find(m => m.id === renderMode)?.icon || 'image'}
+                                </span>
+                            </div>
+                            <div>
+                                <span className="block text-[10px] font-bold text-[#7f13ec] uppercase tracking-wider">{language === 'vi' ? 'Chế độ' : 'Mode'}</span>
+                                <span className="block text-sm font-black text-text-primary dark:text-white">{modes.find(m => m.id === renderMode)?.label}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* SEGMENT 1: UPLOAD */}
+                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
                         <div>
                             <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('img_gen.step1')}</label>
                             <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} />
@@ -325,42 +510,43 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                             {renderMode === 'arch' && (
                                 <>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <OptionSelector id="b-type" label={t('opt.building_type')} options={buildingTypeOptions} value={buildingType} onChange={(v) => onStateChange({ buildingType: v })} variant="select" />
-                                        <OptionSelector id="style" label={t('opt.style')} options={styleOptions} value={style} onChange={(v) => onStateChange({ style: v })} variant="select" />
+                                        <OptionSelector id="b-type" label={t('opt.building_type')} options={buildingTypeOptions} value={buildingType} onChange={(v) => syncPrompt({ buildingType: v })} variant="select" />
+                                        <OptionSelector id="style" label={t('opt.style')} options={styleOptions} value={style} onChange={(v) => syncPrompt({ style: v })} variant="select" />
                                     </div>
+                                    <OptionSelector id="context" label={t('opt.context')} options={contextOptions} value={context} onChange={(v) => syncPrompt({ context: v })} variant="select" />
                                     <div className="grid grid-cols-2 gap-2">
-                                        <OptionSelector id="lt" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => onStateChange({ lighting: v })} variant="select" />
-                                        <OptionSelector id="wt" label={t('opt.weather')} options={[{value:'none', label:t('opt.none')}, {value:'sunny', label:t('opt.weather.sunny')}, {value:'rainy', label:t('opt.weather.rainy')}]} value={weather} onChange={(v) => onStateChange({ weather: v })} variant="select" />
+                                        <OptionSelector id="lt" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => syncPrompt({ lighting: v })} variant="select" />
+                                        <OptionSelector id="wt" label={t('opt.weather')} options={weatherOptions} value={weather} onChange={(v) => syncPrompt({ weather: v })} variant="select" />
                                     </div>
                                 </>
                             )}
                             {renderMode === 'interior' && (
                                 <>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <OptionSelector id="room-type" label={t('opt.int.project_type')} options={roomTypeOptions} value={roomType} onChange={(v) => onStateChange({ roomType: v })} variant="select" />
-                                        <OptionSelector id="int-style" label={t('opt.style')} options={styleOptions} value={style} onChange={(v) => onStateChange({ style: v })} variant="select" />
+                                        <OptionSelector id="room-type" label={t('opt.int.project_type')} options={roomTypeOptions} value={roomType} onChange={(v) => syncPrompt({ roomType: v })} variant="select" />
+                                        <OptionSelector id="int-style" label={t('opt.style')} options={styleOptions} value={style} onChange={(v) => syncPrompt({ style: v })} variant="select" />
                                     </div>
                                     <div className="grid grid-cols-2 gap-2">
-                                        <OptionSelector id="int-lt" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => onStateChange({ lighting: v })} variant="select" />
-                                        <OptionSelector id="int-color" label={t('opt.int.color')} options={[{value:'none', label:t('opt.none')}, {value:'warm', label:'Warm'}, {value:'cool', label:'Cool'}]} value={colorPalette} onChange={(v) => onStateChange({ colorPalette: v })} variant="select" />
+                                        <OptionSelector id="int-lt" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => syncPrompt({ lighting: v })} variant="select" />
+                                        <OptionSelector id="int-color" label={t('opt.int.color')} options={colorPaletteOptions} value={colorPalette} onChange={(v) => syncPrompt({ colorPalette: v })} variant="select" />
                                     </div>
                                 </>
                             )}
                             {renderMode === 'urban' && (
                                 <>
-                                    <OptionSelector id="v-type" label={t('ext.urban.view_type')} options={viewTypeOptions} value={viewType} onChange={(v) => onStateChange({ viewType: v })} variant="select" />
+                                    <OptionSelector id="v-type" label={t('ext.urban.view_type')} options={viewTypeOptions} value={viewType} onChange={(v) => syncPrompt({ viewType: v })} variant="select" />
                                     <div className="grid grid-cols-2 gap-2">
-                                        <OptionSelector id="v-density" label={t('ext.urban.density')} options={densityOptions} value={density} onChange={(v) => onStateChange({ density: v })} variant="select" />
-                                        <OptionSelector id="v-light" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => onStateChange({ lighting: v })} variant="select" />
+                                        <OptionSelector id="v-density" label={t('ext.urban.density')} options={densityOptions} value={density} onChange={(v) => syncPrompt({ density: v })} variant="select" />
+                                        <OptionSelector id="v-light" label={t('opt.lighting')} options={lightingOptions} value={lighting} onChange={(v) => syncPrompt({ lighting: v })} variant="select" />
                                     </div>
                                 </>
                             )}
                             {renderMode === 'landscape' && (
                                 <>
-                                    <OptionSelector id="g-style" label={t('ext.landscape.style')} options={gardenStyleOptions} value={gardenStyle} onChange={(v) => onStateChange({ gardenStyle: v })} variant="select" />
+                                    <OptionSelector id="g-style" label={t('ext.landscape.style')} options={gardenStyleOptions} value={gardenStyle} onChange={(v) => syncPrompt({ gardenStyle: v })} variant="select" />
                                     <div className="grid grid-cols-2 gap-2">
-                                        <OptionSelector id="g-feature" label={t('ext.landscape.feature')} options={featureOptions} value={features} onChange={(v) => onStateChange({ features: v })} variant="select" />
-                                        <OptionSelector id="g-time" label={t('ext.landscape.time')} options={lightingOptions} value={lighting} onChange={(v) => onStateChange({ lighting: v })} variant="select" />
+                                        <OptionSelector id="g-feature" label={t('ext.landscape.feature')} options={featureOptions} value={features} onChange={(v) => syncPrompt({ features: v })} variant="select" />
+                                        <OptionSelector id="g-time" label={t('ext.landscape.time')} options={lightingOptions} value={lighting} onChange={(v) => syncPrompt({ lighting: v })} variant="select" />
                                     </div>
                                 </>
                             )}
@@ -373,7 +559,7 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                             <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('img_gen.ref_images')}</label>
                             {resolution === 'Standard' ? (
                                 <div className="p-4 bg-white dark:bg-[#121212] border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 h-28 shadow-inner">
-                                    <span className="material-symbols-outlined text-yellow-500 text-xl">lock</span>
+                                    <span className="material-symbols-outlined text-yellow-500 text-xl notranslate">lock</span>
                                     <p className="text-[10px] text-text-secondary dark:text-gray-400 px-2 leading-tight">
                                         {t('img_gen.ref_lock')}
                                     </p>
@@ -414,14 +600,14 @@ const ImageGenerator: React.FC<ImageGeneratorProps> = ({ state, onStateChange, o
                                     )}
                                 </div>
                                 <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
-                                    <button onClick={() => onSendToViewSync(sourceImage!)} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-purple-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">view_in_ar</span></button>
-                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
-                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                    <button onClick={() => onSendToViewSync(sourceImage!)} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-purple-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg notranslate">view_in_ar</span></button>
+                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg notranslate">download</span></button>
+                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg notranslate">zoom_in</span></button>
                                 </div>
                             </div>
                         ) : (
                             <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212]">
-                                <span className="material-symbols-outlined text-6xl mb-4">image</span>
+                                <span className="material-symbols-outlined text-6xl mb-4 notranslate">image</span>
                                 <p className="text-base font-medium">{t('msg.no_result_render')}</p>
                             </div>
                         )}
