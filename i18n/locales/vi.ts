@@ -441,7 +441,7 @@ export const vi = {
   "sync.framing": "Hiệu ứng khung hình",
   "sync.atmosphere": "Thời gian / Không khí",
   "sync.prompt_placeholder": "Mô tả thêm (ví dụ: trời nắng đẹp, nhiều cây xanh)...",
-  "sync.btn_generate": "Tạo hàng loạt",
+  "sync.btn_generate": "Tạo góc nhìn",
   "sync.creative.title": "Chọn Chế Độ Sáng Tạo",
   "sync.creative.desc": "Khám phá các góc nhìn mới từ thiết kế của bạn với các công cụ chuyên sâu.",
   "sync.creative.btn_start": "Bắt đầu ngay",

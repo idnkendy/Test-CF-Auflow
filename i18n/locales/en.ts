@@ -139,6 +139,7 @@ export const en = {
   "tool.fengshui": "Feng Shui Analysis",
 
   // --- DASHBOARD DESCRIPTIONS ---
+  "dash.title": "Extended Utility Hub",
   "dash.subtitle": "Explore specialized AI tools supporting every stage of design, planning, and concept realization.",
   "dash.rerender.desc": "Transform sketches/renders into sharp photorealistic images.",
   "dash.floorplan.desc": "Convert 2D CAD drawings into 3D colored floor plans.",
