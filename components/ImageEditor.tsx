@@ -173,6 +173,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             let lastError: any = null;
 
+            // Parallel Generation Loop
             const promises = Array.from({ length: numberOfImages }).map(async (_, index) => {
                 try {
                     let flowPrompt = `Edit this image. ${prompt}. Keep the main composition but apply the changes described. Ensure aspect ratio is ${effectiveAspectRatio}.`;
@@ -186,8 +187,12 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     if (referenceImages.length > 0) inputImages.push(...referenceImages);
 
                     const result = await externalVideoService.generateFlowImage(
-                        flowPrompt, inputImages, effectiveAspectRatio, 1, modelName,
-                        (msg) => setStatusMessage(t('common.processing'))
+                        flowPrompt, 
+                        inputImages, 
+                        effectiveAspectRatio, 
+                        1, // Force 1 per request
+                        modelName,
+                        (msg) => setStatusMessage(`${t('common.processing')} (${index + 1}/${numberOfImages})`)
                     );
 
                     if (result.imageUrls && result.imageUrls.length > 0) {
@@ -205,15 +210,36 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
 
             const results = await Promise.all(promises);
             const successfulUrls = results.filter((url): url is string => url !== null);
+            
             if (successfulUrls.length > 0) {
                 onStateChange({ resultImages: successfulUrls });
                 successfulUrls.forEach(url => historyService.addToHistory({ tool: Tool.ImageEditing, prompt: prompt, sourceImageURL: sourceImage?.objectURL, resultImageURL: url }));
                 if (jobId) await jobService.updateJobStatus(jobId, 'completed', successfulUrls[0]);
-            } else { if (lastError) throw lastError; throw new Error("Lỗi tạo ảnh."); }
+            } else { 
+                if (lastError) throw lastError; 
+                throw new Error("Lỗi tạo ảnh."); 
+            }
         } catch (err: any) {
-            const friendlyMsg = jobService.mapFriendlyErrorMessage(err.message || "");
-            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
-            else onStateChange({ error: t(friendlyMsg) });
+            const rawMsg = err.message || "";
+            const friendlyMsg = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            if (friendlyMsg === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+            } else {
+                onStateChange({ error: t(friendlyMsg) });
+            }
+
+            // Refund logic
+            if (logId && onDeductCredits) {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    try {
+                        await refundCredits(user.id, cost, `Hoàn tiền: Lỗi chỉnh sửa (${rawMsg})`, logId);
+                    } catch (refundErr) {
+                        console.error("Refund failed:", refundErr);
+                    }
+                }
+            }
         } finally { onStateChange({ isLoading: false }); setStatusMessage(null); }
     };
 
@@ -226,7 +252,7 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
     };
 
     return (
-        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+        <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
             <style>{`
                 .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
                 .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -252,16 +278,16 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
             )}
             
             {/* SIDEBAR */}
-            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
-                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
-                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+            <aside className="w-full lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden lg:h-[calc(100vh-130px)] lg:sticky lg:top-[120px]">
+                <div className="p-3 space-y-4 flex-1 lg:overflow-y-auto custom-sidebar-scroll">
+                    <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
                         <div>
-                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('editor.step1')}</label>
+                            <label className="block text-xs sm:text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('editor.step1')}</label>
                             <ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} maskPreviewUrl={maskImage?.objectURL} />
                         </div>
                         {sourceImage && (
                             <div className="flex gap-2">
-                                <button onClick={() => setIsMaskingModalOpen(true)} className="flex-1 py-2 px-3 bg-gray-800 dark:bg-gray-700 hover:bg-black text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2">
+                                <button onClick={() => setIsMaskingModalOpen(true)} className="flex-1 py-2 px-3 bg-gray-800 dark:bg-gray-700 hover:bg-black text-white rounded-lg text-[11px] sm:text-xs font-bold flex items-center justify-center gap-2">
                                     <span className="material-symbols-outlined text-sm">draw</span> {maskImage ? t('reno.edit_mask') : t('reno.draw_mask')}
                                 </button>
                                 {maskImage && (
@@ -273,18 +299,18 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                         )}
                     </div>
 
-                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                    <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
                         <div>
-                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('editor.step3')}</label>
+                            <label className="block text-xs sm:text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('editor.step3')}</label>
                             <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
-                                <textarea rows={6} className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('editor.prompt_placeholder')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
+                                <textarea rows={window.innerWidth < 768 ? 4 : 6} className="w-full bg-transparent outline-none text-xs sm:text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('editor.prompt_placeholder')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                             </div>
                         </div>
                     </div>
 
-                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                    <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
                         <div>
-                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('editor.step2')}</label>
+                            <label className="block text-xs sm:text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('editor.step2')}</label>
                             {resolution === 'Standard' ? (
                                 <div className="p-4 bg-white dark:bg-[#121212] border border-gray-200 dark:border-gray-700 rounded-xl flex flex-col items-center justify-center text-center gap-2 h-28 shadow-inner">
                                     <span className="material-symbols-outlined text-yellow-500 text-xl">lock</span>
@@ -303,17 +329,17 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                     </div>
                 </div>
 
-                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
-                    <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
-                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('editor.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
+                <div className="p-4 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] lg:sticky lg:bottom-0 z-10 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 sm:py-4 rounded-xl transition-all shadow-lg active:scale-95 text-sm sm:text-base">
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('editor.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-base sm:text-lg align-middle notranslate">monetization_on</span></>}
                     </button>
                 </div>
             </aside>
 
             {/* MAIN CONTENT */}
-            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden min-h-[400px] sm:min-h-[500px] lg:h-[calc(100vh-130px)] lg:sticky lg:top-[120px]">
                 <div className="flex flex-col h-full overflow-hidden">
-                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-[300px]">
                         {resultImages.length > 0 ? (
                             <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
                                 <div className="w-full h-full flex items-center justify-center overflow-hidden">
@@ -324,29 +350,29 @@ const ImageEditor: React.FC<ImageEditorProps> = ({ state, onStateChange, userCre
                                     )}
                                 </div>
                                 <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
-                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
-                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                    <button onClick={handleDownload} className="p-1.5 sm:p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-base sm:text-lg">download</span></button>
+                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-1.5 sm:p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-base sm:text-lg">zoom_in</span></button>
                                 </div>
                             </div>
                         ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212]">
-                                <span className="material-symbols-outlined text-6xl mb-4">edit</span>
-                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
+                            <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212] p-8 text-center">
+                                <span className="material-symbols-outlined text-4xl sm:text-6xl mb-4">edit</span>
+                                <p className="text-sm sm:text-base font-medium">{t('msg.no_result_render')}</p>
                             </div>
                         )}
                         {isLoading && (
-                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center">
                                 <Spinner />
-                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
+                                <p className="text-white mt-4 font-bold animate-pulse text-sm sm:text-base">{statusMessage}</p>
                             </div>
                         )}
                     </div>
 
                     {resultImages.length > 0 && !isLoading && (
                         <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
-                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
+                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center items-center">
                                 {resultImages.map((url, idx) => (
-                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-16 sm:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-12 sm:w-16 md:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
                                         <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
                                     </button>
                                 ))}

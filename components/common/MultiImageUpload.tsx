@@ -125,7 +125,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
         }
     }, [files, maxFiles, onFilesChange]);
 
-    const finalGridClass = gridClassName || 'grid-cols-3 sm:grid-cols-4 md:grid-cols-5';
+    const finalGridClass = gridClassName || 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5';
 
     return (
         <div 
@@ -135,18 +135,18 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
             onDrop={handleDrop}
         >
             {files.length === 0 ? (
-                // EMPTY STATE: Tối ưu lại chiều cao cho sidebar
+                // EMPTY STATE
                 <div 
                     onClick={handleContainerClick}
-                    className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-xl transition-all duration-300 cursor-pointer min-h-[150px] h-40 group w-full ${
+                    className={`flex-1 flex flex-col items-center justify-center border-2 border-dashed rounded-xl transition-all duration-300 cursor-pointer min-h-[120px] sm:min-h-[150px] h-32 sm:h-40 group w-full ${
                         isDragging 
                             ? 'border-accent bg-accent/10' 
                             : 'border-gray-300 dark:border-[#302839] bg-gray-50 dark:bg-[#121212]/50 hover:border-[#7f13ec]/50 hover:bg-gray-100 dark:hover:bg-[#121212]/70'
                     }`}
                 >
-                    <div className="mb-2 p-3 rounded-full bg-white dark:bg-[#191919] group-hover:scale-110 transition-transform duration-300 shadow-sm border border-gray-100 dark:border-gray-700">
+                    <div className="mb-2 p-2 sm:p-3 rounded-full bg-white dark:bg-[#191919] group-hover:scale-110 transition-transform duration-300 shadow-sm border border-gray-100 dark:border-gray-700">
                         {isProcessing ? (
-                            <svg className="animate-spin h-6 w-6 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                            <svg className="animate-spin h-5 w-5 sm:h-6 sm:w-6 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                             </svg>
@@ -154,18 +154,18 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                             <LargeCloudIcon />
                         )}
                     </div>
-                    <p className="text-xs font-semibold text-gray-500 dark:text-gray-300 group-hover:text-accent transition-colors mb-0.5">
+                    <p className="text-[10px] sm:text-xs font-semibold text-gray-500 dark:text-gray-300 group-hover:text-accent transition-colors mb-0.5 text-center px-2">
                         {t('upload.add_more')}
                     </p>
-                    <p className="text-[10px] text-gray-400">
+                    <p className="text-[9px] sm:text-[10px] text-gray-400 hidden sm:block">
                         {t('upload.drag_drop_short')}
                     </p>
                 </div>
             ) : (
                 // POPULATED STATE
-                <div className={`grid ${finalGridClass} gap-2 transition-all duration-300 p-2 border-2 border-dashed rounded-xl content-start overflow-y-auto w-full min-h-[150px] max-h-[300px] ${isDragging ? 'border-accent bg-accent/5' : 'border-transparent bg-gray-50/50 dark:bg-black/20'}`}>
+                <div className={`grid ${finalGridClass} gap-2 transition-all duration-300 p-2 border-2 border-dashed border-gray-300 dark:border-[#302839] rounded-xl content-start overflow-y-auto w-full min-h-[120px] max-h-[250px] sm:max-h-[300px] ${isDragging ? 'border-accent bg-accent/5' : 'bg-gray-50/50 dark:bg-black/20'}`}>
                     {files.map(file => (
-                        <div key={file.objectURL} className="relative group aspect-square bg-main-bg dark:bg-gray-800 rounded-lg overflow-hidden border border-border-color dark:border-gray-700 shadow-sm hover:shadow-md transition-all">
+                        <div key={file.objectURL} className="relative group aspect-square bg-main-bg dark:bg-gray-800 rounded-lg overflow-hidden border border-border-color dark:border-[#302839] shadow-sm hover:shadow-md transition-all">
                             <img src={file.objectURL} alt="Preview" className="w-full h-full object-cover" />
                             <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                             <button
@@ -180,7 +180,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                     {files.length < maxFiles && (
                         <div
                             onClick={handleContainerClick}
-                            className={`group aspect-square bg-main-bg dark:bg-gray-800/50 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 flex flex-col items-center justify-center text-center p-1 cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-800 hover:border-accent transition-all ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
+                            className={`group aspect-square bg-white dark:bg-[#191919] rounded-lg border-2 border-dashed border-gray-300 dark:border-[#302839] flex flex-col items-center justify-center text-center p-1 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800 hover:border-[#7f13ec] transition-all ${isProcessing ? 'opacity-50 pointer-events-none' : ''}`}
                         >
                             {isProcessing ? (
                                 <svg className="animate-spin h-5 w-5 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -189,8 +189,10 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                                 </svg>
                             ) : (
                                 <>
-                                    <PlusIcon />
-                                    <p className="text-[9px] text-text-secondary dark:text-gray-400 group-hover:text-accent font-medium mt-0.5">{t('upload.add_image')}</p>
+                                    <div className="p-1 sm:p-1.5 bg-gray-50 dark:bg-gray-800 rounded-full mb-1">
+                                        <PlusIcon />
+                                    </div>
+                                    <p className="text-[8px] sm:text-[9px] text-text-secondary dark:text-gray-400 group-hover:text-accent font-bold uppercase tracking-tight">{t('upload.add_image')}</p>
                                 </>
                             )}
                         </div>
@@ -206,16 +208,7 @@ const MultiImageUpload: React.FC<MultiImageUploadProps> = ({ onFilesChange, maxF
                 onChange={handleFileChange}
                 accept=".jpg, .jpeg, .png, .webp"
             />
-            {error && <p className="text-red-500 text-[10px] mt-1 text-center bg-red-500/10 p-1.5 rounded-lg border border-red-500/20">{error}</p>}
-            
-            {/* Overlay hint */}
-            {isDragging && files.length > 0 && (
-                <div className="absolute inset-0 bg-accent/20 border-2 border-accent border-dashed rounded-xl flex items-center justify-center pointer-events-none z-10 backdrop-blur-[1px]">
-                    <div className="bg-surface dark:bg-[#191919] px-4 py-2 rounded-xl shadow-2xl text-accent font-bold animate-bounce text-sm border border-accent/20">
-                        {t('upload.drag')}
-                    </div>
-                </div>
-            )}
+            {error && <p className="text-red-500 text-[9px] sm:text-[10px] mt-1 text-center bg-red-500/10 p-1.5 rounded-lg border border-red-500/20 font-medium">{error}</p>}
         </div>
     );
 };

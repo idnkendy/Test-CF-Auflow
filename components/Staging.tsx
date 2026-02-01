@@ -28,6 +28,29 @@ interface StagingProps {
     onInsufficientCredits?: () => void;
 }
 
+// Local Error Modal Component
+const ErrorModal: React.FC<{ isOpen: boolean; onClose: () => void; message: string }> = ({ isOpen, onClose, message }) => {
+    const { t } = useLanguage();
+    if (!isOpen) return null;
+    return (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm animate-fade-in font-sans">
+            <div className="bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#302839] rounded-2xl p-6 shadow-2xl max-w-sm w-full text-center animate-scale-up">
+                <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="material-symbols-outlined text-red-600 dark:text-red-500 text-4xl">error</span>
+                </div>
+                <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{t('common.error')}</h3>
+                <p className="text-gray-600 dark:text-gray-400 text-sm mb-6 leading-relaxed">{message}</p>
+                <button 
+                    onClick={onClose}
+                    className="w-full py-3 bg-gray-900 dark:bg-white text-white dark:text-black font-bold rounded-xl transition-all hover:opacity-90"
+                >
+                    {t('common.close')}
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0, onDeductCredits, onInsufficientCredits }) => {
     const { t, language } = useLanguage();
     const { prompt, sceneImage, objectImages, isLoading, error, resultImages, numberOfImages, resolution, aspectRatio } = state;
@@ -36,6 +59,8 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
     const [isDownloading, setIsDownloading] = useState(false);
     const [showSafetyModal, setShowSafetyModal] = useState(false);
     const [selectedIndex, setSelectedIndex] = useState(0);
+    const [isErrorModalOpen, setIsErrorModalOpen] = useState(false);
+    const [localErrorMessage, setLocalErrorMessage] = useState("");
 
     useEffect(() => {
         if (resultImages.length > 0) setSelectedIndex(0);
@@ -51,9 +76,12 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
 
     const cost = numberOfImages * (resolution === '4K' ? 30 : resolution === '2K' ? 20 : resolution === '1K' ? 10 : 5);
 
+    const showError = (msg: string) => { setLocalErrorMessage(msg); setIsErrorModalOpen(true); };
+
     const handleGenerate = async () => {
         if (onDeductCredits && userCredits < cost) {
              if (onInsufficientCredits) onInsufficientCredits();
+             else showError(t('common.insufficient'));
              return;
         }
         if (!sceneImage) return;
@@ -62,29 +90,77 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
         setStatusMessage(t('common.processing'));
 
         const fullPrompt = `Virtual Staging Task: ${prompt}. Integrate furniture and decor into the scene realistically.`;
+        let logId: string | null = null;
 
         try {
-            if (onDeductCredits) await onDeductCredits(cost, `AI Staging (${numberOfImages} ảnh) - ${resolution}`);
+            if (onDeductCredits) {
+                logId = await onDeductCredits(cost, `AI Staging`);
+            }
+            
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const inputImages = [sceneImage, ...objectImages];
 
-            const result = await externalVideoService.generateFlowImage(
-                fullPrompt, inputImages, aspectRatio, numberOfImages, modelName,
-                (msg) => setStatusMessage(msg)
-            );
+            // Parallel Generation Loop
+            const promises = Array.from({ length: numberOfImages }).map(async (_, idx) => {
+                const result = await externalVideoService.generateFlowImage(
+                    fullPrompt, 
+                    inputImages, 
+                    aspectRatio, 
+                    1, // Force 1 image per request
+                    modelName,
+                    (msg) => setStatusMessage(`${t('common.processing')} (${idx+1}/${numberOfImages})`)
+                );
 
-            if (result.imageUrls) {
-                onStateChange({ resultImages: result.imageUrls });
-                result.imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.Staging, prompt: fullPrompt, sourceImageURL: sceneImage.objectURL, resultImageURL: url }));
+                if (result.imageUrls && result.imageUrls.length > 0) {
+                    let finalUrl = result.imageUrls[0];
+                    if ((resolution === '2K' || resolution === '4K') && result.mediaIds?.[0]) {
+                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                        const upResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
+                        if (upResult?.imageUrl) finalUrl = upResult.imageUrl;
+                    }
+                    return finalUrl;
+                }
+                return null;
+            });
+
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
+                successfulUrls.forEach(url => historyService.addToHistory({ 
+                    tool: Tool.Staging, prompt: fullPrompt, 
+                    sourceImageURL: sceneImage.objectURL, resultImageURL: url 
+                }));
+            } else {
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
+
         } catch (err: any) {
             const rawMsg = err.message || "";
-            let friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
-            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
-            else onStateChange({ error: t(friendlyKey) });
-        } finally {
-            onStateChange({ isLoading: false });
-        }
+            const friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
+            
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+            } else {
+                showError(t(friendlyKey));
+            }
+
+            // Refund logic
+            if (logId && onDeductCredits) {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    try {
+                        await refundCredits(user.id, cost, `Hoàn tiền: Lỗi Staging (${rawMsg})`, logId);
+                        if (friendlyKey !== "SAFETY_POLICY_VIOLATION") {
+                            setLocalErrorMessage(prev => `${prev}\n\n(Credits đã được hoàn trả)`);
+                        }
+                    } catch (refundErr) {
+                        console.error("Refund failed:", refundErr);
+                    }
+                }
+            }
+        } finally { onStateChange({ isLoading: false }); }
     };
 
     const handleDownload = async () => {
@@ -96,7 +172,7 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
     };
 
     return (
-        <div className="flex flex-col lg:flex-row gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
+        <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 md:gap-8 max-w-[1920px] mx-auto items-stretch px-2 sm:px-4">
             <style>{`
                 .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
                 .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -104,92 +180,50 @@ const Staging: React.FC<StagingProps> = ({ state, onStateChange, userCredits = 0
                 .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
                 .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb { background: #334155; }
                 .dark .custom-sidebar-scroll::-webkit-scrollbar-thumb:hover { background: #7f13ec; }
-                @keyframes scale-up { from { opacity: 0; transform: scale(0.9); } to { opacity: 1; transform: scale(1); } }
-                .animate-scale-up { animation: scale-up 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
             `}</style>
-
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
+            <ErrorModal isOpen={isErrorModalOpen} onClose={() => setIsErrorModalOpen(false)} message={localErrorMessage} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
-            
-            {/* SIDEBAR */}
-            <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
-                <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
-                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
-                        <div>
-                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('ext.staging.step1')}</label>
-                            <ImageUpload onFileSelect={(f) => onStateChange({ sceneImage: f, resultImages: [] })} previewUrl={sceneImage?.objectURL} />
-                        </div>
-                        <div>
-                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('ext.staging.step2')}</label>
-                            <MultiImageUpload onFilesChange={(fs) => onStateChange({ objectImages: fs })} maxFiles={5} />
+            <aside className="w-full lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden lg:h-[calc(100vh-130px)] lg:sticky lg:top-[120px]">
+                <div className="p-3 space-y-4 flex-1 lg:overflow-y-auto custom-sidebar-scroll">
+                    <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-3">
+                            <div><label className="block text-xs sm:text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('ext.staging.step1')}</label><ImageUpload onFileSelect={(f) => onStateChange({ sceneImage: f, resultImages: [] })} previewUrl={sceneImage?.objectURL} /></div>
+                            <div><label className="block text-xs sm:text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('ext.staging.step2')}</label><MultiImageUpload onFilesChange={(fs) => onStateChange({ objectImages: fs })} maxFiles={5} /></div>
                         </div>
                     </div>
-
-                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
-                        <div>
-                            <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">3. Mô tả yêu cầu</label>
-                            <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
-                                <textarea rows={6} className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('ext.staging.prompt_ph')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
-                            </div>
+                    <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                        <label className="block text-xs sm:text-sm font-extrabold text-text-primary dark:text-white mb-2">3. Mô tả yêu cầu</label>
+                        <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
+                            <textarea rows={window.innerWidth < 768 ? 4 : 6} className="w-full bg-transparent outline-none text-xs sm:text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('ext.staging.prompt_ph')} value={prompt} onChange={(e) => onStateChange({ prompt: e.target.value })} />
                         </div>
                     </div>
-
-                    <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                    <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
                         <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
                         <ResolutionSelector value={resolution} onChange={(val) => onStateChange({ resolution: val })} />
                         <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
                     </div>
                 </div>
-
-                <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
-                    <button onClick={handleGenerate} disabled={isLoading || !sceneImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
-                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('ext.staging.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
+                <div className="p-4 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] lg:sticky lg:bottom-0 z-10 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                    <button onClick={handleGenerate} disabled={isLoading || !sceneImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 sm:py-4 rounded-xl transition-all shadow-lg active:scale-95 text-sm sm:text-base">
+                        {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('ext.staging.btn_generate')} | {cost}</span> <span className="material-symbols-outlined text-yellow-400 text-base sm:text-lg align-middle notranslate">monetization_on</span></>}
                     </button>
                 </div>
             </aside>
-
-            {/* MAIN CONTENT */}
-            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+            <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden min-h-[400px] sm:min-h-[500px] lg:h-[calc(100vh-130px)] lg:sticky lg:top-[120px]">
                 <div className="flex flex-col h-full overflow-hidden">
-                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                    <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-[300px]">
                         {resultImages.length > 0 ? (
-                            <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
-                                <div className="w-full h-full flex items-center justify-center overflow-hidden">
-                                    {sceneImage ? (
-                                        <ImageComparator originalImage={sceneImage.objectURL} resultImage={resultImages[selectedIndex]} />
-                                    ) : (
-                                        <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-full object-contain" />
-                                    )}
-                                </div>
-                                <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
-                                    <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
-                                    <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
-                                </div>
-                            </div>
+                            <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative"><div className="w-full h-full flex items-center justify-center overflow-hidden">{sceneImage ? <ImageComparator originalImage={sceneImage.objectURL} resultImage={resultImages[selectedIndex]} /> : <img src={resultImages[selectedIndex]} alt="Result" className="max-w-full max-h-full object-contain" />}</div><div className="absolute top-4 right-4 flex flex-col gap-2 z-10"><button onClick={handleDownload} className="p-1.5 sm:p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-base sm:text-lg">download</span></button><button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-1.5 sm:p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-base sm:text-lg">zoom_in</span></button></div></div>
                         ) : (
-                            <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212]">
-                                <span className="material-symbols-outlined text-6xl mb-4">chair</span>
-                                <p className="text-base font-medium">{t('msg.no_result_render')}</p>
-                            </div>
+                            <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212] p-8 text-center"><span className="material-symbols-outlined text-4xl sm:text-6xl mb-4">chair</span><p className="text-sm sm:text-base font-medium">{t('msg.no_result_render')}</p></div>
                         )}
                         {isLoading && (
-                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
-                                <Spinner />
-                                <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
-                            </div>
+                            <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center"><Spinner /><p className="text-white mt-4 font-bold animate-pulse text-sm sm:text-base">{statusMessage}</p></div>
                         )}
                     </div>
-
                     {resultImages.length > 0 && !isLoading && (
-                        <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
-                            <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
-                                {resultImages.map((url, idx) => (
-                                    <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-16 sm:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
-                                        <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                        <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]"><div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center items-center">{resultImages.map((url, idx) => (<button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-12 sm:w-16 md:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}><img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} /></button>))}</div></div>
                     )}
                 </div>
             </main>

@@ -22,8 +22,8 @@ export const resizeImage = async (file: File): Promise<{ base64: string; mimeTyp
 
         img.onload = () => {
             const canvas = document.createElement('canvas');
-            // OPTIMIZATION: Limit max dimension to 2000px as requested
-            const MAX_SIZE = 2000;
+            // OPTIMIZATION: Limit max dimension to 1500px as requested
+            const MAX_SIZE = 1500;
             let width = img.width;
             let height = img.height;
 

@@ -46,12 +46,27 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
     const [isCreativeModeSelected, setIsCreativeModeSelected] = useState(false);
     const [generatingViews, setGeneratingViews] = useState<Set<string>>(new Set());
 
+    // Dropdown state for quick mode switch
+    const [isModeDropdownOpen, setIsModeDropdownOpen] = useState(false);
+    const modeDropdownRef = useRef<HTMLDivElement>(null);
+
     const latestResultsRef = useRef(creativeResults);
     useEffect(() => { latestResultsRef.current = creativeResults; }, [creativeResults]);
 
     useEffect(() => {
         if (resultImages.length > 0) setSelectedIndex(0);
     }, [resultImages.length]);
+
+    // Close dropdown when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (modeDropdownRef.current && !modeDropdownRef.current.contains(event.target as Node)) {
+                setIsModeDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
 
     // --- Translated Options ---
     const perspectiveAngles = useMemo(() => [
@@ -380,7 +395,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
     const hasCreativeResults = currentSlots.some(s => !!creativeResults[getResultKey(creativeOption, s.id)]);
 
     return (
-        <div className="flex flex-col gap-0 w-full -mt-6">
+        <div className="flex flex-col gap-0 w-full lg:-mt-6">
             <style>{`
                 .custom-sidebar-scroll::-webkit-scrollbar { width: 5px; }
                 .custom-sidebar-scroll::-webkit-scrollbar-track { background: transparent; }
@@ -393,29 +408,29 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             <SafetyWarningModal isOpen={showSafetyModal} onClose={() => setShowSafetyModal(false)} />
             {previewImage && <ImagePreviewModal imageUrl={previewImage} onClose={() => setPreviewImage(null)} />}
             
-            <div className="flex justify-center mb-1">
-                <div className="bg-gray-100 dark:bg-black/30 p-0.5 rounded-full inline-flex border border-gray-200 dark:border-white/10">
-                    <button onClick={() => onStateChange({ activeTab: 'sync' })} className={`px-5 py-1.5 rounded-full text-sm font-bold transition-all ${activeTab === 'sync' || !activeTab ? 'bg-white dark:bg-[#7f13ec] text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{t('sync.tab.sync')}</button>
-                    <button onClick={() => onStateChange({ activeTab: 'creative' })} className={`px-5 py-1.5 rounded-full text-sm font-bold transition-all ${activeTab === 'creative' ? 'bg-white dark:bg-[#7f13ec] text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{t('sync.tab.creative')}</button>
+            <div className="flex justify-center mb-2 sm:mb-4 px-2">
+                <div className="bg-gray-100 dark:bg-black/30 p-0.5 rounded-full inline-flex border border-gray-200 dark:border-white/10 w-full sm:w-auto overflow-hidden">
+                    <button onClick={() => onStateChange({ activeTab: 'sync' })} className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 rounded-full text-xs sm:text-sm font-bold transition-all ${activeTab === 'sync' || !activeTab ? 'bg-white dark:bg-[#7f13ec] text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{t('sync.tab.sync')}</button>
+                    <button onClick={() => onStateChange({ activeTab: 'creative' })} className={`flex-1 sm:flex-none px-4 sm:px-8 py-2 rounded-full text-xs sm:text-sm font-bold transition-all ${activeTab === 'creative' ? 'bg-white dark:bg-[#7f13ec] text-black dark:text-white shadow-sm' : 'text-gray-500 dark:text-gray-400'}`}>{t('sync.tab.creative')}</button>
                 </div>
             </div>
 
             {/* --- STANDARD SYNC VIEW --- */}
             {(activeTab === 'sync' || !activeTab) && (
-                <div className="flex flex-col lg:flex-row gap-6 md:gap-8 w-full max-w-full items-stretch px-2 sm:px-4 mt-2">
-                    <aside className="w-full md:w-[320px] lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
-                        <div className="p-3 space-y-4 flex-1 overflow-y-auto custom-sidebar-scroll">
-                            <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-3 border border-gray-200 dark:border-white/5">
+                <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 md:gap-8 w-full max-w-full items-stretch px-2 sm:px-4">
+                    <aside className="w-full lg:w-[350px] xl:w-[380px] flex-shrink-0 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm relative overflow-hidden lg:h-[calc(100vh-130px)] lg:sticky lg:top-[120px]">
+                        <div className="p-3 space-y-4 flex-1 lg:overflow-y-auto custom-sidebar-scroll">
+                            <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-3 border border-gray-200 dark:border-white/5">
                                 <div>
-                                    <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('sync.step1')}</label>
+                                    <label className="block text-xs sm:text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('sync.step1')}</label>
                                     <ImageUpload onFileSelect={(f) => onStateChange({ sourceImage: f, resultImages: [], directionImage: null })} previewUrl={sourceImage?.objectURL} />
                                 </div>
                             </div>
-                            <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
-                                <label className="block text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('sync.step2')}</label>
+                            <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-4 border border-gray-200 dark:border-white/5">
+                                <label className="block text-xs sm:text-sm font-extrabold text-text-primary dark:text-white mb-2">{t('sync.step2')}</label>
                                 <div className="flex bg-white dark:bg-[#121212] p-1 rounded-xl border border-gray-200 dark:border-[#302839]">
-                                    <button onClick={() => onStateChange({ sceneType: 'exterior' })} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${sceneType === 'exterior' || !sceneType ? 'bg-[#7f13ec] text-white shadow' : 'text-gray-400'}`}>{t('sync.scene.ext')}</button>
-                                    <button onClick={() => onStateChange({ sceneType: 'interior' })} className={`flex-1 py-2 rounded-lg text-xs font-bold transition-colors ${sceneType === 'interior' ? 'bg-[#7f13ec] text-white shadow' : 'text-gray-400'}`}>{t('sync.scene.int')}</button>
+                                    <button onClick={() => onStateChange({ sceneType: 'exterior' })} className={`flex-1 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-colors ${sceneType === 'exterior' || !sceneType ? 'bg-[#7f13ec] text-white shadow' : 'text-gray-400'}`}>{t('sync.scene.ext')}</button>
+                                    <button onClick={() => onStateChange({ sceneType: 'interior' })} className={`flex-1 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-colors ${sceneType === 'interior' ? 'bg-[#7f13ec] text-white shadow' : 'text-gray-400'}`}>{t('sync.scene.int')}</button>
                                 </div>
                                 <div className="space-y-3">
                                     {(sceneType === 'exterior' || !sceneType) ? (
@@ -429,24 +444,24 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                                     </div>
                                 </div>
                                 <div className="p-3 rounded-xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-[#121212] shadow-inner">
-                                    <textarea rows={6} className="w-full bg-transparent outline-none text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('sync.prompt_placeholder')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} />
+                                    <textarea rows={window.innerWidth < 768 ? 4 : 6} className="w-full bg-transparent outline-none text-xs sm:text-sm resize-none font-medium text-text-primary dark:text-white" placeholder={t('sync.prompt_placeholder')} value={customPrompt} onChange={(e) => onStateChange({ customPrompt: e.target.value })} />
                                 </div>
                             </div>
-                            <div className="bg-gray-100 dark:bg-black/20 p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
+                            <div className="bg-gray-100 dark:bg-black/20 p-3 sm:p-4 rounded-2xl space-y-5 border border-gray-200 dark:border-white/5">
                                 <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} />
                                 <ResolutionSelector value={resolution} onChange={handleResolutionChange} />
                                 <NumberOfImagesSelector value={numberOfImages} onChange={(val) => onStateChange({ numberOfImages: val })} />
                             </div>
                         </div>
-                        <div className="sticky bottom-0 w-full bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] p-4 z-40 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
-                            <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-4 rounded-xl transition-all shadow-lg active:scale-95 text-base">
-                                {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('sync.btn_generate')} | {unitCost * numberOfImages}</span> <span className="material-symbols-outlined text-yellow-400 text-lg align-middle notranslate">monetization_on</span></>}
+                        <div className="p-4 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839] lg:sticky lg:bottom-0 z-10 shadow-[0_-8px_20px_rgba(0,0,0,0.05)]">
+                            <button onClick={handleGenerate} disabled={isLoading || !sourceImage} className="w-full flex justify-center items-center gap-2 bg-[#7f13ec] hover:bg-[#690fca] text-white font-bold py-3 sm:py-4 rounded-xl transition-all shadow-lg active:scale-95 text-sm sm:text-base">
+                                {isLoading ? <><Spinner /> <span>{statusMessage}</span></> : <><span>{t('sync.btn_generate')} | {unitCost * numberOfImages}</span> <span className="material-symbols-outlined text-yellow-400 text-base sm:text-lg align-middle notranslate">monetization_on</span></>}
                             </button>
                         </div>
                     </aside>
-                    <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden h-[calc(100vh-120px)] lg:h-[calc(100vh-130px)] sticky top-[120px]">
+                    <main className="flex-1 flex flex-col bg-white dark:bg-[#1A1A1A] border border-border-color dark:border-[#302839] rounded-2xl shadow-sm overflow-hidden min-h-[400px] sm:min-h-[500px] lg:h-[calc(100vh-130px)] lg:sticky lg:top-[120px]">
                         <div className="flex flex-col h-full overflow-hidden">
-                            <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-0">
+                            <div className="flex-1 bg-gray-100 dark:bg-[#121212] relative overflow-hidden flex items-center justify-center min-h-[300px]">
                                 {resultImages.length > 0 ? (
                                     <div className="w-full h-full p-2 animate-fade-in flex flex-col items-center justify-center relative">
                                         <div className="w-full h-full flex items-center justify-center overflow-hidden">
@@ -457,28 +472,28 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                                             )}
                                         </div>
                                         <div className="absolute top-4 right-4 flex flex-col gap-2 z-10">
-                                            <button onClick={handleDownload} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">download</span></button>
-                                            <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-lg">zoom_in</span></button>
+                                            <button onClick={handleDownload} className="p-1.5 sm:p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-blue-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-base sm:text-lg">download</span></button>
+                                            <button onClick={() => setPreviewImage(resultImages[selectedIndex])} className="p-1.5 sm:p-2 bg-white/90 dark:bg-black/50 rounded-xl shadow-lg hover:text-green-600 transition-all backdrop-blur-sm border border-white/20"><span className="material-symbols-outlined text-base sm:text-lg">zoom_in</span></button>
                                         </div>
                                     </div>
                                 ) : (
-                                    <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212]">
-                                        <span className="material-symbols-outlined text-6xl mb-4">view_in_ar</span>
-                                        <p className="text-base font-medium">{t('msg.no_result_render')}</p>
+                                    <div className="w-full h-full flex flex-col items-center justify-center opacity-20 select-none bg-main-bg dark:bg-[#121212] p-8 text-center">
+                                        <span className="material-symbols-outlined text-4xl sm:text-6xl mb-4">view_in_ar</span>
+                                        <p className="text-sm sm:text-base font-medium">{t('msg.no_result_render')}</p>
                                     </div>
                                 )}
                                 {isLoading && (
-                                    <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center">
+                                    <div className="absolute inset-0 bg-[#121212]/80 backdrop-blur-sm z-20 flex flex-col items-center justify-center p-6 text-center">
                                         <Spinner />
-                                        <p className="text-white mt-4 font-bold animate-pulse">{statusMessage}</p>
+                                        <p className="text-white mt-4 font-bold animate-pulse text-sm sm:text-base">{statusMessage}</p>
                                     </div>
                                 )}
                             </div>
                             {resultImages.length > 0 && !isLoading && (
                                 <div className="flex-shrink-0 w-full p-2 bg-white dark:bg-[#1A1A1A] border-t border-border-color dark:border-[#302839]">
-                                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center">
+                                    <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide justify-center items-center">
                                         {resultImages.map((url, idx) => (
-                                            <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-16 sm:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
+                                            <button key={url} onClick={() => setSelectedIndex(idx)} className={`flex-shrink-0 w-12 sm:w-16 md:w-20 aspect-square rounded-lg border-2 transition-all overflow-hidden ${selectedIndex === idx ? 'border-[#7f13ec] ring-2 ring-purple-500/20 scale-105' : 'border-transparent opacity-60 hover:opacity-100'}`}>
                                                 <img src={url} className="w-full h-full object-cover" alt={`Result ${idx + 1}`} />
                                             </button>
                                         ))}
@@ -494,41 +509,31 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             {activeTab === 'creative' && !isCreativeModeSelected && (
                 <div className="flex flex-col gap-6 animate-fade-in py-6 px-4">
                     <div className="text-center max-w-2xl mx-auto">
-                        <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">{t('sync.creative.title')}</h2>
+                        <h2 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white mb-2">{t('sync.creative.title')}</h2>
                         <p className="text-gray-500 dark:text-gray-400 text-sm">{t('sync.creative.desc')}</p>
                     </div>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-5xl mx-auto w-full">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6 max-w-5xl mx-auto w-full">
                         {creativeOptions.map(opt => (
                             <button 
                                 key={opt.id} 
                                 onClick={() => handleSelectCreativeOption(opt.id)} 
-                                className="group relative flex flex-col h-96 rounded-3xl overflow-hidden border border-gray-200 dark:border-[#302839] hover:border-[#7f13ec] dark:hover:border-[#7f13ec] transition-all duration-500 shadow-sm hover:shadow-2xl text-left"
+                                className="group relative flex flex-col h-72 sm:h-80 md:h-96 rounded-2xl sm:rounded-3xl overflow-hidden border border-gray-200 dark:border-[#302839] hover:border-[#7f13ec] dark:hover:border-[#7f13ec] transition-all duration-500 shadow-sm hover:shadow-2xl text-left"
                             >
-                                {/* Background Image */}
                                 <div className="absolute inset-0 z-0">
-                                    <img 
-                                        src={opt.bg} 
-                                        alt={opt.label} 
-                                        className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" 
-                                    />
-                                    {/* Dark Overlay with Gradient */}
+                                    <img src={opt.bg} alt={opt.label} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" />
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/40 to-black/20 group-hover:via-black/50 transition-all duration-500"></div>
                                 </div>
-
-                                {/* Content */}
-                                <div className="relative z-10 flex flex-col h-full p-8 justify-end">
-                                    <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center mb-5 group-hover:bg-[#7f13ec] group-hover:border-[#7f13ec] transition-all duration-300 shadow-lg">
-                                        <span className="material-symbols-outlined text-2xl text-white notranslate">{opt.icon}</span>
+                                <div className="relative z-10 flex flex-col h-full p-6 sm:p-8 justify-end">
+                                    <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-white/10 backdrop-blur-xl border border-white/20 flex items-center justify-center mb-4 sm:mb-5 group-hover:bg-[#7f13ec] group-hover:border-[#7f13ec] transition-all duration-300 shadow-lg">
+                                        <span className="material-symbols-outlined text-xl sm:text-2xl text-white notranslate">{opt.icon}</span>
                                     </div>
-                                    
-                                    <div className="space-y-2">
-                                        <h3 className="text-2xl font-black text-white group-hover:text-white transition-colors">{opt.label}</h3>
-                                        <p className="text-sm text-gray-300 line-clamp-3 leading-relaxed opacity-90 group-hover:opacity-100 transition-opacity">
+                                    <div className="space-y-1 sm:space-y-2">
+                                        <h3 className="text-xl sm:text-2xl font-black text-white group-hover:text-white transition-colors">{opt.label}</h3>
+                                        <p className="text-xs sm:text-sm text-gray-300 line-clamp-3 leading-relaxed opacity-90 group-hover:opacity-100 transition-opacity">
                                             {opt.longDesc || opt.desc}
                                         </p>
                                     </div>
-
-                                    <div className="mt-8 flex items-center text-xs font-bold text-white/50 group-hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 uppercase tracking-widest">
+                                    <div className="mt-6 sm:mt-8 flex items-center text-[10px] sm:text-xs font-bold text-white/50 group-hover:text-white transition-all transform translate-y-2 group-hover:translate-y-0 uppercase tracking-widest">
                                         {t('sync.creative.btn_start')} 
                                         <span className="material-symbols-outlined text-sm ml-2 group-hover:translate-x-1 transition-transform notranslate">arrow_forward</span>
                                     </div>
@@ -540,96 +545,133 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
             )}
 
             {activeTab === 'creative' && isCreativeModeSelected && (
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 animate-fade-in p-4 mt-2 items-start">
+                <div className="flex flex-col lg:grid lg:grid-cols-12 gap-4 sm:gap-6 md:gap-8 animate-fade-in p-2 sm:p-4 mt-2 items-start">
                     {/* LEFT SIDEBAR - STICKY */}
-                    <div className="lg:col-span-4 flex flex-col gap-6 lg:sticky lg:top-[120px] self-start h-fit">
-                        <div className="bg-white dark:bg-[#1E1E1E] rounded-2xl p-4 shadow-sm border border-gray-200 dark:border-[#302839]">
-                            <button onClick={handleBackToSelection} className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-900 dark:text-gray-400 dark:hover:text-white mb-4 transition-colors font-bold"><span className="material-symbols-outlined text-lg">arrow_back</span> {t('sync.workspace.back')}</button>
-                            <div className="flex items-center gap-3 p-3 bg-[#7f13ec]/5 dark:bg-[#7f13ec]/10 rounded-xl border border-[#7f13ec]/20">
-                                <div className="p-2 rounded-lg bg-[#7f13ec] text-white"><span className="material-symbols-outlined text-xl">{selectedOptionData?.icon || 'auto_awesome'}</span></div>
-                                <div>
-                                    <div className="text-sm font-bold text-[#7f13ec] dark:text-[#a855f7]">{selectedOptionData?.label}</div>
-                                    <div className="text-[10px] text-gray-500 dark:text-gray-400">{selectedOptionData?.desc}</div>
-                                </div>
+                    <div className="w-full lg:col-span-4 flex flex-col gap-4 sm:gap-6 lg:sticky lg:top-[120px] self-start h-fit">
+                        <div className="bg-white dark:bg-[#1E1E1E] rounded-2xl p-3 sm:p-4 shadow-sm border border-gray-200 dark:border-[#302839] relative overflow-visible z-30">
+                             <div className="px-1 pt-1">
+                                <button onClick={handleBackToSelection} className="flex items-center gap-2 text-text-secondary dark:text-gray-400 hover:text-[#7f13ec] dark:hover:text-[#a855f7] transition-all font-bold text-xs sm:text-sm group mb-3" >
+                                    <span className="material-symbols-outlined notranslate group-hover:-translate-x-1 transition-transform">arrow_back</span>
+                                    <span>{t('common.back')}</span>
+                                </button>
+                            </div>
+
+                            {/* New Interactive Mode Dropdown */}
+                            <div className="relative" ref={modeDropdownRef}>
+                                <button 
+                                    onClick={() => setIsModeDropdownOpen(!isModeDropdownOpen)}
+                                    className="w-full bg-[#7f13ec]/5 dark:bg-[#7f13ec]/10 p-3 sm:p-4 rounded-2xl border border-[#7f13ec]/20 flex items-center justify-between hover:bg-[#7f13ec]/10 transition-colors"
+                                >
+                                    <div className="flex items-center gap-3">
+                                        <div className="p-1.5 sm:p-2 rounded-lg bg-[#7f13ec] text-white">
+                                            <span className="material-symbols-outlined text-lg sm:text-xl notranslate">{selectedOptionData?.icon || 'auto_awesome'}</span>
+                                        </div>
+                                        <div className="text-left">
+                                            <span className="block text-[8px] sm:text-[10px] font-bold text-[#7f13ec] uppercase tracking-wider">{language === 'vi' ? 'Chế độ (Nhấn để đổi)' : 'Mode (Click to switch)'}</span>
+                                            <span className="block text-xs sm:text-sm font-black text-text-primary dark:text-white">{selectedOptionData?.label}</span>
+                                        </div>
+                                    </div>
+                                    <span className={`material-symbols-outlined text-[#7f13ec] transition-transform duration-200 ${isModeDropdownOpen ? 'rotate-180' : ''}`}>expand_more</span>
+                                </button>
+
+                                {isModeDropdownOpen && (
+                                    <div className="absolute top-full left-0 right-0 mt-2 bg-white dark:bg-[#1E1E1E] rounded-xl shadow-2xl border border-border-color dark:border-[#302839] overflow-hidden animate-fade-in p-1.5 z-50">
+                                        {creativeOptions.map((opt) => (
+                                            <button
+                                                key={opt.id}
+                                                onClick={() => {
+                                                    handleSelectCreativeOption(opt.id);
+                                                    setIsModeDropdownOpen(false);
+                                                }}
+                                                className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors text-left ${creativeOption === opt.id ? 'bg-[#7f13ec]/10 text-[#7f13ec]' : 'hover:bg-gray-100 dark:hover:bg-[#2A2A2A] text-text-primary dark:text-gray-200'}`}
+                                            >
+                                                <span className="material-symbols-outlined text-lg">{opt.icon}</span>
+                                                <span className="text-xs sm:text-sm font-bold">{opt.label}</span>
+                                                {creativeOption === opt.id && <span className="material-symbols-outlined text-sm ml-auto">check</span>}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-[#1E1E1E] rounded-2xl p-6 shadow-sm border border-gray-200 dark:border-[#302839] space-y-6">
+
+                        <div className="bg-white dark:bg-[#1E1E1E] rounded-2xl p-4 sm:p-6 shadow-sm border border-gray-200 dark:border-[#302839] space-y-5 sm:space-y-6">
                             <div>
-                                <label className="flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-200 mb-2"><span>{t('sync.workspace.source')}</span>{sourceImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">OK</span>}</label>
+                                <label className="flex justify-between items-center text-xs sm:text-sm font-bold text-gray-700 dark:text-gray-200 mb-2"><span>{t('sync.workspace.source')}</span>{sourceImage && <span className="text-[9px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full uppercase">OK</span>}</label>
                                 <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-black/20 overflow-hidden"><ImageUpload onFileSelect={handleFileSelect} previewUrl={sourceImage?.objectURL} /></div>
                             </div>
                             <div>
-                                <label className="flex justify-between items-center text-sm font-bold text-gray-700 dark:text-gray-200 mb-2"><span>{t('sync.workspace.char')}</span>{characterImage && <span className="text-[10px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full">OK</span>}</label>
+                                <label className="flex justify-between items-center text-xs sm:text-sm font-bold text-gray-700 dark:text-gray-200 mb-2"><span>{t('sync.workspace.char')}</span>{characterImage && <span className="text-[9px] text-green-500 bg-green-500/10 px-2 py-0.5 rounded-full uppercase">OK</span>}</label>
                                 <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-xl bg-gray-50 dark:bg-black/20 overflow-hidden"><ImageUpload onFileSelect={(f) => onStateChange({ characterImage: f })} previewUrl={characterImage?.objectURL} id="char-upload" /></div>
-                                <p className="text-[10px] text-gray-400 mt-1.5 px-1">{t('sync.workspace.char_hint')}</p>
+                                <p className="text-[9px] text-gray-400 mt-1.5 px-1">{t('sync.workspace.char_hint')}</p>
                             </div>
                             <div className="pt-4 border-t border-gray-100 dark:border-[#302839]">
                                 <AspectRatioSelector value={aspectRatio} onChange={(val) => onStateChange({ aspectRatio: val })} disabled={generatingViews.size > 0} />
                             </div>
                             <div><ResolutionSelector value={resolution} onChange={handleResolutionChange} disabled={generatingViews.size > 0} /></div>
-                            <button onClick={handleGenerateBatch} disabled={generatingViews.size > 0 || !sourceImage} className="w-full py-4 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-700 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 transform active:scale-95">
+                            <button onClick={handleGenerateBatch} disabled={generatingViews.size > 0 || !sourceImage} className="w-full py-3 sm:py-4 bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-400 dark:disabled:bg-gray-700 text-white font-bold rounded-xl transition-all shadow-lg flex items-center justify-center gap-2 transform active:scale-95 text-sm">
                                 {generatingViews.size > 0 ? <><Spinner /> {t('sync.workspace.generating_wait')}</> : <>{t('sync.workspace.btn_generate_batch').replace('{count}', currentSlots.length.toString())} | {creativeTotalCost} <span className="material-symbols-outlined text-xs text-yellow-500 ml-1">monetization_on</span></>}
                             </button>
                         </div>
                     </div>
 
                     {/* RIGHT CONTENT - SCROLLABLE LIST */}
-                    <div className="lg:col-span-8 flex flex-col">
-                        <div className="flex justify-between items-center mb-6">
-                            <h3 className="text-2xl font-bold text-gray-900 dark:text-white">{t('sync.workspace.result_title')}</h3>
+                    <div className="w-full lg:col-span-8 flex flex-col">
+                        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-6">
+                            <h3 className="text-xl sm:text-2xl font-bold text-gray-900 dark:text-white">{t('sync.workspace.result_title')}</h3>
                             {hasCreativeResults && (
-                                <button onClick={handleDownloadAllCreative} disabled={isDownloading} className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-black hover:opacity-90 rounded-xl text-sm font-bold transition-all shadow-md">
+                                <button onClick={handleDownloadAllCreative} disabled={isDownloading} className="w-full sm:w-auto flex items-center justify-center gap-2 px-4 py-2 sm:px-5 sm:py-2.5 bg-gray-900 dark:bg-white text-white dark:text-black hover:opacity-90 rounded-xl text-xs sm:text-sm font-bold transition-all shadow-md">
                                     {isDownloading ? <Spinner /> : <span className="material-symbols-outlined text-lg">download_for_offline</span>}
                                     <span>{t('sync.workspace.download_all')}</span>
                                 </button>
                             )}
                         </div>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
                             {currentSlots.map((slot) => {
                                 const key = getResultKey(creativeOption, slot.id);
                                 const resultUrl = creativeResults[key];
                                 const isGenerating = generatingViews.has(key);
                                 const currentPrompt = creativePrompts[slot.id] || "";
                                 return (
-                                    <div key={slot.id} className="group relative bg-[#1E1E1E] rounded-2xl overflow-hidden border border-[#302839] hover:border-[#7f13ec]/50 transition-all duration-300 shadow-lg flex flex-col h-full">
+                                    <div key={slot.id} className="group relative bg-white dark:bg-[#1E1E1E] rounded-2xl overflow-hidden border border-gray-200 dark:border-[#302839] hover:border-[#7f13ec]/50 transition-all duration-300 shadow-lg flex flex-col h-full">
                                         <div className="aspect-square relative w-full bg-black/40 overflow-hidden">
                                             {resultUrl ? (
                                                 <>
                                                     <img src={resultUrl} alt={slot.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110 cursor-pointer" onClick={() => handlePreview(resultUrl)} />
                                                     <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-4 backdrop-blur-sm pointer-events-none">
                                                         <div className="flex gap-2 pointer-events-auto">
-                                                            <button onClick={() => handlePreview(resultUrl)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-all hover:scale-110"><span className="material-symbols-outlined">zoom_in</span></button>
-                                                            <button onClick={() => handleDownload(resultUrl, slot.name)} className="p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-all hover:scale-110"><span className="material-symbols-outlined">download</span></button>
+                                                            <button onClick={() => handlePreview(resultUrl)} className="p-2 sm:p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-all hover:scale-110"><span className="material-symbols-outlined text-base sm:text-lg">zoom_in</span></button>
+                                                            <button onClick={() => handleDownload(resultUrl, slot.name)} className="p-2 sm:p-3 bg-white/10 hover:bg-white/20 rounded-full text-white backdrop-blur-md transition-all hover:scale-110"><span className="material-symbols-outlined text-base sm:text-lg">download</span></button>
                                                         </div>
                                                     </div>
                                                 </>
                                             ) : isGenerating ? (
-                                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#151515]">
+                                                <div className="absolute inset-0 flex flex-col items-center justify-center bg-gray-50 dark:bg-[#151515]">
                                                     <Spinner />
-                                                    <span className="text-xs font-bold text-gray-500 mt-4 animate-pulse uppercase tracking-widest">{t('sync.workspace.generating')}</span>
+                                                    <span className="text-[10px] font-bold text-gray-500 mt-4 animate-pulse uppercase tracking-widest">{t('sync.workspace.generating')}</span>
                                                 </div>
                                             ) : (
-                                                <div className="w-full h-full flex flex-col items-center justify-center opacity-30">
-                                                    <span className="material-symbols-outlined text-5xl text-gray-600 mb-2">{slot.icon}</span>
-                                                    <span className="text-xs font-bold text-gray-600 uppercase">{slot.name}</span>
+                                                <div className="w-full h-full flex flex-col items-center justify-center opacity-30 p-4 text-center">
+                                                    <span className="material-symbols-outlined text-4xl sm:text-5xl text-gray-400 dark:text-gray-600 mb-2">{slot.icon}</span>
+                                                    <span className="text-[10px] font-bold text-gray-400 dark:text-gray-600 uppercase">{slot.name}</span>
                                                 </div>
                                             )}
-                                            <div className="absolute top-0 left-0 right-0 p-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
-                                                <h4 className="text-sm font-bold text-white shadow-sm">{slot.name}</h4>
+                                            <div className="absolute top-0 left-0 right-0 p-3 sm:p-4 bg-gradient-to-b from-black/80 to-transparent pointer-events-none">
+                                                <h4 className="text-xs sm:text-sm font-bold text-white shadow-sm">{slot.name}</h4>
                                                 {/* @ts-ignore */}
-                                                {slot.sub && <p className="text-[10px] text-gray-300 font-medium">{slot.sub}</p>}
+                                                {slot.sub && <p className="text-[8px] sm:text-[10px] text-gray-300 font-medium">{slot.sub}</p>}
                                             </div>
                                         </div>
-                                        <div className="p-4 border-t border-[#302839] bg-[#222] flex flex-col gap-3 flex-grow">
+                                        <div className="p-3 sm:p-4 border-t border-gray-100 dark:border-[#302839] bg-gray-50 dark:bg-[#222] flex flex-col gap-3 flex-grow">
                                             <div className="flex flex-col gap-1.5 flex-grow">
-                                                <label className="text-[10px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
+                                                <label className="text-[9px] font-bold text-gray-500 uppercase tracking-widest flex items-center gap-1">
                                                     <span className="material-symbols-outlined text-[12px]">description</span> Prompt AI
                                                 </label>
-                                                <div className="bg-black/30 rounded-lg border border-white/5 overflow-hidden flex-grow">
+                                                <div className="bg-white dark:bg-black/30 rounded-lg border border-gray-200 dark:border-white/5 overflow-hidden flex-grow shadow-inner">
                                                     <textarea 
                                                         value={currentPrompt}
                                                         onChange={(e) => handleLocalPromptChange(slot.id, e.target.value)}
-                                                        className="w-full text-[10px] text-gray-400 leading-relaxed bg-transparent p-2 outline-none resize-none scrollbar-thin scrollbar-thumb-gray-800 dark:scrollbar-thumb-gray-600 min-h-[80px]"
+                                                        className="w-full text-[10px] text-gray-600 dark:text-gray-400 leading-relaxed bg-transparent p-2 outline-none resize-none scrollbar-thin scrollbar-thumb-gray-800 dark:scrollbar-thumb-gray-600 min-h-[80px]"
                                                         rows={4}
                                                     />
                                                 </div>
@@ -637,7 +679,7 @@ const ViewSync: React.FC<ViewSyncProps> = ({ state, onStateChange, userCredits =
                                             <button 
                                                 onClick={() => handleGenerateSingleView(slot)} 
                                                 disabled={isGenerating || !sourceImage} 
-                                                className={`w-full py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${resultUrl ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-[#7f13ec] hover:bg-[#690fca] text-white shadow-lg'}`}
+                                                className={`w-full py-2 sm:py-2.5 rounded-xl text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-2 ${resultUrl ? 'bg-gray-800 hover:bg-gray-700 text-gray-300' : 'bg-[#7f13ec] hover:bg-[#690fca] text-white shadow-lg'}`}
                                             >
                                                 {isGenerating ? <Spinner /> : <span className="material-symbols-outlined text-sm">{resultUrl ? 'refresh' : 'auto_fix_high'}</span>}
                                                 {isGenerating 

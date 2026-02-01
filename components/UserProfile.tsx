@@ -129,27 +129,27 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
         : t('header.forever');
 
     return (
-        <div className="flex flex-col lg:flex-row gap-6 h-full max-h-[calc(100vh-100px)]">
+        <div className="flex flex-col lg:flex-row gap-6 h-full lg:max-h-[calc(100vh-100px)]">
             {/* Sidebar */}
-            <div className="lg:w-1/4 bg-surface dark:bg-dark-bg rounded-xl shadow-sm border border-border-color dark:border-gray-700 p-6 flex flex-col items-center text-center h-fit flex-shrink-0">
+            <div className="w-full lg:w-1/4 bg-surface dark:bg-[#1A1A1A] rounded-2xl shadow-sm border border-border-color dark:border-[#302839] p-6 flex flex-col items-center text-center h-fit flex-shrink-0">
                 <div className="mb-4">
                     <UserIcon />
                 </div>
-                <h2 className="text-xl font-bold text-text-primary dark:text-white">{userName}</h2>
-                <p className="text-sm text-text-secondary dark:text-gray-400 mb-6 truncate max-w-full">{userEmail}</p>
+                <h2 className="text-xl font-bold text-text-primary dark:text-white truncate w-full">{userName}</h2>
+                <p className="text-sm text-text-secondary dark:text-gray-400 mb-6 truncate w-full">{userEmail}</p>
                 
                 {/* Mobile: Horizontal Scroll, Desktop: Vertical Stack */}
-                <div className="w-full flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0">
+                <div className="w-full flex lg:flex-col gap-2 overflow-x-auto lg:overflow-visible pb-2 lg:pb-0 scrollbar-hide">
                     <button 
                         onClick={() => handleTabClick('profile')}
-                        className={`flex-shrink-0 w-auto lg:w-full text-left px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${activeTab === 'profile' ? 'bg-accent text-white' : 'text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                        className={`flex-1 lg:w-full text-center lg:text-left px-4 py-2.5 rounded-xl transition-all whitespace-nowrap text-sm font-bold ${activeTab === 'profile' ? 'bg-[#7f13ec] text-white shadow-lg' : 'text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
                     >
                         {t('profile.tab_info')}
                     </button>
                     
                     <button 
                         onClick={() => handleTabClick('history')}
-                        className={`flex-shrink-0 w-auto lg:w-full text-left px-4 py-2 rounded-lg transition-colors whitespace-nowrap ${activeTab === 'history' ? 'bg-accent text-white' : 'text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                        className={`flex-1 lg:w-full text-center lg:text-left px-4 py-2.5 rounded-xl transition-all whitespace-nowrap text-sm font-bold ${activeTab === 'history' ? 'bg-[#7f13ec] text-white shadow-lg' : 'text-text-secondary dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
                     >
                         {t('profile.tab_history')}
                     </button>
@@ -157,43 +157,41 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
             </div>
 
             {/* Content Area */}
-            <div className="lg:w-3/4 bg-surface dark:bg-dark-bg rounded-xl shadow-sm border border-border-color dark:border-gray-700 p-4 sm:p-6 lg:p-8 overflow-y-auto scrollbar-hide flex-grow h-full">
+            <div className="w-full lg:w-3/4 bg-surface dark:bg-[#1A1A1A] rounded-2xl shadow-sm border border-border-color dark:border-[#302839] p-4 sm:p-6 lg:p-8 flex-grow h-full lg:overflow-y-auto custom-sidebar-scroll">
                 
                 {/* === TAB: PROFILE === */}
                 {activeTab === 'profile' && (
                     <div className="space-y-8 animate-fade-in">
                         <div>
-                            <h3 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('profile.tab_info')}</h3>
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <h3 className="text-xl sm:text-2xl font-bold text-text-primary dark:text-white mb-4">{t('profile.tab_info')}</h3>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('profile.label.name')}</label>
-                                    <input type="text" value={userName} disabled className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-300 opacity-70" />
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 px-1">{t('profile.label.name')}</label>
+                                    <input type="text" value={userName} disabled className="w-full bg-main-bg dark:bg-[#121212] border border-border-color dark:border-[#302839] rounded-xl p-3 text-sm text-text-primary dark:text-gray-300 opacity-70 font-semibold" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('profile.label.email')}</label>
-                                    <input type="email" value={userEmail} disabled className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-300 opacity-70" />
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 px-1">{t('profile.label.email')}</label>
+                                    <input type="email" value={userEmail} disabled className="w-full bg-main-bg dark:bg-[#121212] border border-border-color dark:border-[#302839] rounded-xl p-3 text-sm text-text-primary dark:text-gray-300 opacity-70 font-semibold" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('profile.label.joined')}</label>
-                                    <input type="text" value={joinDate} disabled className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-300 opacity-70" />
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 px-1">{t('profile.label.joined')}</label>
+                                    <input type="text" value={joinDate} disabled className="w-full bg-main-bg dark:bg-[#121212] border border-border-color dark:border-[#302839] rounded-xl p-3 text-sm text-text-primary dark:text-gray-300 opacity-70 font-semibold" />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-text-secondary dark:text-gray-400 mb-1">{t('profile.label.expired')}</label>
-                                    <input type="text" value={expirationDateString} disabled className="w-full bg-main-bg dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-gray-300 opacity-70 font-semibold text-purple-600 dark:text-purple-400" />
+                                    <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-1 px-1">{t('profile.label.expired')}</label>
+                                    <input type="text" value={expirationDateString} disabled className="w-full bg-main-bg dark:bg-[#121212] border border-border-color dark:border-[#302839] rounded-xl p-3 text-sm text-text-primary dark:text-gray-300 opacity-70 font-bold text-[#7f13ec]" />
                                 </div>
                             </div>
                         </div>
 
                         {/* GIFT CODE SECTION */}
-                        <div className="pt-6 border-t border-border-color dark:border-gray-700">
-                            <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-900/20 dark:to-blue-900/20 p-6 rounded-xl border border-purple-100 dark:border-purple-800/50">
-                                <div className="flex items-center gap-2 mb-4">
-                                    <div className="bg-white dark:bg-gray-800 p-2 rounded-full shadow-sm">
-                                        <div className="text-purple-600 dark:text-purple-400">
-                                            <GiftIcon />
-                                        </div>
+                        <div className="pt-6 border-t border-border-color dark:border-[#302839]">
+                            <div className="bg-[#7f13ec]/5 dark:bg-[#7f13ec]/10 p-5 sm:p-6 rounded-2xl border border-[#7f13ec]/20">
+                                <div className="flex items-center gap-3 mb-5">
+                                    <div className="bg-white dark:bg-black/20 p-2 rounded-xl shadow-sm border border-[#7f13ec]/20">
+                                        <div className="text-[#7f13ec]"><GiftIcon /></div>
                                     </div>
-                                    <h4 className="font-bold text-lg text-text-primary dark:text-white">{t('profile.gift.title')}</h4>
+                                    <h4 className="font-extrabold text-lg text-text-primary dark:text-white">{t('profile.gift.title')}</h4>
                                 </div>
                                 
                                 <div className="flex flex-col sm:flex-row gap-3">
@@ -202,36 +200,30 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                                         value={giftCode}
                                         onChange={(e) => setGiftCode(e.target.value.toUpperCase())}
                                         placeholder={t('profile.gift.placeholder')}
-                                        className="flex-grow bg-white dark:bg-gray-800 border border-border-color dark:border-gray-600 rounded-lg p-3 text-text-primary dark:text-white focus:ring-2 focus:ring-accent focus:outline-none uppercase placeholder:normal-case"
+                                        className="flex-grow bg-white dark:bg-[#121212] border border-border-color dark:border-[#302839] rounded-xl p-3 text-sm text-text-primary dark:text-white focus:ring-2 focus:ring-[#7f13ec]/50 outline-none uppercase placeholder:normal-case font-bold"
                                         disabled={isRedeeming}
                                     />
                                     <button 
                                         onClick={handleRedeemCode}
                                         disabled={!giftCode.trim() || isRedeeming}
-                                        className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white font-bold py-3 px-6 rounded-lg transition-colors flex items-center justify-center gap-2 min-w-[120px]"
+                                        className="bg-[#7f13ec] hover:bg-[#690fca] disabled:bg-gray-300 dark:disabled:bg-gray-800 text-white font-bold py-3 px-8 rounded-xl transition-all shadow-lg flex items-center justify-center gap-2"
                                     >
                                         {isRedeeming ? <Spinner /> : t('profile.gift.apply')}
                                     </button>
                                 </div>
                                 
                                 {redeemStatus && (
-                                    <div className={`mt-3 text-sm flex items-center gap-2 ${redeemStatus.type === 'success' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                                        {redeemStatus.type === 'success' ? (
-                                            <CoinIcon />
-                                        ) : (
-                                            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
-                                                <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-                                            </svg>
-                                        )}
+                                    <div className={`mt-4 text-xs sm:text-sm font-bold flex items-center gap-2 p-3 rounded-lg border ${redeemStatus.type === 'success' ? 'text-green-600 bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800' : 'text-red-600 bg-red-50 border-red-200 dark:bg-red-900/20 dark:border-red-800'}`}>
+                                        <span className="material-symbols-outlined text-base">info</span>
                                         {redeemStatus.msg}
                                     </div>
                                 )}
                             </div>
                         </div>
 
-                        <div className="pt-6 border-t border-border-color dark:border-gray-700">
-                            <h4 className="font-semibold text-text-primary dark:text-white mb-2">{t('profile.security.title')}</h4>
-                            <button className="px-4 py-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-text-primary dark:text-white rounded-lg transition-colors text-sm">
+                        <div className="pt-6 border-t border-border-color dark:border-[#302839]">
+                            <h4 className="font-bold text-text-primary dark:text-white mb-3">{t('profile.security.title')}</h4>
+                            <button className="px-5 py-2.5 bg-gray-100 dark:bg-[#252525] hover:bg-gray-200 dark:hover:bg-[#333] text-text-primary dark:text-gray-300 rounded-xl transition-all text-sm font-bold border border-border-color dark:border-[#302839]">
                                 {t('profile.security.change_pass')}
                             </button>
                         </div>
@@ -241,43 +233,46 @@ const UserProfile: React.FC<UserProfileProps> = ({ session, initialTab = 'profil
                 {/* === TAB: HISTORY === */}
                 {activeTab === 'history' && (
                     <div className="space-y-6 animate-fade-in">
-                        <h3 className="text-2xl font-bold text-text-primary dark:text-white mb-4">{t('profile.tab_history')}</h3>
+                        <h3 className="text-xl sm:text-2xl font-bold text-text-primary dark:text-white mb-4">{t('profile.tab_history')}</h3>
                         
                         {isLoadingHistory ? (
                              <div className="flex justify-center py-10"><Spinner /></div>
                         ) : transactionHistory.length === 0 ? (
-                             <p className="text-center text-text-secondary dark:text-gray-400 py-10">{t('profile.history.empty')}</p>
+                             <div className="text-center py-12 bg-gray-50 dark:bg-black/20 rounded-2xl border-2 border-dashed border-border-color dark:border-[#302839]">
+                                <span className="material-symbols-outlined text-4xl text-gray-400 mb-2">history</span>
+                                <p className="text-text-secondary dark:text-gray-400 text-sm font-medium">{t('profile.history.empty')}</p>
+                             </div>
                         ) : (
-                            <div className="overflow-x-auto">
-                                <table className="w-full text-sm text-left text-text-secondary dark:text-gray-400">
-                                    <thead className="text-xs text-text-primary uppercase bg-gray-100 dark:bg-gray-700 dark:text-gray-200">
+                            <div className="overflow-x-auto rounded-2xl border border-border-color dark:border-[#302839]">
+                                <table className="w-full text-xs sm:text-sm text-left text-text-secondary dark:text-gray-400">
+                                    <thead className="text-[10px] sm:text-xs text-text-primary uppercase bg-gray-100 dark:bg-[#252525] dark:text-gray-300 font-bold border-b border-border-color dark:border-[#302839]">
                                         <tr>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.code')}</th>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.service')}</th>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.amount')}</th>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.date')}</th>
-                                            <th scope="col" className="px-6 py-3 whitespace-nowrap">{t('profile.table.status')}</th>
+                                            <th scope="col" className="px-4 sm:px-6 py-4 whitespace-nowrap">{t('profile.table.code')}</th>
+                                            <th scope="col" className="px-4 sm:px-6 py-4 whitespace-nowrap">{t('profile.table.service')}</th>
+                                            <th scope="col" className="px-4 sm:px-6 py-4 whitespace-nowrap">{t('profile.table.amount')}</th>
+                                            <th scope="col" className="px-4 sm:px-6 py-4 whitespace-nowrap">{t('profile.table.date')}</th>
+                                            <th scope="col" className="px-4 sm:px-6 py-4 whitespace-nowrap">{t('profile.table.status')}</th>
                                         </tr>
                                     </thead>
-                                    <tbody>
+                                    <tbody className="divide-y divide-border-color dark:divide-[#302839]">
                                         {transactionHistory.map((tx) => (
-                                            <tr key={tx.id} className="bg-white dark:bg-gray-800 border-b dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700">
-                                                <td className="px-6 py-4 font-mono whitespace-nowrap">{tx.transaction_code || tx.id.substring(0, 8)}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
+                                            <tr key={tx.id} className="bg-white dark:bg-[#1A1A1A] hover:bg-gray-50 dark:hover:bg-[#252525] transition-colors">
+                                                <td className="px-4 sm:px-6 py-4 font-mono text-[10px] sm:text-xs font-bold whitespace-nowrap text-text-primary dark:text-gray-300">{tx.transaction_code || tx.id.substring(0, 8)}</td>
+                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap font-medium text-text-primary dark:text-gray-200">
                                                     {tx.plan_name}
                                                     {tx.payment_method === 'giftcode' && (
-                                                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300">
+                                                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400 border border-purple-200 dark:border-purple-800">
                                                             Giftcode
                                                         </span>
                                                     )}
                                                 </td>
-                                                <td className="px-6 py-4 whitespace-nowrap">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(tx.amount)}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap">{new Date(tx.created_at).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US')}</td>
-                                                <td className="px-6 py-4 whitespace-nowrap">
-                                                    <span className={`text-xs font-medium px-2.5 py-0.5 rounded ${
-                                                        tx.status === 'completed' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300' :
-                                                        tx.status === 'pending' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300' :
-                                                        'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap font-bold text-text-primary dark:text-white">{new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(tx.amount)}</td>
+                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap text-gray-500 dark:text-gray-400">{new Date(tx.created_at).toLocaleDateString(language === 'vi' ? 'vi-VN' : 'en-US')}</td>
+                                                <td className="px-4 sm:px-6 py-4 whitespace-nowrap">
+                                                    <span className={`text-[10px] sm:text-xs font-bold px-2.5 py-1 rounded-full border ${
+                                                        tx.status === 'completed' ? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800' :
+                                                        tx.status === 'pending' ? 'bg-yellow-100 text-yellow-700 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-400 dark:border-yellow-800' :
+                                                        'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800'
                                                     }`}>
                                                         {tx.status === 'completed' ? t('profile.status.success') : tx.status === 'pending' ? t('profile.status.pending') : t('profile.status.failed')}
                                                     </span>

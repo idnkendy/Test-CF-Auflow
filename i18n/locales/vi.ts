@@ -1,4 +1,3 @@
-
 export const vi = {
   "app.name": "OPZEN AI",
   
@@ -161,7 +160,6 @@ export const vi = {
   // --- HOMEPAGE ---
   "hero.tag": "Công nghệ AI Kiến trúc 2025",
   "hero.title_1": "TĂNG TỐC X10 QUY TRÌNH",
-  // Use non-breaking space (\u00A0) to keep OPZEN AI together
   "hero.title_2": "THIẾT KẾ KIẾN TRÚC, NỘI THẤT VỚI OPZEN\u00A0AI",
   "hero.desc": "Biến phác thảo tay thành ảnh Render 3D sắc nét chỉ trong vài giây. Giải pháp tối ưu quy trình cho Kiến trúc sư, Nhà thiết kế và Môi giới Bất động sản.",
   "hero.start": "Dùng thử miễn phí",
@@ -420,6 +418,16 @@ export const vi = {
   "reno.edit_mask": "Sửa vùng chọn",
   "reno.mask_applied": "Đã áp dụng vùng chọn. AI sẽ chỉ cải tạo trong vùng này.",
 
+  // Renovation Sub-modes
+  "reno.mode.interior": "Cải tạo Nội thất",
+  "reno.mode.interior_desc": "Nâng cấp, thay đổi phong cách và vật liệu cho không gian bên trong.",
+  "reno.mode.exterior": "Cải tạo Ngoại thất",
+  "reno.mode.exterior_desc": "Làm mới mặt tiền, thay đổi hình khối và vật liệu kiến trúc bên ngoài.",
+  "reno.mode.landscape": "Cải tạo Sân vườn",
+  "reno.mode.landscape_desc": "Quy hoạch lại cảnh quan, thêm cây xanh và tiểu cảnh ngoài trời.",
+  "reno.mode.spatial": "Thiết kế không gian thực tế",
+  "reno.mode.spatial_desc": "Sắp xếp lại công năng và bố cục không gian dựa trên ảnh hiện trạng.",
+
   // Renovation Suggestions
   "reno.sugg.add_floor": "Nâng tầng",
   "reno.sugg.change_color": "Đổi màu sơn",
@@ -427,6 +435,12 @@ export const vi = {
   "reno.sugg.change_mass": "Thay đổi khối",
   "reno.sugg.sketch_to_space": "Đưa ảnh vẽ tay vào không gian",
   "reno.sugg.model_to_space": "Đưa mẫu công trình vào không gian",
+  "reno.sugg.modern_int": "Nội thất hiện đại",
+  "reno.sugg.scandi_style": "Phong cách Scandinavian",
+  "reno.sugg.koi_pond": "Hồ cá Koi",
+  "reno.sugg.outdoor_bbq": "Khu BBQ ngoài trời",
+  "reno.sugg.open_plan": "Mặt bằng mở (Open Plan)",
+  "reno.sugg.home_office": "Phòng làm việc tại gia",
   
   // View Sync Options (New)
   "sync.tab.sync": "Đồng Bộ View",
@@ -587,6 +601,8 @@ export const vi = {
   "floorplan.prompt.interior_topdown": "Biến thành ảnh chụp thực tế nội thất",
   "floorplan.prompt.exterior_perspective": "Phối cảnh 3D ngoại thất từ mặt bằng",
   "floorplan.prompt.interior_perspective": "Phối cảnh 3D nội thất từ mặt bằng",
+  "floorplan.prompt.urban": "Render mặt bằng quy hoạch đô thị thành phối cảnh 3D thực tế, chi tiết đường phố, cây xanh và khối nhà.",
+  "floorplan.prompt.landscape": "Render mặt bằng sân vườn thành phối cảnh 3D thực tế, chi tiết cây cối, lối đi và tiểu cảnh.",
 
   "ext.sketch.title": "AI Biến Ảnh Thành Sketch",
   "ext.sketch.step1": "1. Tải Lên Ảnh Gốc",

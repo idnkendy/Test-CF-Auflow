@@ -117,34 +117,76 @@ const UrbanPlanning: React.FC<UrbanPlanningProps> = ({ state, onStateChange, onS
 
         onStateChange({ isLoading: true, error: null, resultImages: [] });
         setStatusMessage(t('common.processing'));
+        let logId: string | null = null;
         
         try {
-            const logId = onDeductCredits ? await onDeductCredits(cost, `Render quy hoạch`) : null;
+            if (onDeductCredits) {
+                logId = await onDeductCredits(cost, `Render quy hoạch`);
+            }
+            
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const promptForService = `Professional urban planning rendering. ${customPrompt}`;
+            const inputImages = [sourceImage, ...referenceImages].filter(Boolean) as FileData[];
 
-            const result = await externalVideoService.generateFlowImage(
-                promptForService,
-                [sourceImage, ...referenceImages].filter(Boolean) as FileData[], 
-                aspectRatio, 
-                numberOfImages,
-                modelName,
-                (msg) => setStatusMessage(msg)
-            );
+            // Parallel Generation Loop
+            const promises = Array.from({ length: numberOfImages }).map(async (_, idx) => {
+                const result = await externalVideoService.generateFlowImage(
+                    promptForService,
+                    inputImages, 
+                    aspectRatio, 
+                    1, // Force 1 image per request
+                    modelName,
+                    (msg) => setStatusMessage(`${t('common.processing')} (${idx + 1}/${numberOfImages})`)
+                );
 
-            if (result.imageUrls) {
-                onStateChange({ resultImages: result.imageUrls });
-                result.imageUrls.forEach(url => historyService.addToHistory({ 
+                if (result.imageUrls && result.imageUrls.length > 0) {
+                    let finalUrl = result.imageUrls[0];
+                    if ((resolution === '2K' || resolution === '4K') && result.mediaIds?.[0]) {
+                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                        const upResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
+                        if (upResult?.imageUrl) finalUrl = upResult.imageUrl;
+                    }
+                    return finalUrl;
+                }
+                return null;
+            });
+
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
+                successfulUrls.forEach(url => historyService.addToHistory({ 
                     tool: Tool.UrbanPlanning, 
                     prompt: customPrompt, 
                     sourceImageURL: sourceImage?.objectURL, 
                     resultImageURL: url 
                 }));
+            } else {
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
+
         } catch (err: any) {
             const rawMsg = err.message || "";
             const friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
-            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
+            
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+            } else {
+                onStateChange({ error: t(friendlyKey) });
+            }
+
+            // Refund logic
+            if (logId && onDeductCredits) {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    try {
+                        await refundCredits(user.id, cost, `Hoàn tiền: Lỗi quy hoạch (${rawMsg})`, logId);
+                    } catch (refundErr) {
+                        console.error("Refund failed:", refundErr);
+                    }
+                }
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

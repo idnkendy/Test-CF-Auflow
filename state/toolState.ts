@@ -1,4 +1,3 @@
-
 import { FileData, AspectRatio, Tool, ImageResolution } from '../types';
 
 export interface LuBanRulerState {
@@ -172,7 +171,7 @@ export interface FloorPlanState {
     resultImages: string[];
     numberOfImages: number;
     renderMode: 'top-down' | 'perspective';
-    planType: 'interior' | 'exterior';
+    planType: 'architecture' | 'interior' | 'urban' | 'landscape';
     aspectRatio: AspectRatio;
     resolution: ImageResolution;
     // New options
@@ -180,9 +179,11 @@ export interface FloorPlanState {
     importantArea: string;
     time: string;
     weather: string;
+    style: string; // Added style
 }
 
 export interface RenovationState {
+    renoMode: 'interior' | 'exterior' | 'landscape' | 'spatial'; // Added
     prompt: string;
     sourceImage: FileData | null;
     referenceImages: FileData[];
@@ -255,7 +256,7 @@ export interface MaterialSwapperState {
     error: string | null;
     resultImages: string[];
     numberOfImages: number;
-    aspectRatio: AspectRatio; // Added
+    aspectRatio: AspectRatio; // Added default
     resolution: ImageResolution;
 }
 
@@ -355,7 +356,7 @@ export interface SketchConverterState {
     sketchStyle: 'pencil' | 'charcoal' | 'watercolor';
     detailLevel: 'medium' | 'high';
     resolution: ImageResolution;
-    aspectRatio: AspectRatio; // Changed from '16:9'
+    aspectRatio: AspectRatio; // Added default
 }
 
 // Khởi tạo giá trị mặc định cho trạng thái của tất cả công cụ
@@ -445,15 +446,17 @@ export const initialToolStates = {
         resultImages: [],
         numberOfImages: 1,
         renderMode: 'top-down',
-        planType: 'interior',
+        planType: 'architecture',
         aspectRatio: '16:9',
         resolution: 'Standard',
         projectType: 'none',
         importantArea: 'none',
         time: 'none',
         weather: 'none',
+        style: 'none', // Initialized style
     } as FloorPlanState,
     [Tool.Renovation]: {
+        renoMode: 'interior', // Added
         prompt: 'Cải tạo mặt tiền ngôi nhà này theo phong cách hiện đại, tối giản. Sử dụng vật liệu gỗ, kính và bê tông. Thêm nhiều cây xanh xung quanh.',
         sourceImage: null,
         referenceImages: [],
@@ -541,6 +544,7 @@ export const initialToolStates = {
         resultImages: [],
         numberOfImages: 1,
         aspectRatio: '16:9',
+        // Fixed bitwise OR operator error
         mode: 'moodboardToScene',
         resolution: 'Standard',
     } as MoodboardGeneratorState,
@@ -555,6 +559,7 @@ export const initialToolStates = {
         loadingMessage: "Đang khởi tạo các photon ánh sáng...",
         error: null,
         generatedVideoUrl: null,
+        // Fixed bitwise OR operator error
         mode: 'exterior',
         aspectRatio: 'default', 
     } as VideoGeneratorState,

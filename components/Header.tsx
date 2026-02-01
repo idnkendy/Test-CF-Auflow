@@ -92,55 +92,56 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
 
   return (
      <header className="bg-surface dark:bg-[#121212] sticky top-0 z-40 transition-colors duration-300 px-3 sm:px-6 lg:px-8 border-b border-border-color dark:border-[#302839] h-[60px]">
-        <nav className="flex justify-between items-center h-full">
-            <div className="flex items-center gap-3 sm:gap-4">
+        <nav className="flex justify-between items-center h-full max-w-[1920px] mx-auto">
+            <div className="flex items-center gap-2 sm:gap-4">
                 <button 
                     onClick={onToggleNav} 
-                    className="md:hidden text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white focus:outline-none p-1 rounded-md hover:bg-gray-100 dark:hover:bg-[#302839]"
+                    className="md:hidden text-text-secondary dark:text-gray-400 hover:text-text-primary dark:hover:text-white focus:outline-none p-1.5 rounded-md hover:bg-gray-100 dark:hover:bg-[#302839]"
                 >
                     <span className="material-symbols-outlined text-2xl">menu</span>
                 </button>
 
                 <div className="flex items-center cursor-pointer group" onClick={onGoHome} title={t('nav.home')}>
                     <Logo className="w-8 h-8 sm:w-10 sm:h-10 text-[#7f13ec]" />
-                    <span className="text-text-primary dark:text-white text-base sm:text-lg font-bold tracking-tight ml-2 sm:ml-3 hidden sm:inline-block">{t('app.name')}</span>
+                    <span className="text-text-primary dark:text-white text-sm sm:text-lg font-bold tracking-tight ml-1.5 sm:ml-3 inline-block">{t('app.name')}</span>
                 </div>
             </div>
             
-            <div className="flex items-center space-x-2 sm:space-x-5">
+            <div className="flex items-center space-x-1.5 sm:space-x-4">
+                {/* Language Toggle - Slightly smaller for mobile */}
                 <button 
                     onClick={toggleLanguage}
-                    className="relative bg-gray-100 dark:bg-[#252525] rounded-full border border-gray-200 dark:border-[#3a3a3a] h-8 w-20 cursor-pointer focus:outline-none hover:border-[#7f13ec]/50 transition-all duration-300 group shadow-inner p-1"
+                    className="relative bg-gray-100 dark:bg-[#252525] rounded-full border border-gray-200 dark:border-[#3a3a3a] h-7 w-16 sm:h-8 sm:w-20 cursor-pointer focus:outline-none hover:border-[#7f13ec]/50 transition-all duration-300 group shadow-inner p-1"
                     aria-label="Switch Language"
                 >
                     <div 
-                        className={`absolute top-0.5 bottom-0.5 left-0.5 w-8 bg-[#7f13ec] rounded-full shadow-md shadow-purple-500/30 transition-transform duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${
-                            language === 'en' ? 'translate-x-[2.75rem]' : 'translate-x-0'
+                        className={`absolute top-0.5 bottom-0.5 left-0.5 w-6 sm:w-8 bg-[#7f13ec] rounded-full shadow-md shadow-purple-500/30 transition-transform duration-300 ease-[cubic-bezier(0.23,1,0.32,1)] ${
+                            language === 'en' ? 'translate-x-[2.25rem] sm:translate-x-[2.75rem]' : 'translate-x-0'
                         }`}
                     ></div>
                     <div className="absolute inset-0 grid grid-cols-2 z-10 select-none pointer-events-none">
                         <div className="flex items-center justify-center">
-                            <span className={`text-[10px] font-bold transition-colors duration-300 ${language === 'vi' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>VN</span>
+                            <span className={`text-[9px] sm:text-[10px] font-bold transition-colors duration-300 ${language === 'vi' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>VN</span>
                         </div>
                         <div className="flex items-center justify-center">
-                            <span className={`text-[10px] font-bold transition-colors duration-300 ${language === 'en' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>EN</span>
+                            <span className={`text-[9px] sm:text-[10px] font-bold transition-colors duration-300 ${language === 'en' ? 'text-white' : 'text-gray-500 dark:text-gray-400 group-hover:text-gray-400 dark:group-hover:text-gray-300'}`}>EN</span>
                         </div>
                     </div>
                 </button>
 
-                {!isDropdownOpen && userStatus && (
+                {userStatus && (
                     <button
                         onClick={onUpgrade}
-                        className="hidden sm:flex items-center gap-1.5 pl-2 pr-1 py-0.5 rounded-full bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#333] shadow-sm hover:border-purple-500/40 transition-all duration-300 group"
+                        className="flex items-center gap-1 sm:gap-1.5 pl-2 pr-1 py-0.5 rounded-full bg-white dark:bg-[#1E1E1E] border border-gray-200 dark:border-[#333] shadow-sm hover:border-purple-500/40 transition-all duration-300 group"
                         title={t('header.topup_tooltip')}
                     >
-                        <div className="flex items-center gap-1.5 px-1.5">
-                            <div className="text-yellow-500 scale-90"><CoinIcon /></div>
-                            <span className="font-bold text-xs text-gray-700 dark:text-gray-200 tabular-nums tracking-tight">
+                        <div className="flex items-center gap-1 sm:gap-1.5 px-0.5 sm:px-1.5">
+                            <div className="text-yellow-500 scale-75 sm:scale-90"><CoinIcon /></div>
+                            <span className="font-bold text-[10px] sm:text-xs text-gray-700 dark:text-gray-200 tabular-nums tracking-tight">
                                 {new Intl.NumberFormat('en-US').format(userStatus.credits)}
                             </span>
                         </div>
-                        <div className="relative overflow-hidden rounded-full bg-gradient-to-r from-[#7f13ec] to-[#a855f7] text-white shadow-md group-hover:scale-105 transition-all duration-300">
+                        <div className="relative overflow-hidden rounded-full bg-gradient-to-r from-[#7f13ec] to-[#a855f7] text-white shadow-md group-hover:scale-105 transition-all duration-300 hidden sm:block">
                             <div className="relative flex items-center gap-1 px-2 py-1">
                                 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z" /></svg>
                                 <span className="text-[10px] font-bold uppercase tracking-wide">{t('header.topup')}</span>
@@ -162,7 +163,9 @@ const Header: React.FC<HeaderProps> = ({ onGoHome, onThemeToggle, theme, onSignO
                         <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-gradient-to-tr from-[#8A2BE2] to-[#DA70D6] flex items-center justify-center text-white shadow-md ring-2 ring-white dark:ring-[#191919]">
                             <span className="text-[10px] font-bold">{user?.email?.[0].toUpperCase()}</span>
                         </div>
-                        <ChevronDownIcon />
+                        <div className="hidden sm:block">
+                           <ChevronDownIcon />
+                        </div>
                     </button>
 
                     {isDropdownOpen && (

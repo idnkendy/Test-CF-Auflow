@@ -278,8 +278,8 @@ export const generateText = async (prompt: string): Promise<string> => {
 
 export const generateArchitecturalPrompt = async (image: FileData, lang: 'vi' | 'en' = 'vi'): Promise<string> => {
     const ai = await getDynamicAIClient();
-    // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-2.0-flash-lite';
+    // Fixed: Updated model name to 'gemini-flash-lite-latest' as per coding guidelines for flash lite models.
+    const model = 'gemini-flash-lite-latest';
     
     let prompt = "";
     if (lang === 'vi') {
@@ -318,8 +318,8 @@ export const generateFloorPlanPrompt = async (
     lang: 'vi' | 'en' = 'vi'
 ): Promise<string> => {
     const ai = await getDynamicAIClient();
-    // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-2.0-flash-lite';
+    // Fixed: Updated model name to 'gemini-flash-lite-latest' as per coding guidelines for flash lite models.
+    const model = 'gemini-flash-lite-latest';
     
     let prompt = "";
     const isVi = lang === 'vi';
@@ -380,8 +380,8 @@ export const generateFloorPlanPrompt = async (
 
 export const generateInteriorPrompt = async (image: FileData, lang: 'vi' | 'en' = 'vi'): Promise<string> => {
     const ai = await getDynamicAIClient();
-    // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-2.0-flash-lite';
+    // Fixed: Updated model name to 'gemini-flash-lite-latest' as per coding guidelines for flash lite models.
+    const model = 'gemini-flash-lite-latest';
     
     let prompt = "";
     if (lang === 'vi') {
@@ -421,8 +421,8 @@ export const generatePromptSuggestions = async (
     lang: 'vi' | 'en' = 'vi'
 ): Promise<Record<string, string[]> | null> => {
     const ai = await getDynamicAIClient();
-    // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-2.0-flash-lite';
+    // Fixed: Updated model name to 'gemini-flash-lite-latest' as per coding guidelines for flash lite models.
+    const model = 'gemini-flash-lite-latest';
     
     const isVi = lang === 'vi';
     
@@ -492,8 +492,8 @@ export const generatePromptSuggestions = async (
 
 export const enhancePrompt = async (userInput: string, image?: FileData): Promise<string> => {
     const ai = await getDynamicAIClient();
-    // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-2.0-flash-lite';
+    // Fixed: Updated model name to 'gemini-flash-lite-latest' as per coding guidelines for flash lite models.
+    const model = 'gemini-flash-lite-latest';
     
     const parts: any[] = [{ text: `Act as an expert architectural prompt engineer. Enhance the following user input into a detailed, professional prompt suitable for high-quality AI rendering (like Midjourney or Gemini). Focus on lighting, materials, atmosphere, and camera specifications. \n\nUser Input: "${userInput}"` }];
     
@@ -518,8 +518,8 @@ export const enhancePrompt = async (userInput: string, image?: FileData): Promis
 
 export const generateVideoPromptFromImage = async (image: FileData, lang: 'vi' | 'en' = 'vi'): Promise<string> => {
     const ai = await getDynamicAIClient();
-    // Use Flash Lite for lowest cost multimodal analysis
-    const model = 'gemini-2.0-flash-lite';
+    // Fixed: Updated model name to 'gemini-flash-lite-latest' as per coding guidelines for flash lite models.
+    const model = 'gemini-flash-lite-latest';
     
     let prompt = "";
     if (lang === 'vi') {

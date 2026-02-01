@@ -1,4 +1,3 @@
-
 export const en = {
   "app.name": "OPZEN AI",
   
@@ -162,7 +161,6 @@ export const en = {
   // --- HOMEPAGE ---
   "hero.tag": "AI Architecture Technology 2025",
   "hero.title_1": "10x Your Design Workflow",
-  // Use non-breaking space (\u00A0) to keep OPZEN AI together
   "hero.title_2": "In Architecture and Interior with OPZEN\u00A0AI",
   "hero.desc": "Turn hand sketches into sharp 3D Renders in seconds. Optimized workflow for Architects, Designers, and Real Estate Agents.",
   "hero.start": "Try for Free",
@@ -428,6 +426,16 @@ export const en = {
   "reno.edit_mask": "Edit Mask",
   "reno.mask_applied": "Mask applied. AI will only renovate the selected area.",
 
+  // Renovation Sub-modes
+  "reno.mode.interior": "Interior Renovation",
+  "reno.mode.interior_desc": "Upgrade, change styles and materials for the interior space.",
+  "reno.mode.exterior": "Exterior Renovation",
+  "reno.mode.exterior_desc": "Refresh the facade, change architectural massing and exterior materials.",
+  "reno.mode.landscape": "Landscape Renovation",
+  "reno.mode.landscape_desc": "Replan the landscape, add greenery and outdoor garden features.",
+  "reno.mode.spatial": "Spatial Redesign",
+  "reno.mode.spatial_desc": "Rearrange functionality and spatial layout based on the current photo.",
+
   // Renovation Suggestions
   "reno.sugg.add_floor": "Add Floor",
   "reno.sugg.change_color": "Change Paint Color",
@@ -435,6 +443,12 @@ export const en = {
   "reno.sugg.change_mass": "Change Massing",
   "reno.sugg.sketch_to_space": "Sketch to Space",
   "reno.sugg.model_to_space": "Model to Space",
+  "reno.sugg.modern_int": "Modern Interior",
+  "reno.sugg.scandi_style": "Scandinavian Style",
+  "reno.sugg.koi_pond": "Koi Pond",
+  "reno.sugg.outdoor_bbq": "Outdoor BBQ Area",
+  "reno.sugg.open_plan": "Open Floor Plan",
+  "reno.sugg.home_office": "Home Office",
   
   // View Sync Options (New)
   "sync.tab.sync": "View Sync",
@@ -575,26 +589,13 @@ export const en = {
   "ext.landscape.feature": "Feature",
   "ext.landscape.time": "Time",
 
-  "ext.floorplan.title": "AI Floor Plan Render",
-  "ext.floorplan.subtitle": "Convert 2D plans into vivid 3D perspectives (Top-down or Perspective).",
-  "ext.floorplan.step1": "1. Upload 2D Floor Plan",
-  "ext.floorplan.step2": "2. Select Type & Mode",
-  "ext.floorplan.step3": "3. Fine-tune Details (Click to add)",
-  "ext.floorplan.step4": "4. Detailed Description (Prompt)",
-  "ext.floorplan.step3_perspective": "3. Describe Viewpoint",
-  "ext.floorplan.mode.topdown_ext": "Master Plan View",
-  "ext.floorplan.mode.topdown_int": "3D Floor Plan",
-  "ext.floorplan.mode.perspective_ext": "3D Architectural View",
-  "ext.floorplan.mode.perspective_int": "3D Interior View",
-  "ext.floorplan.auto_prompt": "Auto Generate Prompt",
-  "ext.floorplan.analyzing": "Analyzing...",
-  "ext.floorplan.btn_generate": "Start Render",
-
   // FloorPlan Default Prompts (EN)
   "floorplan.prompt.exterior_topdown": "Transform into realistic project photo",
   "floorplan.prompt.interior_topdown": "Transform into realistic interior photo",
   "floorplan.prompt.exterior_perspective": "3D exterior perspective from floor plan",
   "floorplan.prompt.interior_perspective": "3D interior perspective from floor plan",
+  "floorplan.prompt.urban": "Convert this urban planning floor plan into a realistic 3D rendering with streets, greenery and building masses.",
+  "floorplan.prompt.landscape": "Convert this landscape site plan into a realistic 3D garden rendering with detailed plants, paths and features.",
 
   "ext.sketch.title": "AI Photo to Sketch",
   "ext.sketch.step1": "1. Upload Source Image",

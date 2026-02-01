@@ -9,15 +9,15 @@ interface ErrorBoundaryState {
   error: Error | null;
 }
 
-// Fix: Explicitly extending Component to ensure methods like 'setState' and properties like 'props' are inherited and recognized correctly by the compiler.
-export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  public state: ErrorBoundaryState = {
-    hasError: false,
-    error: null,
-  };
-
+// Fixed: Explicitly imported and used Component from 'react' to resolve property access errors for state and props.
+export class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
   constructor(props: ErrorBoundaryProps) {
     super(props);
+    // Fixed: state property is now recognized through proper inheritance.
+    this.state = {
+      hasError: false,
+      error: null,
+    };
   }
 
   static getDerivedStateFromError(error: Error): ErrorBoundaryState {
@@ -34,14 +34,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   };
 
   handleReset = () => {
-      // Fix: Using setState inherited from the base Component class.
+      // Fixed: Property 'setState' now correctly inherited from Component.
       this.setState({ hasError: false, error: null });
       localStorage.removeItem('activeTool'); 
       window.location.href = '/'; 
   }
 
   render() {
-    // If an error occurred, render the fallback UI
+    // Fixed: state property is now recognized through proper inheritance.
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center min-h-[50vh] p-6 text-center bg-surface dark:bg-[#121212] rounded-xl border border-border-color dark:border-gray-700 m-4 shadow-lg">
@@ -53,6 +53,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             
             <h2 className="text-xl font-bold text-text-primary dark:text-white mb-2">Đã xảy ra sự cố</h2>
             
+            {/* Fixed: Accessing error property from state. */}
             {this.state.error && (
                 <p className="text-red-500 font-medium text-sm mb-2 max-w-md break-words px-4">
                     {this.state.error.message || this.state.error.toString()}
@@ -81,7 +82,7 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       );
     }
 
-    // Fix: Accessing props children inherited from the base Component class.
+    // Fixed: props property is now recognized through proper inheritance.
     return this.props.children || null;
   }
 }

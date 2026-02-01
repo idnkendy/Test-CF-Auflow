@@ -166,30 +166,80 @@ const InteriorGenerator: React.FC<InteriorGeneratorProps> = ({ state, onStateCha
 
         onStateChange({ isLoading: true, error: null, resultImages: [], upscaledImage: null });
         setStatusMessage(t('common.processing'));
+        let logId: string | null = null;
 
         try {
-            const logId = onDeductCredits ? await onDeductCredits(cost, `Render nội thất`) : null;
+            if (onDeductCredits) {
+                logId = await onDeductCredits(cost, `Render nội thất`);
+            }
+            
             const modelName = resolution === 'Standard' ? "GEM_PIX" : "GEM_PIX_2";
             const promptForService = `Professional interior design render. ${customPrompt}`;
+            const inputImages = [sourceImage, ...referenceImages].filter(Boolean) as FileData[];
 
-            const result = await externalVideoService.generateFlowImage(
-                promptForService,
-                [sourceImage, ...referenceImages].filter(Boolean) as FileData[],
-                aspectRatio, 
-                numberOfImages, 
-                modelName,
-                (msg) => setStatusMessage(msg)
-            );
+            // Parallel Generation Loop
+            const promises = Array.from({ length: numberOfImages }).map(async (_, idx) => {
+                const result = await externalVideoService.generateFlowImage(
+                    promptForService,
+                    inputImages,
+                    aspectRatio, 
+                    1, // Force 1 image per request for individual handling
+                    modelName,
+                    (msg) => setStatusMessage(`${t('common.processing')} (${idx + 1}/${numberOfImages})`)
+                );
 
-            if (result.imageUrls) {
-                onStateChange({ resultImages: result.imageUrls });
-                result.imageUrls.forEach(url => historyService.addToHistory({ tool: Tool.InteriorRendering, prompt: customPrompt, sourceImageURL: sourceImage?.objectURL, resultImageURL: url }));
+                if (result.imageUrls && result.imageUrls.length > 0) {
+                    let finalUrl = result.imageUrls[0];
+                    // Handle Upscale
+                    if ((resolution === '2K' || resolution === '4K') && result.mediaIds?.[0]) {
+                        const targetRes = resolution === '4K' ? 'UPSAMPLE_IMAGE_RESOLUTION_4K' : 'UPSAMPLE_IMAGE_RESOLUTION_2K';
+                        const upResult = await externalVideoService.upscaleFlowImage(result.mediaIds[0], result.projectId, targetRes, aspectRatio);
+                        if (upResult?.imageUrl) finalUrl = upResult.imageUrl;
+                    }
+                    return finalUrl;
+                }
+                return null;
+            });
+
+            const results = await Promise.all(promises);
+            const successfulUrls = results.filter((url): url is string => url !== null);
+
+            if (successfulUrls.length > 0) {
+                onStateChange({ resultImages: successfulUrls });
+                successfulUrls.forEach(url => historyService.addToHistory({ 
+                    tool: Tool.InteriorRendering, 
+                    prompt: customPrompt, 
+                    sourceImageURL: sourceImage?.objectURL, 
+                    resultImageURL: url 
+                }));
+            } else {
+                throw new Error("Không thể tạo ảnh nào sau nhiều lần thử.");
             }
+
         } catch (err: any) {
             const rawMsg = err.message || "";
             const friendlyKey = jobService.mapFriendlyErrorMessage(rawMsg);
-            if (friendlyKey === "SAFETY_POLICY_VIOLATION") setShowSafetyModal(true);
-            else showError(t(friendlyKey));
+            
+            if (friendlyKey === "SAFETY_POLICY_VIOLATION") {
+                setShowSafetyModal(true);
+            } else {
+                showError(t(friendlyKey));
+            }
+
+            // Refund logic
+            if (logId && onDeductCredits) {
+                const { data: { user } } = await supabase.auth.getUser();
+                if (user) {
+                    try {
+                        await refundCredits(user.id, cost, `Hoàn tiền: Lỗi render (${rawMsg})`, logId);
+                        if (friendlyKey !== "SAFETY_POLICY_VIOLATION") {
+                            setLocalErrorMessage(prev => `${prev}\n\n(Credits đã được hoàn trả)`);
+                        }
+                    } catch (refundErr) {
+                        console.error("Refund failed:", refundErr);
+                    }
+                }
+            }
         } finally {
             onStateChange({ isLoading: false });
         }

@@ -49,7 +49,7 @@ const compressImage = async (blob: Blob): Promise<Blob> => {
         img.onload = () => {
             URL.revokeObjectURL(url);
             const canvas = document.createElement('canvas');
-            const MAX_SIZE = 2048;
+            const MAX_SIZE = 1500;
             let width = img.width;
             let height = img.height;
             if (width > MAX_SIZE || height > MAX_SIZE) {
@@ -60,7 +60,7 @@ const compressImage = async (blob: Blob): Promise<Blob> => {
             const ctx = canvas.getContext('2d');
             if (!ctx) { resolve(blob); return; }
             ctx.fillStyle = '#FFFFFF'; ctx.fillRect(0, 0, width, height); ctx.drawImage(img, 0, 0, width, height);
-            canvas.toBlob((compressedBlob) => resolve(compressedBlob || blob), 'image/webp', 0.9);
+            canvas.toBlob((compressedBlob) => resolve(compressedBlob || blob), 'image/webp', 1.0);
         };
         img.onerror = () => { URL.revokeObjectURL(url); resolve(blob); };
         img.src = url;
